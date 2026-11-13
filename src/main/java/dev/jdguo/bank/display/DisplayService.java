@@ -216,7 +216,9 @@ public final class DisplayService {
         BigDecimal tight = note == null ? null : books.tightness(note.id());
         BigDecimal copperPerDiamond = books.currency("copper") == null || books.currency("diamond") == null
                 ? null : books.unitsPer("copper", "diamond");
-        bossBar.setName(Text.literal("银行券兑付能力 " + CompactFormat.formatRatio(tight)).formatted(Formatting.WHITE));
+        String rateText = BankPhrases.copperPerDiamond(books);
+        bossBar.setName(Text.literal("汇率：" + rateText + " 铜锭/钻石    银行券兑付能力 " + CompactFormat.formatRatio(tight))
+                .formatted(Formatting.WHITE));
         float percent = 1.0f;
         if (tight != null) {
             percent = tight.max(BigDecimal.ZERO).min(BigDecimal.ONE).floatValue();
@@ -246,6 +248,7 @@ public final class DisplayService {
     private Text hologramText(BankBooks books) {
         MutableText text = Text.empty();
         text.append(Text.literal("✦ 中央银行 ✦\n").formatted(TITLE_COLORS[frame % TITLE_COLORS.length], Formatting.BOLD));
+        text.append(Text.literal("汇率\n").formatted(Formatting.GOLD));
         CurrencyDef base = books.currency(books.numeraire());
         String baseName = base == null ? books.numeraire() : base.name();
         for (CurrencyDef def : books.currencies()) {
@@ -356,6 +359,7 @@ public final class DisplayService {
 
     private static Text tabHeader(BankBooks books) {
         MutableText header = Text.literal("✦ 中央银行 ✦\n").formatted(Formatting.AQUA, Formatting.BOLD);
+        header.append(Text.literal("汇率 ").formatted(Formatting.GOLD));
         CurrencyDef base = books.currency(books.numeraire());
         String baseName = base == null ? books.numeraire() : base.name();
         boolean first = true;
