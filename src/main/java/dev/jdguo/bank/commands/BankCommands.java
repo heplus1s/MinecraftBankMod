@@ -156,6 +156,7 @@ public final class BankCommands {
                                                 .then(literal("copper").then(argument("name", StringArgumentType.string())
                                                         .then(argument("face", StringArgumentType.word()).executes(ctx -> createNote(ctx.getSource(), NoteRegime.HARD, "copper", StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "face"))))))))
                                 .then(literal("issue").then(argument("amount", StringArgumentType.word()).executes(ctx -> issueNote(ctx.getSource(), StringArgumentType.getString(ctx, "amount")))))
+                                .then(literal("unbacked").then(argument("amount", StringArgumentType.word()).executes(ctx -> unbackedNote(ctx.getSource(), StringArgumentType.getString(ctx, "amount")))))
                                 .then(literal("bankrupt").executes(ctx -> bankruptNote(ctx.getSource(), null))
                                         .then(argument("name", StringArgumentType.string()).executes(ctx -> bankruptNote(ctx.getSource(), StringArgumentType.getString(ctx, "name")))))
                                 .then(literal("withdraw")
@@ -633,6 +634,22 @@ public final class BankCommands {
         }
         BankRuntime.save();
         return ok(source, BankPhrases.noteIssued(books(), result.note(), amount));
+    }
+
+    private static int unbackedNote(ServerCommandSource source, String raw) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        BigInteger amount;
+        try {
+            amount = Amounts.parse(raw);
+        } catch (RuntimeException error) {
+            return fail(source, BankPhrases.amountProblem(error.getMessage()));
+        }
+        UUID player = source.getPlayerOrThrow().getUuid();
+        NoteTrade result = books().issuePersonalNoteUnbacked(player, amount);
+        if (!result.success()) {
+            return fail(source, BankPhrases.noteRejected(result.code()));
+        }
+        BankRuntime.save();
+        return ok(source, BankPhrases.noteUnbacked(books(), result.note(), amount));
     }
 
     private static int swapNote(ServerCommandSource source, String pay, String receive, String raw) throws com.mojang.brigadier.exceptions.CommandSyntaxException {

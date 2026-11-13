@@ -49,13 +49,13 @@
 
 界面是原版的大箱子。格子里的按钮是普通物品，拿不走；万一进了背包或掉在地上，也会被清掉。
 
-打开柜台先看到「储蓄」，也就是你自己的存款。底栏可以切换：储蓄、存入、取出、兑换、汇票、交易、个人发行。个人发行用来给自己的银行券记名和开价。「管理」只有管理员能看见，里面是央行的准备金、发行额、汇率，以及央行发行、注销和暂停兑付。普通玩家必须在网点才能开柜台；管理员用 `/bank admin` 可以在别处打开管理页。
+打开柜台先看到「储蓄」，也就是你自己的存款。底栏可以切换：储蓄、存入、取出、兑换、汇票、交易、个人发行。还没有个人银行券时，个人发行页只选择浮动、钉住或定额。名字和开价用指令填写，不在箱子里起名。「管理」只有管理员能看见，里面是央行的准备金、发行额、汇率，以及央行发行、注销和暂停兑付。普通玩家必须在网点才能开柜台；管理员用 `/bank admin` 可以在别处打开管理页。
 
 - **存入**：把铜锭、钻石，或纸质银行券放进空格。铜锭和钻石会让余额、准备金和发行额一起增加。银行券只是把纸上的余额存回账户，发行额不变。
 - **取出**：铜锭和钻石可以按 1、10、64 或「尽可能多」来取。库存不够会拒绝；选「尽可能多」时，会按实际库存少给。银行券取出来是原版纸，面额相同的叠成一摞，64 张是一摞。一次最多取 4096 张，再多可以用 `/bank withdraw note <amount>`，会给一张这个面额的纸，同样的面额还能继续叠。
 - **兑换**：先选付出哪种货币、得到哪种货币。按钮上写的是已经算上手续费的价格。
 - **汇票**：从余额里开出一本成书，可以写成持票人或仅本人。把书放进兑付格，钱会回到账户。
-- **发行**：给自己的个人银行券起名、定开价，准备金够了再发行。央行的增发、注销和暂停兑付在管理员的「管理」页。
+- **发行**：先选汇率制度，再用 `/bank note create` 起名和开价。记名之后可以按准备金发行，也可以虚发（不锁定准备金）。央行的增发、注销和暂停兑付在管理员的「管理」页。
 
 做成或被拒绝时，会在聊天里说一声，动作栏也会闪一下。中文客户端看到数据包那种说法，例如 `[银行] 存入 铜锭 ×64 成功 ｜余额：铜 64，钻 0，银行券 0`，取出和兑换也带上这笔余额。英文客户端看到对应的英文，例如 `[Bank] Deposited copper ×64 | Balance: Cu 64, Dia 0, bank note 0`。汇率本身不写进每一条聊天。
 
@@ -139,7 +139,7 @@ V = R + (L - R) × α / 1000
 
 ## 个人银行券
 
-这和存款、个人准备金、央行的银行券都不是一回事。每个人只能有一张。名字最多三个汉字或英文字母，不能和别人重名。创建时选定汇率制度，之后不能改。浮动按市价，钉住不跟买卖走，定额只兑面额上的那种实物。
+这和存款、个人准备金、央行的银行券都不是一回事。每个人只能有一张。名字最多三个汉字或英文字母，不能和别人重名，并且只能用下面的指令起名。创建时选定汇率制度，之后不能改。浮动按市价，钉住不跟买卖走，定额只兑面额上的那种实物。`/bank note issue` 会锁定个人准备金；`/bank note unbacked` 是虚发，不锁定准备金。
 
 ```
 /bank note create diamond <name> <par>
@@ -148,6 +148,7 @@ V = R + (L - R) × α / 1000
 /bank note create peg diamond|copper|note <name> <rate>
 /bank note create hard diamond|copper <name> <face>
 /bank note issue <amount>
+/bank note unbacked <amount>
 /bank note bankrupt
 /bank note bankrupt <name>
 /bank note rate
@@ -296,13 +297,13 @@ A world can have more than one outlet. The ledger is shared across the server, n
 
 The interface is a vanilla large chest. The buttons in the slots are ordinary items and can't be taken. If one ends up in an inventory or on the ground, it gets cleared.
 
-The counter opens on Savings, which is your own deposits. The bottom row switches pages: savings, deposit, withdraw, exchange, bills, personal trading, and personal issuance. Personal issuance is where you name your own note and set its opening price. Management is operators only: central reserves, amount issued, rates, and central-bank issuance, retirement, and the freeze control. Regular players can only open the counter at an outlet. Operators can use `/bank admin` to open Management elsewhere.
+The counter opens on Savings, which is your own deposits. The bottom row switches pages: savings, deposit, withdraw, exchange, bills, personal trading, and personal issuance. Before you have a personal note, that page only lets you choose floating, pegged, or hard convertibility. The name and the par are entered with a command, not in the chest. Management is operators only: central reserves, amount issued, rates, and central-bank issuance, retirement, and the freeze control. Regular players can only open the counter at an outlet. Operators can use `/bank admin` to open Management elsewhere.
 
 - **Deposit**: Put copper ingots, diamonds, or bank-note paper in an empty slot. Copper and diamonds increase your balance, the reserves, and the amount issued together. Bank-note paper only moves that balance back onto the account. The amount issued does not change.
 - **Withdraw**: Copper and diamonds can be taken as 1, 10, 64, or "as many as possible". If the stock doesn't have enough, the request is refused; "as many as possible" gives you whatever is actually in stock. Bank notes come out as vanilla paper. The same face value stacks, and 64 sheets are one pile. One withdrawal gives at most 4096 sheets. For more, `/bank withdraw note <amount>` gives a single sheet of that face, and another withdrawal of the same face stacks with it.
 - **Exchange**: First pick what you pay and what you get. The button already shows the price with the fee included.
 - **Bills**: Issue a written book from your balance, payable to bearer or to yourself only. Put the book in the redeem slot and the money goes back to the account.
-- **Issuance**: Name your personal note, set its opening price, and issue it once your personal reserve covers the amount. Central issue, retire, and freeze live on the operator Management page.
+- **Issuance**: Choose the exchange-rate regime, then name the note and set its par with `/bank note create`. After that you can issue against reserves, or issue unbacked without locking reserves. Central issue, retire, and freeze live on the operator Management page.
 
 Successful or refused actions get a chat message and a flash on the action bar. A Chinese client sees the datapack wording, for example `[银行] 存入 铜锭 ×64 成功 ｜余额：铜 64，钻 0，银行券 0`. Withdrawals and exchanges include that balance too. An English client sees the matching English line, for example `[Bank] Deposited copper ×64 | Balance: Cu 64, Dia 0, bank note 0`. The rate itself is not repeated in every chat line.
 
@@ -386,7 +387,7 @@ Personal reserves are a separate ledger reserved for later personal currency iss
 
 ## Personal notes
 
-These are not savings, not the personal reserve, and not the central bank note. Each player can have one. The name is at most three Chinese characters or English letters, and it can't match someone else's. The exchange-rate regime is chosen at creation and is not switched later. Floating follows the market, a peg ignores trades, and hard convertibility pays only the face commodity.
+These are not savings, not the personal reserve, and not the central bank note. Each player can have one. The name is at most three Chinese characters or English letters, it can't match someone else's, and it is set only with the command below. The exchange-rate regime is chosen at creation and is not switched later. Floating follows the market, a peg ignores trades, and hard convertibility pays only the face commodity. `/bank note issue` locks personal reserves; `/bank note unbacked` does not.
 
 ```
 /bank note create diamond <name> <par>
@@ -395,6 +396,7 @@ These are not savings, not the personal reserve, and not the central bank note. 
 /bank note create peg diamond|copper|note <name> <rate>
 /bank note create hard diamond|copper <name> <face>
 /bank note issue <amount>
+/bank note unbacked <amount>
 /bank note bankrupt
 /bank note bankrupt <name>
 /bank note rate

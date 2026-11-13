@@ -409,6 +409,17 @@ public final class BankPhrases {
         return line(Tone.GREEN, "已导入 " + count + " 条记分板余额（每人每种货币只导入一次）", "Imported " + count + " scoreboard balances (once per player per currency)");
     }
 
+    public static Spoken noteCreateHint(String regime) {
+        String command = switch (regime == null ? "" : regime) {
+            case "peg" -> "/bank note create peg diamond <name> <rate>";
+            case "hard" -> "/bank note create hard diamond <name> <face>";
+            default -> "/bank note create float diamond <name> <par>";
+        };
+        return line(Tone.AQUA,
+                "请用指令起名：" + command + "。名字最多三个汉字或英文字母，不能和别人重复。",
+                "Name it with " + command + ". At most three Chinese characters or English letters, and the name must be unique.");
+    }
+
     public static Spoken noteNamed(PersonalNote note) {
         String par = CompactFormat.format(note.par()) + " " + anchorZh(note.reserveCurrency());
         String parEn = CompactFormat.format(note.par()) + " " + anchorEn(note.reserveCurrency());
@@ -423,6 +434,14 @@ public final class BankPhrases {
             case FLOAT -> "Personal note \"" + note.name() + "\" is registered at " + parEn + " each. You can issue once your personal reserve covers it.";
         };
         return line(Tone.AQUA, zh, en);
+    }
+
+    public static Spoken noteUnbacked(BankBooks books, PersonalNote note, BigInteger amount) {
+        return line(Tone.RED,
+                "虚发「" + note.name() + "」×" + CompactFormat.format(amount)
+                        + "。没有锁定准备金。流通 M1 " + CompactFormat.format(note.circulation()) + "。",
+                "Issued \"" + note.name() + "\" ×" + CompactFormat.format(amount)
+                        + " with no reserve. M1 " + CompactFormat.format(note.circulation()) + ".");
     }
 
     public static Spoken noteIssued(BankBooks books, PersonalNote note, BigInteger amount) {

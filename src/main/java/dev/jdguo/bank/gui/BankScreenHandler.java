@@ -13,7 +13,6 @@ import dev.jdguo.bank.ledger.Supply;
 import dev.jdguo.bank.ledger.TxResult;
 import dev.jdguo.bank.market.NoteRegime;
 import dev.jdguo.bank.market.NoteTrade;
-import dev.jdguo.bank.market.PersonalMarket;
 import dev.jdguo.bank.market.PersonalNote;
 import dev.jdguo.bank.market.Redemption;
 import dev.jdguo.bank.market.SwapTrade;
@@ -512,13 +511,11 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         inventory.setStack(4, marker(Items.NETHER_STAR,
                 Text.literal("个人发行").formatted(Formatting.YELLOW, Formatting.BOLD),
                 List.of(Text.literal("Personal issuance").formatted(Formatting.GRAY),
-                        Text.literal("个人银行券。特殊数量用 /bank note").formatted(Formatting.DARK_GRAY)),
+                        Text.literal("先选汇率，再用 /bank note create 起名").formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
         PersonalNote own = books.personalNote(uuid);
-        String suggested = PersonalMarket.shortName(owner.getName().getString());
-        String who = suggested.isBlank() ? "请用指令起名" : "名字 " + suggested;
         if (own == null) {
-            paintCreate(who);
+            paintCreate();
             return;
         }
         inventory.setStack(10, marker(Items.PAPER,
@@ -539,12 +536,23 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                     "noop", 1));
             return;
         }
+        inventory.setStack(16, marker(Items.NAME_TAG,
+                Text.literal(regimeLabel(own)).formatted(Formatting.AQUA),
+                List.of(Text.literal("开价 " + CompactFormat.format(own.par()) + " " + anchorLabel(own.reserveCurrency())).formatted(Formatting.WHITE),
+                        Text.literal("Par " + CompactFormat.format(own.par()) + " " + anchorEn(own.reserveCurrency())).formatted(Formatting.DARK_GRAY)),
+                "noop", 1));
         for (int i = 0; i < NOTE_BUTTONS.length; i++) {
             BigInteger amount = NOTE_BUTTONS[i];
             inventory.setStack(19 + i, marker(Items.GOLD_NUGGET,
                     Text.literal("发行 ×" + amount).formatted(Formatting.GREEN),
-                    List.of(Text.literal("Issue ×" + amount).formatted(Formatting.GRAY)),
+                    List.of(Text.literal("按准备金发行，会锁定抵押").formatted(Formatting.GRAY),
+                            Text.literal("Reserve-backed. Locks collateral.").formatted(Formatting.DARK_GRAY)),
                     "pn:issue:" + amount, amount.intValue()));
+            inventory.setStack(28 + i, marker(Items.REDSTONE,
+                    Text.literal("虚发 ×" + amount).formatted(Formatting.RED),
+                    List.of(Text.literal("无准备金发行，不锁定抵押").formatted(Formatting.RED),
+                            Text.literal("Unbacked. No reserve is locked.").formatted(Formatting.DARK_GRAY)),
+                    "pn:unbacked:" + amount, amount.intValue()));
         }
         inventory.setStack(25, marker(Items.BARRIER,
                 Text.literal("宣告破产").formatted(Formatting.DARK_RED),
@@ -728,28 +736,18 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         }
         if (action.startsWith("pn:regime:")) {
             createRegime = action.substring("pn:regime:".length());
+            tell(player, BankPhrases.noteCreateHint(createRegime));
             return;
         }
-        if (action.startsWith("pn:create:")) {
-            String[] parts = action.split(":");
-            String name = PersonalMarket.shortName(player.getName().getString());
-            NoteTrade result;
-            if (parts.length == 4 && ("d".equals(parts[2]) || "c".equals(parts[2]))) {
-                result = books.createPersonalNote(uuid, name, "c".equals(parts[2]), new BigInteger(parts[3]));
-            } else {
-                NoteRegime regime = switch (parts[2]) {
-                    case "peg" -> NoteRegime.PEG;
-                    case "hard" -> NoteRegime.HARD;
-                    default -> NoteRegime.FLOAT;
-                };
-                result = books.createPersonalNote(uuid, name, regime, parts[3], new BigInteger(parts[4]));
-            }
+        if (action.startsWith("pn:unbacked:")) {
+            BigInteger amount = new BigInteger(action.substring("pn:unbacked:".length()));
+            NoteTrade result = books.issuePersonalNoteUnbacked(uuid, amount);
             if (!result.success()) {
                 tell(player, BankPhrases.noteRejected(result.code()));
                 return;
             }
             BankRuntime.save();
-            tell(player, BankPhrases.noteNamed(result.note()));
+            tell(player, BankPhrases.noteUnbacked(books, result.note(), amount));
             return;
         }
         if (action.startsWith("pn:issue:")) {
@@ -1216,43 +1214,22 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         tell(player, BankPhrases.noteRedeem(result, BankRuntime.books(), player.getUuid()));
     }
 
-    private void paintCreate(String who) {
+    private void paintCreate() {
         inventory.setStack(10, marker(Items.EMERALD,
                 Text.literal("浮动").formatted("float".equals(createRegime) ? Formatting.AQUA : Formatting.WHITE),
                 List.of(Text.literal("Market price").formatted(Formatting.GRAY),
-                        Text.literal(who).formatted(Formatting.DARK_GRAY)),
+                        Text.literal("选定后用指令起名").formatted(Formatting.DARK_GRAY)),
                 "pn:regime:float", 1));
         inventory.setStack(11, marker(Items.GOLD_INGOT,
                 Text.literal("钉住").formatted("peg".equals(createRegime) ? Formatting.AQUA : Formatting.WHITE),
-                List.of(Text.literal("Fixed peg").formatted(Formatting.GRAY)),
+                List.of(Text.literal("Fixed peg").formatted(Formatting.GRAY),
+                        Text.literal("选定后用指令起名").formatted(Formatting.DARK_GRAY)),
                 "pn:regime:peg", 1));
         inventory.setStack(12, marker(Items.DIAMOND,
                 Text.literal("定额兑付").formatted("hard".equals(createRegime) ? Formatting.AQUA : Formatting.WHITE),
-                List.of(Text.literal("Face value only").formatted(Formatting.GRAY)),
+                List.of(Text.literal("Face value only").formatted(Formatting.GRAY),
+                        Text.literal("选定后用指令起名").formatted(Formatting.DARK_GRAY)),
                 "pn:regime:hard", 1));
-        if ("peg".equals(createRegime)) {
-            inventory.setStack(19, createButton("钉住 1 钻", "1 diamond", "pn:create:peg:diamond:1", 1));
-            inventory.setStack(20, createButton("钉住 10 钻", "10 diamonds", "pn:create:peg:diamond:10", 10));
-            inventory.setStack(21, createButton("钉住 1000 铜", "1000 copper", "pn:create:peg:copper:1000", 1));
-            inventory.setStack(23, createButton("钉住 1 银行券", "1 central note", "pn:create:peg:note:1", 1));
-            return;
-        }
-        if ("hard".equals(createRegime)) {
-            inventory.setStack(19, createButton("面额 1 钻", "Face 1 diamond", "pn:create:hard:diamond:1", 1));
-            inventory.setStack(20, createButton("面额 10 钻", "Face 10 diamonds", "pn:create:hard:diamond:10", 10));
-            inventory.setStack(21, createButton("面额 1000 铜", "Face 1000 copper", "pn:create:hard:copper:1000", 1));
-            return;
-        }
-        inventory.setStack(19, createButton("开价 1 钻", "Par 1 diamond", "pn:create:float:diamond:1", 1));
-        inventory.setStack(20, createButton("开价 10 钻", "Par 10 diamonds", "pn:create:float:diamond:10", 10));
-        inventory.setStack(21, createButton("开价 1000 铜", "Par 1000 copper", "pn:create:float:copper:1000", 1));
-    }
-
-    private ItemStack createButton(String zh, String en, String action, int count) {
-        return marker(Items.DIAMOND,
-                Text.literal(zh).formatted(Formatting.AQUA),
-                List.of(Text.literal(en).formatted(Formatting.DARK_GRAY)),
-                action, count);
     }
 
     private static String regimeLabel(PersonalNote note) {
@@ -1289,6 +1266,14 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
             case "copper" -> "铜";
             case "note" -> "银行券";
             default -> "钻";
+        };
+    }
+
+    private static String anchorEn(String anchor) {
+        return switch (anchor) {
+            case "copper" -> "copper";
+            case "note" -> "central note";
+            default -> "diamond";
         };
     }
 

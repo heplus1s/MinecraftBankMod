@@ -1298,6 +1298,23 @@ public final class BankBooks {
         return NoteTrade.ok(note, BigInteger.ZERO, BigInteger.ZERO);
     }
 
+    /** Adds circulation with no reserve lock. Personal and central commodity stocks stay put. */
+    public NoteTrade issuePersonalNoteUnbacked(UUID issuer, BigInteger amount) {
+        PersonalNote note = personalNote(issuer);
+        if (note == null) {
+            return NoteTrade.fail("none");
+        }
+        if (note.bankrupt()) {
+            return NoteTrade.fail("bankrupt");
+        }
+        if (amount == null || amount.signum() <= 0) {
+            return NoteTrade.fail("par");
+        }
+        note.setCirculation(note.circulation().add(amount));
+        addHolding(note.id(), issuer, amount);
+        return NoteTrade.ok(note, BigInteger.ZERO, BigInteger.ZERO);
+    }
+
     public NoteTrade buyPersonalNote(UUID buyer, String name, BigInteger amount) {
         return tradePersonalNote(buyer, name, amount, true);
     }

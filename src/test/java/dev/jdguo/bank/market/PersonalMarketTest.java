@@ -33,6 +33,24 @@ class PersonalMarketTest {
     }
 
     @Test
+    void unbackedIssueDoesNotLockAReserve() {
+        BankBooks books = BankBooks.create(BankConfig.defaults());
+        books.createPersonalNote(issuer, "泉", false, BigInteger.ONE);
+        BigInteger diamonds = books.supply("diamond").reserve();
+
+        assertEquals("reserve", books.issuePersonalNote(issuer, BigInteger.TEN).code());
+        assertTrue(books.issuePersonalNoteUnbacked(issuer, BigInteger.TEN).success());
+
+        PersonalNote note = books.personalNote(issuer);
+        assertEquals(BigInteger.TEN, note.circulation());
+        assertEquals(BigInteger.ZERO, note.locked());
+        assertEquals(BigInteger.TEN, books.personalHolding(note.id(), issuer));
+        assertEquals(BigInteger.ZERO, books.personalReserve(issuer, "diamond"));
+        assertEquals(diamonds, books.supply("diamond").reserve());
+        books.checkInvariants();
+    }
+
+    @Test
     void issueNeedsPersonalReservesAndOpensAtOneDiamond() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         assertEquals(0, BigDecimal.ONE.compareTo(books.unitsPer("note", "diamond")));
