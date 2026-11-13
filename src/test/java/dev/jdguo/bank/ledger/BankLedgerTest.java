@@ -126,6 +126,8 @@ class BankLedgerTest {
     @Test
     void amountsParseSuffixesAndScientificNotation() {
         assertEquals(new BigInteger("1500"), Amounts.parse("1.5k"));
+        assertEquals(new BigInteger("1000"), Amounts.parse("1_000"));
+        assertEquals(new BigInteger("2000000"), Amounts.parse("2m"));
         assertEquals(new BigInteger("1000000"), Amounts.parse("1_000_000"));
         assertEquals(BigInteger.TEN.pow(40), Amounts.parse("1e40"));
     }

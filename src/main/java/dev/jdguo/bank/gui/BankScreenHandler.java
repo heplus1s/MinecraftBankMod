@@ -8,6 +8,9 @@ import dev.jdguo.bank.ledger.BankBooks;
 import dev.jdguo.bank.ledger.CompactFormat;
 import dev.jdguo.bank.ledger.Supply;
 import dev.jdguo.bank.ledger.TxResult;
+import dev.jdguo.bank.market.NoteTrade;
+import dev.jdguo.bank.market.PersonalMarket;
+import dev.jdguo.bank.market.PersonalNote;
 import dev.jdguo.bank.text.BankPhrases;
 import dev.jdguo.bank.text.BankTalk;
 import dev.jdguo.bank.text.Spoken;
@@ -30,13 +33,14 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Server-side subclass of the vanilla 9×6 chest. The client only sees
  * {@link ScreenHandlerType#GENERIC_9X6}. Button items never leave the server inventory.
  */
 public final class BankScreenHandler extends GenericContainerScreenHandler {
-    public enum Page { SAVINGS, DEPOSIT, WITHDRAW, EXCHANGE, CHECKS, MANAGEMENT, ADMIN }
+    public enum Page { SAVINGS, DEPOSIT, WITHDRAW, EXCHANGE, CHECKS, MARKET, MANAGEMENT, ADMIN }
 
     private final SimpleInventory inventory;
     private final ServerPlayerEntity owner;
@@ -47,6 +51,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
     private int receiveIndex = 1;
     private int checkIndex;
     private int adminIndex;
+    private int marketIndex;
     private boolean payeeSelf;
     private int paintTick = -100;
 
@@ -267,6 +272,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                 case "withdraw" -> changePage(player, Page.WITHDRAW);
                 case "exchange" -> changePage(player, Page.EXCHANGE);
                 case "checks" -> changePage(player, Page.CHECKS);
+                case "market" -> changePage(player, Page.MARKET);
                 case "admin" -> {
                     if (player.hasPermissionLevel(2)) {
                         changePage(player, Page.ADMIN);
@@ -278,6 +284,10 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                 default -> {
                 }
             }
+            return;
+        }
+        if (action.startsWith("pn:")) {
+            personalAction(player, action);
             return;
         }
         BankBooks books = BankRuntime.books();
@@ -407,6 +417,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
             case WITHDRAW -> paintWithdraw();
             case EXCHANGE -> paintExchange();
             case CHECKS -> paintChecks();
+            case MARKET -> paintMarket();
             case MANAGEMENT -> {
                 if (owner.hasPermissionLevel(2)) {
                     paintManagement();
@@ -431,12 +442,145 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         nav(47, Items.CHEST, "取出", "nav:withdraw");
         nav(48, Items.EMERALD, "兑换", "nav:exchange");
         nav(49, Items.WRITABLE_BOOK, "汇票", "nav:checks");
+        nav(50, Items.NAME_TAG, "个券", "nav:market");
         boolean op = owner.hasPermissionLevel(2);
         if (op) {
             nav(51, Items.RECOVERY_COMPASS, "管理", "nav:management");
             nav(52, Items.NETHER_STAR, "信贷", "nav:admin");
         }
         nav(53, Items.BARRIER, "关闭", "nav:close");
+    }
+
+    private static final BigInteger[] NOTE_BUTTONS = {
+            BigInteger.ONE, BigInteger.TEN, BigInteger.valueOf(64), BigInteger.valueOf(100)
+    };
+
+    private void paintMarket() {
+        BankBooks books = BankRuntime.books();
+        UUID uuid = owner.getUuid();
+        inventory.setStack(4, marker(Items.NAME_TAG,
+                Text.literal("个人交易").formatted(Formatting.YELLOW, Formatting.BOLD),
+                List.of(Text.literal("Personal notes").formatted(Formatting.GRAY),
+                        Text.literal("特殊数量用 /bank note").formatted(Formatting.DARK_GRAY)),
+                "noop", 1));
+        PersonalNote own = books.personalNote(uuid);
+        if (own == null) {
+            String suggested = PersonalMarket.shortName(owner.getName().getString());
+            String who = suggested.isBlank() ? "请用指令起名" : "名字 " + suggested;
+            inventory.setStack(10, marker(Items.DIAMOND,
+                    Text.literal("开价 1 钻").formatted(Formatting.AQUA),
+                    List.of(Text.literal(who).formatted(Formatting.GRAY),
+                            Text.literal("Par 1 diamond").formatted(Formatting.DARK_GRAY)),
+                    "pn:create:d:1", 1));
+            inventory.setStack(11, marker(Items.DIAMOND,
+                    Text.literal("开价 10 钻").formatted(Formatting.AQUA),
+                    List.of(Text.literal(who).formatted(Formatting.GRAY),
+                            Text.literal("Par 10 diamonds").formatted(Formatting.DARK_GRAY)),
+                    "pn:create:d:10", 10));
+            inventory.setStack(12, marker(Items.GOLD_INGOT,
+                    Text.literal("开价 1000 铜").formatted(Formatting.GOLD),
+                    List.of(Text.literal(who).formatted(Formatting.GRAY),
+                            Text.literal("Par 1000 copper").formatted(Formatting.DARK_GRAY)),
+                    "pn:create:c:1000", 1));
+        } else {
+            inventory.setStack(10, marker(Items.PAPER,
+                    Text.literal("「" + own.name() + "」 " + CompactFormat.formatRate(books.personalDiamondPrice(own)) + " 钻")
+                            .formatted(Formatting.YELLOW),
+                    List.of(Text.literal("Personal note").formatted(Formatting.GRAY),
+                            Text.literal("持有 " + CompactFormat.format(books.personalHolding(own.id(), uuid))).formatted(Formatting.WHITE),
+                            Text.literal("M1 " + CompactFormat.format(own.circulation())).formatted(Formatting.DARK_GRAY)),
+                    "noop", 1));
+            for (int i = 0; i < NOTE_BUTTONS.length; i++) {
+                BigInteger amount = NOTE_BUTTONS[i];
+                inventory.setStack(19 + i, marker(Items.GOLD_NUGGET,
+                        Text.literal("发行 ×" + amount).formatted(Formatting.GREEN),
+                        List.of(Text.literal("Issue ×" + amount).formatted(Formatting.GRAY)),
+                        "pn:issue:" + amount, amount.intValue()));
+            }
+        }
+        List<PersonalNote> notes = new ArrayList<>(books.personalNotes());
+        if (notes.isEmpty()) {
+            inventory.setStack(28, marker(Items.BARRIER,
+                    Text.literal("还没有个人银行券").formatted(Formatting.RED),
+                    List.of(Text.literal("No personal notes yet").formatted(Formatting.GRAY)),
+                    "noop", 1));
+            return;
+        }
+        marketIndex = Math.floorMod(marketIndex, notes.size());
+        PersonalNote listed = notes.get(marketIndex);
+        inventory.setStack(28, marker(Items.EMERALD,
+                Text.literal("交易 「" + listed.name() + "」").formatted(Formatting.GREEN),
+                List.of(Text.literal("Trade").formatted(Formatting.GRAY),
+                        Text.literal("现价 " + CompactFormat.formatRate(books.personalDiamondPrice(listed)) + " 钻").formatted(Formatting.WHITE),
+                        Text.literal("点击切换").formatted(Formatting.DARK_GRAY)),
+                "pn:cycle", 1));
+        for (int i = 0; i < NOTE_BUTTONS.length; i++) {
+            BigInteger amount = NOTE_BUTTONS[i];
+            inventory.setStack(29 + i, marker(Items.LIME_DYE,
+                    Text.literal("买入 ×" + amount).formatted(Formatting.GREEN),
+                    List.of(Text.literal("Buy ×" + amount).formatted(Formatting.GRAY)),
+                    "pn:buy:" + amount, amount.intValue()));
+            inventory.setStack(38 + i, marker(Items.RED_DYE,
+                    Text.literal("卖出 ×" + amount).formatted(Formatting.DARK_RED),
+                    List.of(Text.literal("Sell ×" + amount).formatted(Formatting.GRAY)),
+                    "pn:sell:" + amount, amount.intValue()));
+        }
+    }
+
+    private void personalAction(ServerPlayerEntity player, String action) {
+        BankBooks books = BankRuntime.books();
+        UUID uuid = player.getUuid();
+        if ("pn:cycle".equals(action)) {
+            if (!books.personalNotes().isEmpty()) {
+                marketIndex++;
+            }
+            return;
+        }
+        if (action.startsWith("pn:create:")) {
+            String[] parts = action.split(":");
+            boolean copper = "c".equals(parts[2]);
+            BigInteger par = new BigInteger(parts[3]);
+            String name = PersonalMarket.shortName(player.getName().getString());
+            NoteTrade result = books.createPersonalNote(uuid, name, copper, par);
+            if (!result.success()) {
+                tell(player, BankPhrases.noteRejected(result.code()));
+                return;
+            }
+            BankRuntime.save();
+            tell(player, BankPhrases.noteNamed(result.note()));
+            return;
+        }
+        if (action.startsWith("pn:issue:")) {
+            BigInteger amount = new BigInteger(action.substring("pn:issue:".length()));
+            NoteTrade result = books.issuePersonalNote(uuid, amount);
+            if (!result.success()) {
+                tell(player, BankPhrases.noteRejected(result.code()));
+                return;
+            }
+            BankRuntime.save();
+            tell(player, BankPhrases.noteIssued(books, result.note(), amount));
+            return;
+        }
+        boolean buy = action.startsWith("pn:buy:");
+        if (buy || action.startsWith("pn:sell:")) {
+            List<PersonalNote> notes = new ArrayList<>(books.personalNotes());
+            if (notes.isEmpty()) {
+                tell(player, BankPhrases.noteRejected("none"));
+                return;
+            }
+            marketIndex = Math.floorMod(marketIndex, notes.size());
+            PersonalNote listed = notes.get(marketIndex);
+            BigInteger amount = new BigInteger(action.substring(action.lastIndexOf(':') + 1));
+            NoteTrade result = buy
+                    ? books.buyPersonalNote(uuid, listed.name(), amount)
+                    : books.sellPersonalNote(uuid, listed.name(), amount);
+            if (!result.success()) {
+                tell(player, BankPhrases.noteRejected(result.code()));
+                return;
+            }
+            BankRuntime.save();
+            tell(player, BankPhrases.noteTrade(buy, result.note().name(), amount, result.centralPaid(), result.copperPaid(), books, uuid));
+        }
     }
 
     private void paintSavings() {

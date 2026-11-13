@@ -18,6 +18,8 @@ class PersonalMarketTest {
 
     @Test
     void namesAreAtMostThreeLettersOrHanAndMustBeUnique() {
+        assertEquals("Ste", PersonalMarket.shortName("Steve"));
+        assertEquals("泉号", PersonalMarket.shortName("泉12号"));
         assertTrue(PersonalMarket.validName("泉"));
         assertTrue(PersonalMarket.validName("AbC"));
         assertFalse(PersonalMarket.validName("ABCD"));

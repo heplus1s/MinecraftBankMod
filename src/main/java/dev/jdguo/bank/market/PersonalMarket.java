@@ -24,6 +24,25 @@ public final class PersonalMarket {
 
     private PersonalMarket() {}
 
+    /** Up to three Han characters or English letters taken from a player name, for the chest buttons. */
+    public static String shortName(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        raw.codePoints().forEach(cp -> {
+            if (sb.codePointCount(0, sb.length()) >= 3) {
+                return;
+            }
+            boolean letter = (cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z');
+            boolean han = Character.UnicodeScript.of(cp) == Character.UnicodeScript.HAN;
+            if (letter || han) {
+                sb.appendCodePoint(cp);
+            }
+        });
+        return sb.toString();
+    }
+
     public static boolean validName(String name) {
         if (name == null) {
             return false;

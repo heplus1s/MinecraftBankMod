@@ -149,7 +149,9 @@ V = R + (L - R) × α / 1000
 /bank note sell <name> <amount>
 ```
 
-`<par>` 是一张券开局兑多少钻，或多少铜。发行前，个人准备金至少要盖住「已发行加这次要发的数量 × 开价 × 覆盖倍数」。覆盖倍数默认是 1，管理员用 `/bank note coverage <ratio>` 改。
+`<par>` 和 `<amount>` 可以用 `1_000`、`1.5k`、`2m` 这种写法，适合箱子按钮上没有的数量。箱子界面底栏有「个券」：常见开价是 1 钻、10 钻、1000 铜，名字用你游戏名里前三个汉字或字母；发行、买入、卖出的按钮是 1、10、64、100。
+
+发行前，个人准备金至少要盖住「已发行加这次要发的数量 × 开价 × 覆盖倍数」。覆盖倍数默认是 1，管理员用 `/bank note coverage <ratio>` 改。
 
 买卖的计价是央行银行券。开局 1 张央行银行券 = 1 钻。不够整张，或者钻石那边凑不齐，就按 1 钻 = 1,000 铜用铜锭找零。
 
@@ -369,7 +371,9 @@ These are not savings, not the personal reserve, and not the central bank note. 
 /bank note sell <name> <amount>
 ```
 
-`<par>` is how many diamonds, or how many copper, one note starts at. Before issuing, the personal reserve has to cover `(already issued + this issue) × par × coverage`. Coverage defaults to 1. Operators change it with `/bank note coverage <ratio>`.
+`<par>` and `<amount>` accept `1_000`, `1.5k`, and `2m`, for amounts the chest buttons don't show. The chest has a Personal notes tab: common opening prices are 1 diamond, 10 diamonds, or 1000 copper, and the name is the first three Chinese characters or letters of your player name. Issue, buy, and sell buttons are 1, 10, 64, and 100.
+
+Before issuing, the personal reserve has to cover `(already issued + this issue) × par × coverage`. Coverage defaults to 1. Operators change it with `/bank note coverage <ratio>`.
 
 Trades are priced in the central bank note. At the start, 1 central bank note = 1 diamond. Anything short of a whole note, or a diamond the vault can't pay, is settled in copper at 1 diamond = 1,000 copper.
 
