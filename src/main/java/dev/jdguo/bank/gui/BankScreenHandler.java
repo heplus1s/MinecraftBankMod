@@ -99,6 +99,14 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         paint();
     }
 
+    public String outletName() {
+        return outletName;
+    }
+
+    public boolean remoteAdmin() {
+        return remoteAdmin;
+    }
+
     public void tick() {
         int now = owner.getServer().getTicks();
         if (now - paintTick >= 20) {
@@ -108,6 +116,9 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
 
     @Override
     public boolean canUse(PlayerEntity player) {
+        if (player instanceof ServerPlayerEntity serverPlayer && dev.jdguo.bank.net.BankUiNetwork.wantsUi(serverPlayer)) {
+            return false;
+        }
         if (remoteAdmin && player.hasPermissionLevel(2)) {
             return true;
         }

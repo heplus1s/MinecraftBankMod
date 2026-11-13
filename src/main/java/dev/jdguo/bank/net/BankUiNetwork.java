@@ -31,7 +31,15 @@ public final class BankUiNetwork {
     public static void register() {
         ServerPlayNetworking.registerGlobalReceiver(HELLO, (server, player, handler, buf, response) -> {
             int version = buf.readVarInt();
-            server.execute(() -> versions.put(player.getUuid(), version));
+            server.execute(() -> {
+                versions.put(player.getUuid(), version);
+                if (version == PROTOCOL && player.currentScreenHandler instanceof dev.jdguo.bank.gui.BankScreenHandler chest) {
+                    String outlet = chest.outletName();
+                    boolean admin = chest.remoteAdmin();
+                    player.closeHandledScreen();
+                    open(player, outlet, admin);
+                }
+            });
         });
         ServerPlayNetworking.registerGlobalReceiver(ACTION, (server, player, handler, buf, response) -> {
             String action = buf.readString(200);

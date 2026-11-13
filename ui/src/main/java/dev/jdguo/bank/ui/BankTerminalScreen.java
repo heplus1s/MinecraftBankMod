@@ -168,8 +168,8 @@ public final class BankTerminalScreen extends Screen {
     private String categoryTitle() {
         return switch (category) {
             case "savings" -> "储蓄";
-            case "deposit" -> "存入";
-            case "withdraw" -> "取出";
+            case "deposit" -> "划拨存入";
+            case "withdraw" -> "划拨取出";
             case "exchange" -> step == 0 ? "兑换 · 付出" : "兑换 · 得到";
             case "checks" -> "汇票";
             case "market" -> step == 0 ? "交易 · 选择银行券" : "交易 · 方式";
@@ -193,16 +193,6 @@ public final class BankTerminalScreen extends Screen {
                 rows.add(new ChoiceListWidget.Choice("management", "管理"));
             }
             return rows;
-        }
-        if ("deposit".equals(category) && step == 0) {
-            return List.of(
-                    new ChoiceListWidget.Choice("chest", "打开箱子存入"),
-                    new ChoiceListWidget.Choice("transfer", "划拨存入"));
-        }
-        if ("withdraw".equals(category) && step == 0) {
-            return List.of(
-                    new ChoiceListWidget.Choice("chest", "打开箱子取出"),
-                    new ChoiceListWidget.Choice("transfer", "划拨取出"));
         }
         if ("market".equals(category) && step == 1) {
             return List.of(
@@ -296,16 +286,6 @@ public final class BankTerminalScreen extends Screen {
             return;
         }
         if ("deposit".equals(category) || "withdraw".equals(category)) {
-            if ("chest".equals(picked.id())) {
-                BankUiClient.send("chest " + category);
-                close();
-                return;
-            }
-            if ("transfer".equals(picked.id())) {
-                step = 1;
-                clearAndInit();
-                return;
-            }
             pickedLabel = picked.label();
             level = Level.FORM;
             anchorId = picked.id();

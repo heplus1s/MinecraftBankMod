@@ -30,8 +30,12 @@ public final class BankMenus {
                 : BankScreenHandler.Page.SAVINGS);
     }
 
-    /** Vanilla 9×6 chest, opened on a chosen page. Used directly and by the optional UI for item moves. */
+    /** Vanilla 9×6 chest. Clients that asked for the optional UI never receive it. */
     public static void openChest(ServerPlayerEntity player, String titleName, boolean remoteAdmin, BankScreenHandler.Page page) {
+        if (BankUiNetwork.wantsUi(player)) {
+            BankUiNetwork.open(player, titleName, remoteAdmin);
+            return;
+        }
         SimpleInventory inventory = new SimpleInventory(54);
         Text title = Text.literal("中央银行 · " + titleName).formatted(Formatting.AQUA);
         player.openHandledScreen(new SimpleNamedScreenHandlerFactory(

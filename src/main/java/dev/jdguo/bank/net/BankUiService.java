@@ -1,7 +1,5 @@
 package dev.jdguo.bank.net;
 
-import dev.jdguo.bank.gui.BankMenus;
-import dev.jdguo.bank.gui.BankScreenHandler;
 import dev.jdguo.bank.instruments.CheckItems;
 import dev.jdguo.bank.instruments.NotePaper;
 import dev.jdguo.bank.instruments.PaperTake;
@@ -44,10 +42,6 @@ public final class BankUiService {
             return;
         }
         String[] parts = raw.trim().split(" ", 6);
-        if ("chest".equals(parts[0])) {
-            openChest(player, session, parts);
-            return;
-        }
         BankBooks books = BankRuntime.books();
         switch (parts[0]) {
             case "page" -> page(player, session, parts);
@@ -83,19 +77,6 @@ public final class BankUiService {
         if (BankUiNetwork.session(player) != null) {
             BankUiNetwork.sync(player);
         }
-    }
-
-    private static void openChest(ServerPlayerEntity player, BankUiNetwork.Session session, String[] parts) {
-        BankScreenHandler.Page page = BankScreenHandler.Page.SAVINGS;
-        if (parts.length > 1 && "deposit".equals(parts[1])) {
-            page = BankScreenHandler.Page.DEPOSIT;
-        } else if (parts.length > 1 && "withdraw".equals(parts[1])) {
-            page = BankScreenHandler.Page.WITHDRAW;
-        }
-        String outlet = session.outlet;
-        boolean admin = session.admin;
-        BankUiNetwork.forget(player);
-        BankMenus.openChest(player, outlet, admin, page);
     }
 
     private static void page(ServerPlayerEntity player, BankUiNetwork.Session session, String[] parts) {

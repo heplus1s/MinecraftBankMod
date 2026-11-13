@@ -110,7 +110,11 @@ public final class BankMod implements ModInitializer {
             }
             for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
                 if (player.currentScreenHandler instanceof BankScreenHandler handler) {
-                    handler.tick();
+                    if (dev.jdguo.bank.net.BankUiNetwork.wantsUi(player)) {
+                        player.closeHandledScreen();
+                    } else {
+                        handler.tick();
+                    }
                 }
                 Box box = player.getBoundingBox().expand(8.0);
                 for (ItemEntity item : player.getWorld().getEntitiesByClass(ItemEntity.class, box,
