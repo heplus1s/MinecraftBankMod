@@ -64,7 +64,7 @@ class InterestTest {
     }
 
     @Test
-    void centralM1IncludingPaperEarnsInTheBook() {
+    void paperCountsInM1ButOnlyBookEntryEarnsInterest() {
         BankBooks books = fund(new BigInteger("20"));
         books.creditUnbacked(saver, "note", new BigInteger("73000"));
         assertTrue(books.issueCentralPaper(saver, new BigInteger("36500")).result().success());
@@ -72,11 +72,12 @@ class InterestTest {
         books.accrueInterest(0);
         BankBooks.InterestDay day = books.accrueInterest(1);
 
-        assertEquals(new BigInteger("36504"), books.balance(saver, "note"));
+        assertEquals(new BigInteger("36502"), books.balance(saver, "note"));
         assertEquals(new BigInteger("36500"), books.centralM0());
-        assertEquals(new BigInteger("4"), day.credits().get(0).amount());
+        assertEquals(new BigInteger("73002"), books.centralM1());
+        assertEquals(new BigInteger("2"), day.credits().get(0).amount());
         assertEquals(issuance, books.supply("diamond").reserve());
-        assertEquals(new BigInteger("16"), books.interestPool("note"));
+        assertEquals(new BigInteger("18"), books.interestPool("note"));
         books.checkInvariants();
     }
 
@@ -159,10 +160,10 @@ class InterestTest {
         books.accrueInterest(1);
 
         assertEquals(new BigInteger("401"), books.personalHolding(series.id(), saver));
-        assertEquals(BigInteger.ONE, books.personalHolding(series.id(), payer));
+        assertEquals(BigInteger.ZERO, books.personalHolding(series.id(), payer));
         assertEquals(new BigInteger("400"), books.personalM0(series));
-        assertEquals(new BigInteger("802"), series.circulation());
-        assertEquals(new BigInteger("198"), series.interestPool());
+        assertEquals(new BigInteger("801"), series.circulation());
+        assertEquals(new BigInteger("199"), series.interestPool());
         assertEquals(new BigInteger("1000"), books.personalReserve(saver, "diamond"));
         assertEquals(new BigInteger("1000"), books.supply("diamond").reserve());
         books.checkInvariants();

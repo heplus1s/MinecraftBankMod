@@ -91,15 +91,6 @@ public final class BankMod implements ModInitializer {
             displays.tick(server);
             IssuerLevy.tick(server);
             long day = server.getOverworld().getTime() / 24000L;
-            if (BankRuntime.books().lastInterestDay() != day) {
-                for (ServerPlayerEntity holder : server.getPlayerManager().getPlayerList()) {
-                    dev.jdguo.bank.instruments.NotePaper.Held pockets = dev.jdguo.bank.instruments.NotePaper.tally(holder.getInventory());
-                    dev.jdguo.bank.instruments.NotePaper.Held ender = dev.jdguo.bank.instruments.NotePaper.tally(holder.getEnderChestInventory());
-                    java.util.Map<java.util.UUID, java.math.BigInteger> personal = new java.util.LinkedHashMap<>(pockets.personal());
-                    ender.personal().forEach((id, amount) -> personal.merge(id, amount, java.math.BigInteger::add));
-                    BankRuntime.books().observePaperInHand(holder.getUuid(), pockets.central().add(ender.central()), personal);
-                }
-            }
             BankBooks.InterestDay interest = BankRuntime.books().accrueInterest(day);
             if (interest.moved()) {
                 BankRuntime.save();

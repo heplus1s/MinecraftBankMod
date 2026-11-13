@@ -35,7 +35,6 @@ import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -80,10 +79,6 @@ public final class BankBooks {
     private final Map<UUID, BigDecimal> interestDust = new LinkedHashMap<>();
     /** Per personal-note series, then per holder: the fractional note carried forward. */
     private final Map<UUID, Map<UUID, BigDecimal>> personalInterestDust = new LinkedHashMap<>();
-    /** Central paper last seen in a player's inventory. Interest on it is credited to book entry. */
-    private final Map<UUID, BigInteger> centralPaperHeld = new LinkedHashMap<>();
-    /** Personal paper last seen in a player's inventory, by series. */
-    private final Map<UUID, Map<UUID, BigInteger>> personalPaperHeld = new LinkedHashMap<>();
     /** World day last settled. -1 until the first tick anchors it, so old worlds do not pay retroactively. */
     private long lastInterestDay = -1L;
     private BigDecimal clampMin;
@@ -225,7 +220,6 @@ public final class BankBooks {
         NoteSeries.PaperSlip slip = NoteSeries.plan(amount);
         debitBalance(player, note.id(), slip.value());
         addPaper(NoteSeries.key(note.id(), null, slip.face()), slip.sheets());
-        addHeld(centralPaperHeld, player, slip.value());
         return PaperTake.ok(slip.value(), slip.face(), slip.sheets(), "Withdrew bank-note paper");
     }
 
@@ -247,7 +241,6 @@ public final class BankBooks {
         NoteSeries.PaperSlip slip = NoteSeries.plan(amount);
         addHolding(noteId, player, slip.value().negate());
         addPaper(NoteSeries.key(null, noteId, slip.face()), slip.sheets());
-        addHeld(personalPaperHeld.computeIfAbsent(noteId, id -> new LinkedHashMap<>()), player, slip.value());
         return PaperTake.ok(slip.value(), slip.face(), slip.sheets(), "Withdrew personal-note paper");
     }
 
@@ -280,13 +273,8 @@ public final class BankBooks {
         BigInteger value = accept.multiply(presented.face());
         if (presented.central()) {
             creditBalance(player, presented.currency(), value);
-            addHeld(centralPaperHeld, player, value.negate());
         } else {
             addHolding(presented.personalNote(), player, value);
-            Map<UUID, BigInteger> row = personalPaperHeld.get(presented.personalNote());
-            if (row != null) {
-                addHeld(row, player, value.negate());
-            }
         }
         boolean trimmed = accept.compareTo(sheets) < 0;
         return new TxResult(true, trimmed ? "trimmed" : "ok", "Deposited bank-note paper", value, null, BigInteger.ZERO);
@@ -802,30 +790,6 @@ public final class BankBooks {
     public long lastInterestDay() { return lastInterestDay; }
 
     /**
-     * Replaces this player's paper-in-hand from an inventory scan.
-     * Interest on that paper is credited to book entry, not paid by printing more sheets.
-     * Players who are offline keep the amount they were last seen holding.
-     */
-    public void observePaperInHand(UUID player, BigInteger centralNotes, Map<UUID, BigInteger> personalNotes) {
-        if (player == null) {
-            return;
-        }
-        setHeld(centralPaperHeld, player, centralNotes);
-        for (Map<UUID, BigInteger> row : personalPaperHeld.values()) {
-            row.remove(player);
-        }
-        if (personalNotes != null) {
-            for (Map.Entry<UUID, BigInteger> entry : personalNotes.entrySet()) {
-                if (entry.getKey() == null || entry.getValue() == null || entry.getValue().signum() <= 0) {
-                    continue;
-                }
-                personalPaperHeld.computeIfAbsent(entry.getKey(), id -> new LinkedHashMap<>()).put(player, entry.getValue());
-            }
-        }
-        personalPaperHeld.entrySet().removeIf(entry -> entry.getValue().isEmpty());
-    }
-
-    /**
      * Credits one demand-deposit day for each Minecraft day crossed.
      * The first call only records the day, so a newly loaded world does not pay for the past.
      */
@@ -873,10 +837,8 @@ public final class BankBooks {
         }
         Map<UUID, BigInteger> due = new LinkedHashMap<>();
         BigInteger total = BigInteger.ZERO;
-        LinkedHashSet<UUID> holders = new LinkedHashSet<>(accounts.keySet());
-        holders.addAll(centralPaperHeld.keySet());
-        for (UUID player : holders) {
-            BigInteger balance = balance(player, note.id()).add(centralPaperHeld.getOrDefault(player, BigInteger.ZERO));
+        for (UUID player : new ArrayList<>(accounts.keySet())) {
+            BigInteger balance = balance(player, note.id());
             BigDecimal carried = interestDust.getOrDefault(player, BigDecimal.ZERO);
             BigDecimal raw = new BigDecimal(balance).multiply(interestFraction, FxMath.MC)
                     .divide(new BigDecimal("365"), FxMath.MC)
@@ -922,23 +884,14 @@ public final class BankBooks {
             return List.of();
         }
         Map<UUID, BigInteger> holdings = personalHoldings.get(series.id());
-        Map<UUID, BigInteger> paper = personalPaperHeld.get(series.id());
-        if ((holdings == null || holdings.isEmpty()) && (paper == null || paper.isEmpty())) {
+        if (holdings == null || holdings.isEmpty()) {
             return List.of();
         }
         Map<UUID, BigDecimal> dust = personalInterestDust.computeIfAbsent(series.id(), id -> new LinkedHashMap<>());
         Map<UUID, BigInteger> due = new LinkedHashMap<>();
         BigInteger total = BigInteger.ZERO;
-        LinkedHashSet<UUID> holders = new LinkedHashSet<>();
-        if (holdings != null) {
-            holders.addAll(holdings.keySet());
-        }
-        if (paper != null) {
-            holders.addAll(paper.keySet());
-        }
-        for (UUID player : holders) {
-            BigInteger balance = personalHolding(series.id(), player)
-                    .add(paper == null ? BigInteger.ZERO : paper.getOrDefault(player, BigInteger.ZERO));
+        for (UUID player : new ArrayList<>(holdings.keySet())) {
+            BigInteger balance = personalHolding(series.id(), player);
             BigDecimal carried = dust.getOrDefault(player, BigDecimal.ZERO);
             BigDecimal raw = new BigDecimal(balance).multiply(personalInterestFraction, FxMath.MC)
                     .divide(new BigDecimal("365"), FxMath.MC)
@@ -999,22 +952,6 @@ public final class BankBooks {
         BigInteger next = note.circulation().subtract(take);
         note.setCirculation(next.signum() < 0 ? BigInteger.ZERO : next);
         note.addInterestPool(take);
-    }
-
-    private static void addHeld(Map<UUID, BigInteger> row, UUID player, BigInteger delta) {
-        if (row == null || player == null || delta == null || delta.signum() == 0) {
-            return;
-        }
-        BigInteger next = row.getOrDefault(player, BigInteger.ZERO).add(delta);
-        setHeld(row, player, next);
-    }
-
-    private static void setHeld(Map<UUID, BigInteger> row, UUID player, BigInteger amount) {
-        if (amount == null || amount.signum() <= 0) {
-            row.remove(player);
-        } else {
-            row.put(player, amount);
-        }
     }
 
     private void addPool(String currency, BigInteger delta) {
@@ -1559,10 +1496,6 @@ public final class BankBooks {
             return Redemption.fail("suspended");
         }
         addPaper(NoteSeries.key(null, noteId, face), burn.negate());
-        Map<UUID, BigInteger> held = personalPaperHeld.get(noteId);
-        if (held != null) {
-            addHeld(held, player, burn.multiply(face).negate());
-        }
         applyRedemption(player, note, priced.retired(), priced);
         retainTradeFee(note, player, priced.retired());
         return new Redemption(true, priced.code(), note, priced.retired(), priced.diamonds(), priced.copper(),
@@ -2123,18 +2056,6 @@ public final class BankBooks {
             }
         });
         root.add("personalInterestDust", personalDust);
-        JsonObject centralHeld = new JsonObject();
-        centralPaperHeld.forEach((id, amount) -> centralHeld.addProperty(id.toString(), amount.toString()));
-        root.add("centralPaperHeld", centralHeld);
-        JsonObject personalHeld = new JsonObject();
-        personalPaperHeld.forEach((noteId, row) -> {
-            JsonObject holders = new JsonObject();
-            row.forEach((player, amount) -> holders.addProperty(player.toString(), amount.toString()));
-            if (holders.size() > 0) {
-                personalHeld.add(noteId.toString(), holders);
-            }
-        });
-        root.add("personalPaperHeld", personalHeld);
         root.addProperty("frozen", frozen);
         root.add("clampMin", clampMin == null ? JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(clampMin.toPlainString()));
         root.add("clampMax", clampMax == null ? JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(clampMax.toPlainString()));
@@ -2343,21 +2264,6 @@ public final class BankBooks {
                         .forEach(e -> row.put(UUID.fromString(e.getKey()), new BigDecimal(e.getValue().getAsString())));
                 if (!row.isEmpty()) {
                     books.personalInterestDust.put(noteId, row);
-                }
-            }
-        }
-        if (root.has("centralPaperHeld")) {
-            root.getAsJsonObject("centralPaperHeld").entrySet()
-                    .forEach(e -> books.centralPaperHeld.put(UUID.fromString(e.getKey()), new BigInteger(e.getValue().getAsString())));
-        }
-        if (root.has("personalPaperHeld")) {
-            for (Map.Entry<String, JsonElement> entry : root.getAsJsonObject("personalPaperHeld").entrySet()) {
-                UUID noteId = UUID.fromString(entry.getKey());
-                Map<UUID, BigInteger> row = new LinkedHashMap<>();
-                entry.getValue().getAsJsonObject().entrySet()
-                        .forEach(e -> row.put(UUID.fromString(e.getKey()), new BigInteger(e.getValue().getAsString())));
-                if (!row.isEmpty()) {
-                    books.personalPaperHeld.put(noteId, row);
                 }
             }
         }
