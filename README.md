@@ -25,10 +25,10 @@
 看准要当柜台的方块（大约 6 格以内），执行：
 
 ```
-/bank outlet set 主楼
+/bank outlet set lobby
 ```
 
-如果没看准方块，会用你脚下那一格。
+如果没看准方块，会用你脚下那一格。网点名字只能是 ASCII，1 到 32 个字符：开头是字母或数字，后面只能是字母、数字、下划线或连字符。已经存下来的旧名字，包括中文，还能用 move、remove、tp、radius、lift、hologram 指到。
 
 设好以后，玩家右键这个方块就会打开箱子界面。如果这格本来就是箱子，这次右键会改由银行处理。站在网点附近（默认 4 格）也可以输入 `/bank`。全息字牌会浮在柜台上方，服务器重启后还在。
 
@@ -36,13 +36,13 @@
 
 | 命令 | 谁能用 | 做什么 |
 | --- | --- | --- |
-| `/bank outlet set <名字>` | 管理员 | 把准星指着的方块设成网点 |
-| `/bank outlet move <名字>` | 管理员 | 把网点搬到准星下的新方块 |
-| `/bank outlet remove <名字>` | 管理员 | 删掉网点，并拆掉全息字牌 |
-| `/bank outlet radius <名字> <1-32>` | 管理员 | 附近可以用 `/bank` 的半径 |
-| `/bank outlet lift <名字> <0.5-16>` | 管理员 | 全息字牌离方块的高度，默认 2.4 |
-| `/bank outlet hologram <名字> on\|off` | 管理员 | 这个网点要不要显示全息字牌 |
-| `/bank outlet tp <名字>` | 管理员 | 传送到网点 |
+| `/bank outlet set <name>` | 管理员 | 把准星指着的方块设成网点 |
+| `/bank outlet move <name>` | 管理员 | 把网点搬到准星下的新方块 |
+| `/bank outlet remove <name>` | 管理员 | 删掉网点，并拆掉全息字牌 |
+| `/bank outlet radius <name> <1-32>` | 管理员 | 附近可以用 `/bank` 的半径 |
+| `/bank outlet lift <name> <0.5-16>` | 管理员 | 全息字牌离方块的高度，默认 2.4 |
+| `/bank outlet hologram <name> on\|off` | 管理员 | 这个网点要不要显示全息字牌 |
+| `/bank outlet tp <name>` | 管理员 | 传送到网点 |
 | `/bank outlets` | 所有人 | 列出网点 |
 
 ## 怎么用
@@ -115,10 +115,10 @@ V = R + (L - R) × α / 1000
 管理员（或权限等级 2）可以用：
 
 ```
-/bank credit unbacked <玩家> note 1000000
-/bank credit backed <玩家> note 1000
-/bank credit retire <玩家> note 1000
-/bank credit check <玩家> note 1e12
+/bank credit unbacked <player> note 1000000
+/bank credit backed <player> note 1000
+/bank credit retire <player> note 1000
+/bank credit check <player> note 1e12
 /bank freeze on
 /bank supply
 /bank reserve diamond 1000
@@ -214,10 +214,10 @@ You can't just open the bank anywhere in the world. An operator has to mark a co
 Look at the block you want as the counter (within about 6 blocks) and run:
 
 ```
-/bank outlet set 主楼
+/bank outlet set lobby
 ```
 
-If you aren't looking at a block, it uses the one under your feet.
+If you aren't looking at a block, it uses the one under your feet. Outlet names have to be ASCII, 1 to 32 characters: start with a letter or digit, then only letters, digits, underscore, or hyphen. Names already saved, including old non-ASCII ones, can still be used with move, remove, tp, radius, lift, and hologram.
 
 After that, right-clicking the block opens the chest menu. If the block is already a chest, that right-click is handled by the bank instead. Players standing near the outlet (4 blocks by default) can also type `/bank`. A hologram floats above the counter and comes back after a restart.
 

@@ -86,30 +86,30 @@ public final class BankBooks {
     public TxResult deposit(UUID player, String currency, BigInteger amount) {
         CurrencyDef def = need(currency);
         if (def == null) {
-            return TxResult.fail("unknown_currency", "没有这种货币");
+            return TxResult.fail("unknown_currency", "Unknown currency");
         }
         if (def.kind() != CurrencyKind.COMMODITY) {
-            return TxResult.fail("not_commodity", "纸币不能当物品存入，请兑现汇票");
+            return TxResult.fail("not_commodity", "Notes can't be deposited as items. Redeem a bill instead.");
         }
         if (amount == null || amount.signum() <= 0) {
-            return TxResult.fail("bad_amount", "金额无效");
+            return TxResult.fail("bad_amount", "Invalid amount");
         }
         creditBalance(player, currency, amount);
         supply(currency).addReserve(amount);
         supply(currency).addLiability(amount);
-        return TxResult.ok(amount, "存入 " + def.name() + " " + CompactFormat.format(amount));
+        return TxResult.ok(amount, "Deposited " + label(def) + " " + CompactFormat.format(amount));
     }
 
     public TxResult withdraw(UUID player, String currency, BigInteger amount, boolean partial) {
         CurrencyDef def = need(currency);
         if (def == null) {
-            return TxResult.fail("unknown_currency", "没有这种货币");
+            return TxResult.fail("unknown_currency", "Unknown currency");
         }
         if (def.kind() != CurrencyKind.COMMODITY) {
-            return TxResult.fail("not_commodity", "纸币没有实物可取，请开汇票或兑换");
+            return TxResult.fail("not_commodity", "Notes have no physical item. Issue a bill or exchange them.");
         }
         if (amount == null || amount.signum() <= 0) {
-            return TxResult.fail("bad_amount", "金额无效");
+            return TxResult.fail("bad_amount", "Invalid amount");
         }
         BigInteger bal = balance(player, currency);
         BigInteger free = supply(currency).freeReserve();
@@ -118,45 +118,45 @@ public final class BankBooks {
             give = amount.min(bal).min(free).min(MAX_PHYSICAL);
             if (give.signum() <= 0) {
                 if (bal.signum() <= 0) {
-                    return TxResult.fail("insufficient_funds", "余额不足");
+                    return TxResult.fail("insufficient_funds", "Not enough balance");
                 }
-                return TxResult.fail("insufficient_reserves", "金库准备金不足，无法兑现");
+                return TxResult.fail("insufficient_reserves", "The vault doesn't have enough to pay this out");
             }
         } else {
             if (amount.compareTo(MAX_PHYSICAL) > 0) {
-                return TxResult.fail("too_many_items", "单次最多取出 " + MAX_PHYSICAL + " 个，大额请开汇票");
+                return TxResult.fail("too_many_items", "You can withdraw at most " + MAX_PHYSICAL + " at once. Issue a bill for more.");
             }
             if (bal.compareTo(amount) < 0) {
-                return TxResult.fail("insufficient_funds", "余额不足");
+                return TxResult.fail("insufficient_funds", "Not enough balance");
             }
             if (free.compareTo(amount) < 0) {
-                return TxResult.fail("insufficient_reserves", "金库准备金不足，无法兑现");
+                return TxResult.fail("insufficient_reserves", "The vault doesn't have enough to pay this out");
             }
         }
         debitBalance(player, currency, give);
         supply(currency).addReserve(give.negate());
         supply(currency).addLiability(give.negate());
-        String extra = partial && give.compareTo(amount) < 0 ? "（金库或背包上限，未足额）" : "";
-        return TxResult.ok(give, "取出 " + def.name() + " " + CompactFormat.format(give) + extra);
+        String extra = partial && give.compareTo(amount) < 0 ? " (short: vault or stack limit)" : "";
+        return TxResult.ok(give, "Withdrew " + label(def) + " " + CompactFormat.format(give) + extra);
     }
 
     public TxResult exchange(UUID player, String payId, String receiveId, BigInteger receiveQty) {
         if (payId.equals(receiveId)) {
-            return TxResult.fail("bad_amount", "不能用同一种货币兑换自己");
+            return TxResult.fail("bad_amount", "Can't exchange a currency for itself");
         }
         CurrencyDef pay = need(payId);
         CurrencyDef recv = need(receiveId);
         if (pay == null || recv == null) {
-            return TxResult.fail("unknown_currency", "没有这种货币");
+            return TxResult.fail("unknown_currency", "Unknown currency");
         }
         if (receiveQty == null || receiveQty.signum() <= 0) {
-            return TxResult.fail("bad_amount", "金额无效");
+            return TxResult.fail("bad_amount", "Invalid amount");
         }
         if (recv.kind() == CurrencyKind.COMMODITY && receiveQty.compareTo(MAX_PHYSICAL) > 0) {
-            return TxResult.fail("too_many_items", "单次兑换实物最多 " + MAX_PHYSICAL);
+            return TxResult.fail("too_many_items", "You can exchange at most " + MAX_PHYSICAL + " physical items at once");
         }
         if (frozen && pay.kind() == CurrencyKind.VIRTUAL && recv.kind() == CurrencyKind.COMMODITY) {
-            return TxResult.fail("frozen", "已停止纸币兑现");
+            return TxResult.fail("frozen", "Note redemption is halted");
         }
         if (recv.kind() == CurrencyKind.COMMODITY) {
             BigInteger claims = claimsOf(receiveId);
@@ -165,59 +165,59 @@ public final class BankBooks {
                 headroom = BigInteger.ZERO;
             }
             if (receiveQty.compareTo(headroom) > 0) {
-                return TxResult.fail("insufficient_reserves", "金库可兑付的" + recv.name() + "只剩 " + CompactFormat.format(headroom));
+                return TxResult.fail("insufficient_reserves", "The vault can still pay " + CompactFormat.format(headroom) + " " + label(recv));
             }
         }
         BigInteger cost = cost(payId, receiveId, receiveQty);
         if (cost == null) {
-            return TxResult.fail("no_market", "该币种已崩溃，无法报价");
+            return TxResult.fail("no_market", "That currency has collapsed. No quote.");
         }
         if (balance(player, payId).compareTo(cost) < 0) {
-            return TxResult.fail("insufficient_funds", "余额不足，需要 " + pay.name() + " " + CompactFormat.format(cost));
+            return TxResult.fail("insufficient_funds", "Not enough balance. Need " + label(pay) + " " + CompactFormat.format(cost));
         }
         debitBalance(player, payId, cost);
         supply(payId).addLiability(cost.negate());
         creditBalance(player, receiveId, receiveQty);
         supply(receiveId).addLiability(receiveQty);
-        return TxResult.ok(cost, "用 " + CompactFormat.format(cost) + " " + pay.name()
-                + " 兑换 " + CompactFormat.format(receiveQty) + " " + recv.name());
+        return TxResult.ok(cost, "Exchanged " + CompactFormat.format(cost) + " " + label(pay)
+                + " for " + CompactFormat.format(receiveQty) + " " + label(recv));
     }
 
     public TxResult issueCheck(UUID player, String currency, BigInteger amount, String issuerName, UUID payee, boolean fromBalance) {
         CurrencyDef def = need(currency);
         if (def == null) {
-            return TxResult.fail("unknown_currency", "没有这种货币");
+            return TxResult.fail("unknown_currency", "Unknown currency");
         }
         if (amount == null || amount.signum() <= 0) {
-            return TxResult.fail("bad_amount", "金额无效");
+            return TxResult.fail("bad_amount", "Invalid amount");
         }
         if (fromBalance) {
             if (balance(player, currency).compareTo(amount) < 0) {
-                return TxResult.fail("insufficient_funds", "余额不足");
+                return TxResult.fail("insufficient_funds", "Not enough balance");
             }
             debitBalance(player, currency, amount);
         } else {
             if (def.kind() != CurrencyKind.VIRTUAL || !def.issuable()) {
-                return TxResult.fail("not_issuable", "这种货币不能凭空开票");
+                return TxResult.fail("not_issuable", "This currency can't be issued as a new bill");
             }
             supply(currency).addLiability(amount);
         }
         CheckRecord record = checks.create(currency, amount, player, issuerName, payee, System.currentTimeMillis());
-        return TxResult.okInstrument(amount, "开出 " + def.name() + " 汇票 " + CompactFormat.format(amount), record.id());
+        return TxResult.okInstrument(amount, "Issued a " + label(def) + " bill for " + CompactFormat.format(amount), record.id());
     }
 
     public TxResult redeemCheck(UUID player, PresentedCheck presented) {
         CheckBook.RedeemCode code = checks.redeem(player, presented, System.currentTimeMillis());
         return switch (code) {
-            case UNKNOWN -> TxResult.fail("invalid_check", "无法识别的票据");
-            case TAMPERED -> TxResult.fail("tampered", "票据内容与存根不符");
-            case ALREADY -> TxResult.fail("already_redeemed", "这张票据已经兑现过");
-            case WRONG_PAYEE -> TxResult.fail("wrong_payee", "这张票据写的不是你的名字");
+            case UNKNOWN -> TxResult.fail("invalid_check", "Unrecognized bill");
+            case TAMPERED -> TxResult.fail("tampered", "The bill doesn't match the stub");
+            case ALREADY -> TxResult.fail("already_redeemed", "This bill was already redeemed");
+            case WRONG_PAYEE -> TxResult.fail("wrong_payee", "This bill isn't made out to you");
             case OK -> {
                 creditBalance(player, presented.currency(), presented.amount());
                 CurrencyDef def = need(presented.currency());
-                String name = def == null ? presented.currency() : def.name();
-                yield TxResult.ok(presented.amount(), "兑现 " + name + " " + CompactFormat.format(presented.amount()));
+                String name = def == null ? presented.currency() : label(def);
+                yield TxResult.ok(presented.amount(), "Redeemed " + name + " " + CompactFormat.format(presented.amount()));
             }
         };
     }
@@ -225,57 +225,57 @@ public final class BankBooks {
     public TxResult creditUnbacked(UUID player, String currency, BigInteger amount) {
         CurrencyDef def = need(currency);
         if (def == null) {
-            return TxResult.fail("unknown_currency", "没有这种货币");
+            return TxResult.fail("unknown_currency", "Unknown currency");
         }
         if (def.kind() != CurrencyKind.VIRTUAL || !def.issuable()) {
-            return TxResult.fail("not_issuable", "这种货币不能信贷发行");
+            return TxResult.fail("not_issuable", "This currency can't be issued as credit");
         }
         if (amount == null || amount.signum() <= 0) {
-            return TxResult.fail("bad_amount", "金额无效");
+            return TxResult.fail("bad_amount", "Invalid amount");
         }
         creditBalance(player, currency, amount);
         supply(currency).addLiability(amount);
-        return TxResult.ok(amount, "无准备发行 " + def.name() + " " + CompactFormat.format(amount));
+        return TxResult.ok(amount, "Issued unbacked " + label(def) + " " + CompactFormat.format(amount));
     }
 
     public TxResult creditBacked(UUID player, String currency, BigInteger amount) {
         CurrencyDef def = need(currency);
         if (def == null) {
-            return TxResult.fail("unknown_currency", "没有这种货币");
+            return TxResult.fail("unknown_currency", "Unknown currency");
         }
         if (def.kind() != CurrencyKind.VIRTUAL || !def.issuable()) {
-            return TxResult.fail("not_issuable", "这种货币不能信贷发行");
+            return TxResult.fail("not_issuable", "This currency can't be issued as credit");
         }
         if (amount == null || amount.signum() <= 0) {
-            return TxResult.fail("bad_amount", "金额无效");
+            return TxResult.fail("bad_amount", "Invalid amount");
         }
         BigInteger room = backedRoom(def);
         if (amount.compareTo(room) > 0) {
-            return TxResult.fail("over_cap", "超出准备金可发行额度，剩余 " + CompactFormat.format(room));
+            return TxResult.fail("over_cap", "Above the reserve cap. Room left: " + CompactFormat.format(room));
         }
         BigInteger lock = CreditDesk.backingUnitsNeeded(amount, def.parPerBacking(), def.haircut(), def.minReserveRatio());
         Supply vault = supply(def.backing());
         if (vault.freeReserve().compareTo(lock) < 0) {
-            return TxResult.fail("insufficient_reserves", "可锁定的准备金不足");
+            return TxResult.fail("insufficient_reserves", "Not enough free reserves to lock");
         }
         vault.addLocked(lock);
         creditBalance(player, currency, amount);
         supply(currency).addLiability(amount);
         supply(currency).addReserve(amount);
-        return TxResult.ok(amount, "按准备金发行 " + def.name() + " " + CompactFormat.format(amount)
-                + "，锁定 " + CompactFormat.format(lock) + " " + need(def.backing()).name());
+        return TxResult.ok(amount, "Issued reserve-backed " + label(def) + " " + CompactFormat.format(amount)
+                + ", locked " + CompactFormat.format(lock) + " " + label(need(def.backing())));
     }
 
     public TxResult retire(UUID player, String currency, BigInteger amount) {
         CurrencyDef def = need(currency);
         if (def == null) {
-            return TxResult.fail("unknown_currency", "没有这种货币");
+            return TxResult.fail("unknown_currency", "Unknown currency");
         }
         if (amount == null || amount.signum() <= 0) {
-            return TxResult.fail("bad_amount", "金额无效");
+            return TxResult.fail("bad_amount", "Invalid amount");
         }
         if (balance(player, currency).compareTo(amount) < 0) {
-            return TxResult.fail("insufficient_funds", "余额不足");
+            return TxResult.fail("insufficient_funds", "Not enough balance");
         }
         Supply self = supply(currency);
         BigInteger unbacked = self.liability().subtract(self.reserve());
@@ -297,7 +297,7 @@ public final class BankBooks {
             }
             vault.addLocked(unlock.negate());
         }
-        return TxResult.ok(amount, "注销 " + def.name() + " " + CompactFormat.format(amount));
+        return TxResult.ok(amount, "Retired " + label(def) + " " + CompactFormat.format(amount));
     }
 
     public BigInteger backedRoom(CurrencyDef def) {
@@ -423,6 +423,45 @@ public final class BankBooks {
         return "兑现正常";
     }
 
+    /** English status for {@code /bank supply}. Displays keep {@link #statusLabel()}. */
+    public String statusLabelEn() {
+        CurrencyDef note = primaryVirtual();
+        if (note == null) {
+            return frozen ? "redemption halted" : "redemption open";
+        }
+        if (abundance(note.id()) == null) {
+            return "bank run";
+        }
+        if (frozen) {
+            return "redemption halted";
+        }
+        BigDecimal tight = tightness(note.id());
+        if (tight == null) {
+            return "redemption open";
+        }
+        if (tight.compareTo(new BigDecimal("0.05")) < 0) {
+            return "bank run";
+        }
+        if (tight.compareTo(new BigDecimal("0.25")) < 0) {
+            return "reserves critical";
+        }
+        if (tight.compareTo(new BigDecimal("0.80")) < 0) {
+            return "reserves tight";
+        }
+        return "redemption open";
+    }
+
+    private static String label(CurrencyDef def) {
+        if (def == null) {
+            return "?";
+        }
+        String en = def.nameEn();
+        if (en == null || en.isBlank()) {
+            return def.id();
+        }
+        return en;
+    }
+
     public CurrencyDef primaryVirtual() {
         CurrencyDef first = null;
         for (CurrencyDef def : currencies.values()) {
@@ -450,7 +489,7 @@ public final class BankBooks {
     public Supply supply(String currency) {
         Supply supply = supplies.get(currency);
         if (supply == null) {
-            throw new IllegalArgumentException("没有这种货币: " + currency);
+            throw new IllegalArgumentException("Unknown currency: " + currency);
         }
         return supply;
     }
@@ -497,11 +536,11 @@ public final class BankBooks {
 
     public void setReserve(String currency, BigInteger reserve) {
         if (reserve.signum() < 0) {
-            throw new IllegalArgumentException("准备金不能为负");
+            throw new IllegalArgumentException("Reserve can't be negative");
         }
         Supply self = supply(currency);
         if (reserve.compareTo(self.locked()) < 0) {
-            throw new IllegalArgumentException("准备金不能小于已锁定的部分");
+            throw new IllegalArgumentException("Reserve can't be less than the locked amount");
         }
         self.setReserve(reserve);
     }

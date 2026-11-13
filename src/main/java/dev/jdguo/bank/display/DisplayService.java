@@ -86,7 +86,7 @@ public final class DisplayService {
     public void onJoin(ServerPlayerEntity player) {
         resync(player);
         if (BankRuntime.state != null && BankRuntime.books().joinMessage()) {
-            player.sendMessage(Text.literal("[银行] 找到网点，右键柜台。站在附近也可以 /bank")
+            player.sendMessage(Text.literal("[Bank] Find an outlet and right-click the counter. You can also use /bank while standing nearby.")
                     .formatted(Formatting.AQUA), false);
         }
     }

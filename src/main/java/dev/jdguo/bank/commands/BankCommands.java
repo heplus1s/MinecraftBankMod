@@ -28,11 +28,14 @@ import net.minecraft.util.math.BlockPos;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.Collection;
+import java.util.regex.Pattern;
 
 import static net.minecraft.server.command.CommandManager.argument;
 import static net.minecraft.server.command.CommandManager.literal;
 
 public final class BankCommands {
+    private static final Pattern NEW_OUTLET_NAME = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_-]{0,31}");
+
     private BankCommands() {}
 
     public static void register(DisplayService displays) {
@@ -70,12 +73,12 @@ public final class BankCommands {
                         .then(toggle("freeze", (src, on) -> {
                             books().setFrozen(on);
                             BankRuntime.save();
-                            return ok(src, on ? "已停止纸币兑现" : "纸币兑现已恢复");
+                            return ok(src, on ? "Note redemption halted" : "Note redemption restored");
                         }).requires(BankCommands::op))
                         .then(literal("fee").requires(BankCommands::op).then(argument("percent", DoubleArgumentType.doubleArg(0, 100)).executes(ctx -> {
                             books().setFeeFraction(BigDecimal.valueOf(DoubleArgumentType.getDouble(ctx, "percent")).movePointLeft(2));
                             BankRuntime.save();
-                            return ok(ctx.getSource(), "手续费已设为 " + DoubleArgumentType.getDouble(ctx, "percent") + "%");
+                            return ok(ctx.getSource(), "Fee is now " + DoubleArgumentType.getDouble(ctx, "percent") + "%");
                         })))
                         .then(literal("alpha").requires(BankCommands::op)
                                 .then(argument("currency", StringArgumentType.word())
@@ -95,7 +98,7 @@ public final class BankCommands {
                         .then(literal("import-scores").requires(BankCommands::op).executes(ctx -> {
                             int count = ScoreImporter.importAll(ctx.getSource().getServer(), books());
                             BankRuntime.save();
-                            return ok(ctx.getSource(), "已导入 " + count + " 条记分板余额（每人每种货币只导入一次）");
+                            return ok(ctx.getSource(), "Imported " + count + " scoreboard balances (once per player per currency)");
                         }))
         ));
     }
@@ -127,8 +130,8 @@ public final class BankCommands {
         OutletPoint outlet = books().nearest(world, player.getX(), player.getY(), player.getZ(), 0);
         if (outlet == null) {
             info(source, books().outlets().isEmpty()
-                    ? "银行还没有网点。管理员看着方块执行 /bank outlet set <名字>"
-                    : "你不在网点范围内。/bank outlets 可以看坐标");
+                    ? "No outlets yet. An operator should look at a block and run /bank outlet set <name>"
+                    : "You aren't within an outlet. /bank outlets lists the coordinates");
             return 0;
         }
         BankMenus.open(player, outlet);
@@ -142,27 +145,27 @@ public final class BankCommands {
 
     private static int listOutlets(ServerCommandSource source) {
         if (books().outlets().isEmpty()) {
-            return info(source, "还没有网点");
+            return info(source, "No outlets yet");
         }
         for (OutletPoint outlet : books().outlets()) {
             source.sendMessage(Text.literal(outlet.name() + "  " + outlet.world()
                     + "  " + outlet.x() + " " + outlet.y() + " " + outlet.z()
-                    + "  半径 " + outlet.radius()).formatted(Formatting.AQUA));
+                    + "  radius " + outlet.radius()).formatted(Formatting.AQUA));
         }
         return books().outlets().size();
     }
 
     private static int setOutlet(ServerCommandSource source, DisplayService displays, String name, boolean mustExist) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
-        if (!validName(name)) {
-            return fail(source, "网点名字请用 1 到 32 个字符，不要换行");
+        if (!mustExist && !validNewOutletName(name)) {
+            return fail(source, "Outlet names must be 1-32 characters: a letter or digit, then letters, digits, underscore, or hyphen.");
         }
         ServerPlayerEntity player = source.getPlayerOrThrow();
         OutletPoint existing = books().outlet(name);
         if (mustExist && existing == null) {
-            return fail(source, "没有这个网点");
+            return fail(source, "No outlet with that name");
         }
         if (!mustExist && existing != null) {
-            return fail(source, "已经有这个名字。移动请用 /bank outlet move");
+            return fail(source, "That name is already used. Move it with /bank outlet move");
         }
         BlockPos pos = lookingAt(player);
         String world = player.getWorld().getRegistryKey().getValue().toString();
@@ -174,24 +177,24 @@ public final class BankCommands {
             existing.relocate(world, pos.getX(), pos.getY(), pos.getZ());
         }
         BankRuntime.save();
-        return ok(source, "网点 " + name + " → " + pos.getX() + " " + pos.getY() + " " + pos.getZ() + "。右键这个方块开柜台");
+        return ok(source, "Outlet " + name + " -> " + pos.getX() + " " + pos.getY() + " " + pos.getZ() + ". Right-click that block to open the counter.");
     }
 
     private static int removeOutlet(ServerCommandSource source, DisplayService displays, String name) {
         OutletPoint outlet = books().outlet(name);
         if (outlet == null) {
-            return fail(source, "没有这个网点");
+            return fail(source, "No outlet with that name");
         }
         displays.discardHologram(source.getServer(), outlet);
         books().removeOutlet(name);
         BankRuntime.save();
-        return ok(source, "已移除网点 " + name);
+        return ok(source, "Removed outlet " + name);
     }
 
     private static int teleport(ServerCommandSource source, String name) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         OutletPoint outlet = books().outlet(name);
         if (outlet == null) {
-            return fail(source, "没有这个网点");
+            return fail(source, "No outlet with that name");
         }
         ServerPlayerEntity player = source.getPlayerOrThrow();
         net.minecraft.server.world.ServerWorld target = null;
@@ -202,49 +205,49 @@ public final class BankCommands {
             }
         }
         if (target == null) {
-            return fail(source, "网点所在维度没加载");
+            return fail(source, "That outlet's dimension isn't loaded");
         }
         player.teleport(target, outlet.x() + 0.5, outlet.y() + 1.0, outlet.z() + 0.5, player.getYaw(), player.getPitch());
-        return ok(source, "已传送到 " + name);
+        return ok(source, "Teleported to " + name);
     }
 
     private static int radius(ServerCommandSource source, String name, double blocks) {
         OutletPoint outlet = books().outlet(name);
         if (outlet == null) {
-            return fail(source, "没有这个网点");
+            return fail(source, "No outlet with that name");
         }
         outlet.setRadius(blocks);
         BankRuntime.save();
-        return ok(source, name + " 的交互半径改为 " + blocks);
+        return ok(source, name + " radius is now " + blocks);
     }
 
     private static int lift(ServerCommandSource source, DisplayService displays, String name, double blocks) {
         OutletPoint outlet = books().outlet(name);
         if (outlet == null) {
-            return fail(source, "没有这个网点");
+            return fail(source, "No outlet with that name");
         }
         displays.discardHologram(source.getServer(), outlet);
         outlet.setLift(blocks);
         BankRuntime.save();
-        return ok(source, name + " 的全息高度改为 " + blocks + " 格");
+        return ok(source, name + " hologram height is now " + blocks + " blocks");
     }
 
     private static int hologram(ServerCommandSource source, DisplayService displays, String name, boolean on) {
         OutletPoint outlet = books().outlet(name);
         if (outlet == null) {
-            return fail(source, "没有这个网点");
+            return fail(source, "No outlet with that name");
         }
         outlet.setHologram(on);
         if (!on) {
             displays.discardHologram(source.getServer(), outlet);
         }
         BankRuntime.save();
-        return ok(source, name + (on ? " 显示全息" : " 关闭全息"));
+        return ok(source, name + (on ? " hologram on" : " hologram off"));
     }
 
     private static int credit(ServerCommandSource source, String mode, Collection<GameProfile> profiles, String currency, String rawAmount) {
         if (profiles.size() != 1) {
-            return fail(source, "请指定一名玩家");
+            return fail(source, "Name one player");
         }
         BigInteger amount;
         try {
@@ -253,19 +256,19 @@ public final class BankCommands {
             return fail(source, error.getMessage());
         }
         if (books().currency(currency) == null) {
-            return fail(source, "没有这种货币");
+            return fail(source, "Unknown currency");
         }
         GameProfile profile = profiles.iterator().next();
         var online = source.getServer().getPlayerManager().getPlayer(profile.getId());
         if ("check".equals(mode) && online == null) {
-            return fail(source, "玩家不在线，汇票发不出去");
+            return fail(source, "That player is offline, so the bill can't be given");
         }
         TxResult result = switch (mode) {
             case "unbacked" -> books().creditUnbacked(profile.getId(), currency, amount);
             case "backed" -> books().creditBacked(profile.getId(), currency, amount);
             case "retire" -> books().retire(profile.getId(), currency, amount);
             case "check" -> books().issueCheck(profile.getId(), currency, amount, profile.getName(), null, false);
-            default -> TxResult.fail("bad_amount", "未知操作");
+            default -> TxResult.fail("bad_amount", "Unknown action");
         };
         if (!result.success()) {
             return fail(source, result.message());
@@ -279,20 +282,20 @@ public final class BankCommands {
 
     private static int setAlpha(ServerCommandSource source, String currency, String raw) {
         if (books().currency(currency) == null) {
-            return fail(source, "没有这种货币");
+            return fail(source, "Unknown currency");
         }
         BigDecimal alpha;
         try {
             alpha = new BigDecimal(raw);
         } catch (NumberFormatException error) {
-            return fail(source, "alpha 不是数字");
+            return fail(source, "alpha isn't a number");
         }
         if (alpha.signum() < 0 || alpha.compareTo(new BigDecimal("100000")) > 0) {
-            return fail(source, "alpha 请设在 0 到 100000‰");
+            return fail(source, "alpha must be from 0 to 100000 permille");
         }
         books().setAlpha(currency, alpha);
         BankRuntime.save();
-        return ok(source, currency + " 的 α 设为 " + alpha.toPlainString() + "‰");
+        return ok(source, currency + " alpha is now " + alpha.toPlainString() + " permille");
     }
 
     private static int clamp(ServerCommandSource source, boolean min, String raw) {
@@ -303,16 +306,16 @@ public final class BankCommands {
                 books().setClampMax(null);
             }
             BankRuntime.save();
-            return ok(source, (min ? "下限" : "上限") + "已取消");
+            return ok(source, (min ? "Minimum" : "Maximum") + " clamp cleared");
         }
         BigDecimal value;
         try {
             value = new BigDecimal(raw);
         } catch (NumberFormatException error) {
-            return fail(source, "不是数字。取消夹紧请写 off");
+            return fail(source, "Not a number. Use off to clear the clamp.");
         }
         if (value.signum() <= 0) {
-            return fail(source, "夹紧值必须为正，或写 off");
+            return fail(source, "Clamp must be positive, or off");
         }
         if (min) {
             books().setClampMin(value);
@@ -320,12 +323,12 @@ public final class BankCommands {
             books().setClampMax(value);
         }
         BankRuntime.save();
-        return ok(source, (min ? "下限 " : "上限 ") + value.toPlainString());
+        return ok(source, (min ? "Minimum " : "Maximum ") + value.toPlainString());
     }
 
     private static int setReserve(ServerCommandSource source, String currency, String raw) {
         if (books().currency(currency) == null) {
-            return fail(source, "没有这种货币");
+            return fail(source, "Unknown currency");
         }
         BigInteger amount;
         try {
@@ -339,22 +342,23 @@ public final class BankCommands {
             return fail(source, error.getMessage());
         }
         BankRuntime.save();
-        return ok(source, currency + " 准备金改为 " + CompactFormat.format(amount));
+        return ok(source, currency + " reserve is now " + CompactFormat.format(amount));
     }
 
     private static int supply(ServerCommandSource source) {
         BankBooks books = books();
-        source.sendMessage(Text.literal("状态 " + books.statusLabel() + "  费率 "
+        source.sendMessage(Text.literal("Status " + books.statusLabelEn() + "  fee "
                 + books.feeFraction().movePointRight(2).stripTrailingZeros().toPlainString() + "%").formatted(Formatting.AQUA));
         for (var def : books.currencies()) {
             Supply supply = books.supply(def.id());
             BigDecimal rate = def.id().equals(books.numeraire()) ? null : books.unitsPer(def.id(), books.numeraire());
-            source.sendMessage(Text.literal(def.name()
-                    + "  准备 " + CompactFormat.format(supply.reserve())
-                    + "  负债 " + CompactFormat.format(supply.liability())
-                    + "  锁定 " + CompactFormat.format(supply.locked())
-                    + "  覆盖 " + CompactFormat.formatRatio(books.tightness(def.id()))
-                    + (rate == null ? "" : "  1" + books.numeraire() + "=" + CompactFormat.formatRate(rate))
+            String shown = def.nameEn() == null || def.nameEn().isBlank() ? def.id() : def.nameEn();
+            source.sendMessage(Text.literal(shown
+                    + "  reserve " + CompactFormat.format(supply.reserve())
+                    + "  liabilities " + CompactFormat.format(supply.liability())
+                    + "  locked " + CompactFormat.format(supply.locked())
+                    + "  cover " + CompactFormat.formatRatio(books.tightness(def.id()))
+                    + (rate == null ? "" : "  1 " + books.numeraire() + " = " + CompactFormat.formatRate(rate))
             ).formatted(Formatting.GRAY));
         }
         return 1;
@@ -364,22 +368,22 @@ public final class BankCommands {
         try {
             var path = net.fabricmc.loader.api.FabricLoader.getInstance().getConfigDir().resolve("bank.json");
             if (!java.nio.file.Files.exists(path)) {
-                return fail(source, "没有 config/bank.json");
+                return fail(source, "config/bank.json is missing");
             }
             BankConfig config = ConfigJson.parse(java.nio.file.Files.readString(path));
             BankRuntime.config = config;
             books().applyPolicy(config);
             BankRuntime.save();
-            return ok(source, "已重读手续费、alpha、夹紧和新增货币。旧账户没有被清掉");
+            return ok(source, "Reloaded fees, alpha, clamps, and any new currencies. Existing accounts were kept.");
         } catch (Exception error) {
-            return fail(source, "配置读不了: " + error.getMessage());
+            return fail(source, "Couldn't read the config: " + error.getMessage());
         }
     }
 
     private static int pref(ServerCommandSource source, Boolean sidebar, Boolean bossbar, Boolean tab) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         books().setPref(source.getPlayerOrThrow().getUuid(), sidebar, bossbar, tab);
         BankRuntime.save();
-        return ok(source, "个人显示已更新");
+        return ok(source, "Personal display updated");
     }
 
     private static int global(ServerCommandSource source, String which, boolean on) {
@@ -395,7 +399,7 @@ public final class BankCommands {
             }
         }
         BankRuntime.save();
-        return ok(source, which + (on ? " 已打开" : " 已关闭"));
+        return ok(source, which + (on ? " on" : " off"));
     }
 
     private static BlockPos lookingAt(ServerPlayerEntity player) {
@@ -406,8 +410,8 @@ public final class BankCommands {
         return player.getBlockPos().down();
     }
 
-    private static boolean validName(String name) {
-        return name != null && !name.isBlank() && name.length() <= 32 && !name.contains("\n") && !name.contains("\r");
+    private static boolean validNewOutletName(String name) {
+        return name != null && NEW_OUTLET_NAME.matcher(name).matches();
     }
 
     private static boolean op(ServerCommandSource source) {
@@ -419,17 +423,17 @@ public final class BankCommands {
     }
 
     private static int ok(ServerCommandSource source, String message) {
-        source.sendMessage(Text.literal("[银行] " + message).formatted(Formatting.GREEN));
+        source.sendMessage(Text.literal("[Bank] " + message).formatted(Formatting.GREEN));
         return 1;
     }
 
     private static int fail(ServerCommandSource source, String message) {
-        source.sendError(Text.literal("[银行] " + message));
+        source.sendError(Text.literal("[Bank] " + message));
         return 0;
     }
 
     private static int info(ServerCommandSource source, String message) {
-        source.sendMessage(Text.literal("[银行] " + message).formatted(Formatting.GRAY));
+        source.sendMessage(Text.literal("[Bank] " + message).formatted(Formatting.GRAY));
         return 0;
     }
 }

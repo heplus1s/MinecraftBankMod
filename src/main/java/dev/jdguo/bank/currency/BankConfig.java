@@ -66,58 +66,58 @@ public final class BankConfig {
 
     public void validate() {
         if (currencies.isEmpty()) {
-            throw new IllegalArgumentException("至少需要一种货币");
+            throw new IllegalArgumentException("Need at least one currency");
         }
         Map<String, CurrencyDef> byId = new LinkedHashMap<>();
         Map<String, String> items = new LinkedHashMap<>();
         for (CurrencyDef c : currencies) {
             if (c.id() == null || !c.id().matches("[a-z0-9_]{1,32}")) {
-                throw new IllegalArgumentException("货币 id 无效: " + c.id());
+                throw new IllegalArgumentException("Invalid currency id: " + c.id());
             }
             if (byId.put(c.id(), c) != null) {
-                throw new IllegalArgumentException("货币 id 重复: " + c.id());
+                throw new IllegalArgumentException("Duplicate currency id: " + c.id());
             }
             if (c.kind() == CurrencyKind.COMMODITY) {
                 if (c.itemId() == null || c.itemId().isBlank()) {
-                    throw new IllegalArgumentException(c.id() + " 缺少物品 id");
+                    throw new IllegalArgumentException(c.id() + " is missing an item id");
                 }
                 String prev = items.put(c.itemId(), c.id());
                 if (prev != null) {
-                    throw new IllegalArgumentException("物品 " + c.itemId() + " 同时绑定了 " + prev + " 和 " + c.id());
+                    throw new IllegalArgumentException("Item " + c.itemId() + " is bound to both " + prev + " and " + c.id());
                 }
             }
             if (c.alphaPermille().signum() < 0) {
-                throw new IllegalArgumentException(c.id() + " 的 alpha 不能为负");
+                throw new IllegalArgumentException(c.id() + " alpha can't be negative");
             }
         }
         if (!byId.containsKey(numeraire)) {
-            throw new IllegalArgumentException("计价货币不存在: " + numeraire);
+            throw new IllegalArgumentException("Numeraire does not exist: " + numeraire);
         }
         for (CurrencyDef c : currencies) {
             if (c.kind() != CurrencyKind.VIRTUAL) {
                 continue;
             }
             if (c.backing() == null || !byId.containsKey(c.backing())) {
-                throw new IllegalArgumentException(c.id() + " 需要存在的准备金货币 backing");
+                throw new IllegalArgumentException(c.id() + " needs a backing currency that exists");
             }
             if (byId.get(c.backing()).kind() != CurrencyKind.COMMODITY) {
-                throw new IllegalArgumentException(c.id() + " 的 backing 必须是实物货币");
+                throw new IllegalArgumentException(c.id() + " backing must be a commodity");
             }
             if (c.parPerBacking() == null || c.parPerBacking().signum() <= 0) {
-                throw new IllegalArgumentException(c.id() + " 的 parPerBacking 必须为正");
+                throw new IllegalArgumentException(c.id() + " parPerBacking must be positive");
             }
             if (c.haircut() == null || c.haircut().signum() < 0 || c.haircut().compareTo(BigDecimal.ONE) > 0) {
-                throw new IllegalArgumentException(c.id() + " 的 haircut 必须在 0 到 1 之间");
+                throw new IllegalArgumentException(c.id() + " haircut must be between 0 and 1");
             }
             if (c.minReserveRatio() == null || c.minReserveRatio().signum() <= 0) {
-                throw new IllegalArgumentException(c.id() + " 的 minReserveRatio 必须为正");
+                throw new IllegalArgumentException(c.id() + " minReserveRatio must be positive");
             }
         }
         if (feeFraction.signum() < 0 || feeFraction.compareTo(BigDecimal.ONE) > 0) {
-            throw new IllegalArgumentException("手续费必须在 0% 到 100% 之间");
+            throw new IllegalArgumentException("Fee must be between 0% and 100%");
         }
         if (outletRadius < 1 || outletRadius > 64) {
-            throw new IllegalArgumentException("网点半径必须在 1 到 64 之间");
+            throw new IllegalArgumentException("Outlet radius must be between 1 and 64");
         }
     }
 
