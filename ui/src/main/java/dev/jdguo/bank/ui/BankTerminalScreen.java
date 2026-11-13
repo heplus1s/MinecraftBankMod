@@ -50,7 +50,7 @@ public final class BankTerminalScreen extends Screen {
     @Override
     protected void init() {
         extra = null;
-        int x = this.width / 2 - 160;
+        int x = this.width / 2 - 210;
         int y = 36;
         if (level == Level.CONFIRM) {
             addDrawableChild(ButtonWidget.builder(Text.literal("返回"), b -> {
@@ -60,12 +60,12 @@ public final class BankTerminalScreen extends Screen {
                 step = 0;
             }).dimensions(x, this.height - 40, 80, 20).build());
             addDrawableChild(ButtonWidget.builder(Text.literal("确认宣告破产"), b -> BankUiClient.send("note-bankrupt-yes"))
-                    .dimensions(this.width / 2 + 60, this.height - 40, 120, 20).build());
+                    .dimensions(this.width / 2 + 40, this.height - 40, 140, 20).build());
             return;
         }
         addDrawableChild(ButtonWidget.builder(Text.literal("返回"), b -> back()).dimensions(x, this.height - 28, 60, 18).build());
         int listHeight = Math.max(72, Math.min(160, this.height - y - 64));
-        list = new ChoiceListWidget(client, x, y + 16, 160, listHeight);
+        list = new ChoiceListWidget(client, x, y + 16, 220, listHeight);
         list.setChoices(choices());
         addSelectableChild(list);
         if ("issuance".equals(category) && data.has("personal") && level == Level.LIST) {
@@ -73,15 +73,15 @@ public final class BankTerminalScreen extends Screen {
                 BankUiClient.send("note-bankrupt");
                 level = Level.CONFIRM;
                 clearAndInit();
-            }).dimensions(this.width / 2 + 90, this.height - 28, 80, 18).build());
+            }).dimensions(this.width / 2 + 70, this.height - 28, 100, 18).build());
         }
         if (level != Level.FORM) {
             return;
         }
-        amount = field(x + 180, y + 36, 120, "1");
+        amount = field(x + 236, y + 36, 140, "1");
         addDrawableChild(amount);
         if ("deposit".equals(category) || "withdraw".equals(category)) {
-            int bx = x + 180;
+            int bx = x + 236;
             for (String label : new String[] {"1", "5", "10", "64"}) {
                 String shown = label;
                 addDrawableChild(ButtonWidget.builder(Text.literal(label), b -> quick(shown))
@@ -92,44 +92,44 @@ public final class BankTerminalScreen extends Screen {
                     .dimensions(bx, y + 56, 36, 16).build());
         }
         if ("issuance".equals(category) && !data.has("personal")) {
-            nameField = field(x + 180, y + 58, 120, "");
+            nameField = field(x + 236, y + 58, 140, "");
             addDrawableChild(nameField);
-            extra = new ChoiceListWidget(client, x + 180, y + 96, 140, 54);
+            extra = new ChoiceListWidget(client, x + 236, y + 96, 140, 54);
             extra.setChoices(List.of(
                     new ChoiceListWidget.Choice("diamond", "钻石"),
                     new ChoiceListWidget.Choice("copper", "铜锭"),
                     new ChoiceListWidget.Choice("note", "银行券")));
             addSelectableChild(extra);
-            addDrawableChild(ButtonWidget.builder(Text.literal("记名"), b -> {
+            addDrawableChild(ButtonWidget.builder(Text.literal("登记个人银行券"), b -> {
                 String anchor = extra.selectedId() == null ? "diamond" : extra.selectedId();
                 BankUiClient.send("note-create " + regime + " " + anchor + " " + nameField.getText().trim() + " " + amount.getText().trim());
-            }).dimensions(x + 180, y + 140, 120, 18).build());
+            }).dimensions(x + 236, y + 140, 150, 18).build());
             return;
         }
         if ("market".equals(category) && ("swap".equals(regime) || "redeem".equals(regime))) {
-            ChoiceListWidget extra = new ChoiceListWidget(client, x + 180, y + 58, 140, 70);
+            ChoiceListWidget extra = new ChoiceListWidget(client, x + 236, y + 58, 160, 70);
             extra.setChoices("swap".equals(regime) ? notes() : currencies());
             addSelectableChild(extra);
             this.extra = extra;
         }
         String verb = switch (category) {
-            case "deposit" -> "划拨存入";
-            case "withdraw" -> "划拨取出";
+            case "deposit" -> "存入";
+            case "withdraw" -> "取出";
             case "exchange" -> "兑换";
-            case "checks" -> "开出汇票";
+            case "checks" -> "开出银行汇票";
             case "market" -> marketVerb();
             case "issuance" -> issuanceVerb();
-            default -> "执行";
+            default -> "确认办理";
         };
         int verbY = "deposit".equals(category) || "withdraw".equals(category) ? y + 80 : y + 136;
-        addDrawableChild(ButtonWidget.builder(Text.literal(verb), b -> submit()).dimensions(x + 180, verbY, 120, 18).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal(verb), b -> submit()).dimensions(x + 236, verbY, 210, 18).build());
     }
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         renderBackground(context);
         super.render(context, mouseX, mouseY, delta);
-        int x = this.width / 2 - 160;
+        int x = this.width / 2 - 210;
         context.drawText(textRenderer, titleLine(), x, 12, 0xFFD0B060, false);
         if ("management".equals(category) && level != Level.CONFIRM) {
             context.drawText(textRenderer, "M0 " + text("m0") + "   M1 " + text("m1") + "   M2 " + text("m2"), x, 24, 0xFFE8E8E8, false);
@@ -147,15 +147,15 @@ public final class BankTerminalScreen extends Screen {
             extra.render(context, mouseX, mouseY, delta);
         }
         if (level != Level.FORM) {
-            renderFigures(context, x + 180, 70);
+            renderFigures(context, x + 236, 70);
         } else if (level == Level.FORM) {
-            context.drawText(textRenderer, pickedLabel.isBlank() ? "数量" : pickedLabel, x + 180, 52, 0xFFE8D090, false);
+            context.drawText(textRenderer, pickedLabel.isBlank() ? "数量" : pickedLabel, x + 236, 52, 0xFFE8D090, false);
             if ("market".equals(category) && "swap".equals(regime)) {
-                context.drawText(textRenderer, "换成", x + 180, 78, 0xFFAAAAAA, false);
+                context.drawText(textRenderer, "换入的个人银行券", x + 236, 78, 0xFFAAAAAA, false);
             } else if ("market".equals(category) && "redeem".equals(regime)) {
-                context.drawText(textRenderer, "兑成", x + 180, 78, 0xFFAAAAAA, false);
+                context.drawText(textRenderer, "兑付为", x + 236, 78, 0xFFAAAAAA, false);
             } else if ("issuance".equals(category) && !data.has("personal")) {
-                context.drawText(textRenderer, "名字", x + 180, 78, 0xFFAAAAAA, false);
+                context.drawText(textRenderer, "名称", x + 236, 78, 0xFFAAAAAA, false);
             }
         }
     }
@@ -170,12 +170,12 @@ public final class BankTerminalScreen extends Screen {
         }
         if ("issuance".equals(category) && data.has("personal")) {
             y = line(context, "「" + text("personal") + "」", x, y, 0xFFE8D090);
-            y = line(context, "流通  " + text("circulation"), x, y, 0xFFE8E8E8);
-            line(context, "央行准备金  " + text("reserve") + " / " + text("required"), x, y, 0xFFE8E8E8);
+            y = line(context, "流通额  " + text("circulation"), x, y, 0xFFE8E8E8);
+            line(context, "准备金账户  " + text("reserve") + "  应当存入  " + text("required"), x, y, 0xFFE8E8E8);
             return;
         }
         if (level == Level.HOME || "savings".equals(category) || "deposit".equals(category) || "withdraw".equals(category)) {
-            y = line(context, "你的账户", x, y, 0xFFD0B060);
+            y = line(context, "储蓄账户", x, y, 0xFFD0B060);
             if (!data.has("accounts")) {
                 return;
             }
@@ -219,13 +219,13 @@ public final class BankTerminalScreen extends Screen {
     private String categoryTitle() {
         return switch (category) {
             case "savings" -> "储蓄";
-            case "deposit" -> "划拨存入";
-            case "withdraw" -> "划拨取出";
-            case "exchange" -> step == 0 ? "兑换 · 付出" : "兑换 · 得到";
-            case "checks" -> "汇票";
-            case "market" -> step == 0 ? "交易 · 选择银行券" : "交易 · 方式";
-            case "issuance" -> data.has("personal") ? "个人发行" : "个人发行 · 汇率";
-            case "management" -> "管理";
+            case "deposit" -> "存入";
+            case "withdraw" -> "取出";
+            case "exchange" -> step == 0 ? "兑换付出的货币" : "兑换得到的货币";
+            case "checks" -> "银行汇票";
+            case "market" -> step == 0 ? "选择个人银行券" : "交易方式";
+            case "issuance" -> data.has("personal") ? "个人货币发行" : "个人货币发行的汇率";
+            case "management" -> "中央银行管理";
             default -> "中央银行";
         };
     }
@@ -237,11 +237,11 @@ public final class BankTerminalScreen extends Screen {
             rows.add(new ChoiceListWidget.Choice("deposit", "存入"));
             rows.add(new ChoiceListWidget.Choice("withdraw", "取出"));
             rows.add(new ChoiceListWidget.Choice("exchange", "兑换"));
-            rows.add(new ChoiceListWidget.Choice("checks", "汇票"));
-            rows.add(new ChoiceListWidget.Choice("market", "交易"));
-            rows.add(new ChoiceListWidget.Choice("issuance", "个人发行"));
+            rows.add(new ChoiceListWidget.Choice("checks", "银行汇票"));
+            rows.add(new ChoiceListWidget.Choice("market", "个人银行券交易"));
+            rows.add(new ChoiceListWidget.Choice("issuance", "个人货币发行"));
             if (data.has("admin") && data.get("admin").getAsBoolean()) {
-                rows.add(new ChoiceListWidget.Choice("management", "管理"));
+                rows.add(new ChoiceListWidget.Choice("management", "中央银行管理"));
             }
             return rows;
         }
@@ -250,26 +250,26 @@ public final class BankTerminalScreen extends Screen {
                     new ChoiceListWidget.Choice("buy", "买入"),
                     new ChoiceListWidget.Choice("sell", "卖出"),
                     new ChoiceListWidget.Choice("swap", "互换"),
-                    new ChoiceListWidget.Choice("redeem", "通兑"));
+                    new ChoiceListWidget.Choice("redeem", "兑付"));
         }
         if ("issuance".equals(category) && !data.has("personal")) {
             return List.of(
-                    new ChoiceListWidget.Choice("float", "浮动"),
-                    new ChoiceListWidget.Choice("peg", "钉住"),
+                    new ChoiceListWidget.Choice("float", "浮动汇率"),
+                    new ChoiceListWidget.Choice("peg", "钉住汇率"),
                     new ChoiceListWidget.Choice("hard", "定额兑付"));
         }
         if ("issuance".equals(category)) {
             return List.of(
-                    new ChoiceListWidget.Choice("issue", "按准备金发行"),
-                    new ChoiceListWidget.Choice("unbacked", "虚发"),
-                    new ChoiceListWidget.Choice("reserve-deposit", "存入央行准备金"),
-                    new ChoiceListWidget.Choice("reserve-withdraw", "取出央行准备金"));
+                    new ChoiceListWidget.Choice("issue", "按发行准备金货币发行"),
+                    new ChoiceListWidget.Choice("unbacked", "无发行准备金的货币发行"),
+                    new ChoiceListWidget.Choice("reserve-deposit", "存入准备金账户"),
+                    new ChoiceListWidget.Choice("reserve-withdraw", "取出准备金账户"));
         }
         if ("management".equals(category)) {
             return List.of(
-                    new ChoiceListWidget.Choice("freeze", "暂停或恢复兑付"),
-                    new ChoiceListWidget.Choice("unbacked", "无准备金增发"),
-                    new ChoiceListWidget.Choice("retire", "注销"));
+                    new ChoiceListWidget.Choice("freeze", "暂停或恢复银行券兑付"),
+                    new ChoiceListWidget.Choice("unbacked", "无发行准备金的货币发行"),
+                    new ChoiceListWidget.Choice("retire", "注销银行券"));
         }
         if ("market".equals(category)) {
             return notes();
@@ -449,17 +449,17 @@ public final class BankTerminalScreen extends Screen {
         return switch (regime) {
             case "sell" -> "卖出";
             case "swap" -> "互换";
-            case "redeem" -> "通兑";
+            case "redeem" -> "兑付";
             default -> "买入";
         };
     }
 
     private String issuanceVerb() {
         return switch (regime) {
-            case "unbacked" -> "虚发";
-            case "reserve-deposit" -> "划入准备金";
-            case "reserve-withdraw" -> "划出准备金";
-            default -> "发行";
+            case "unbacked" -> "无发行准备金的货币发行";
+            case "reserve-deposit" -> "存入准备金账户";
+            case "reserve-withdraw" -> "取出准备金账户";
+            default -> "货币发行";
         };
     }
 

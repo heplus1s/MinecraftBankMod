@@ -259,11 +259,11 @@ public final class DisplayService {
             lines.add(Text.literal("1" + baseName + " ").formatted(Formatting.GRAY)
                     .append(Text.literal(CompactFormat.formatRate(books.unitsPer(def.id(), books.numeraire())) + def.name()).formatted(Formatting.WHITE)));
         }
-        lines.add(Text.literal("费率 ").formatted(Formatting.GRAY)
+        lines.add(Text.literal("手续费 ").formatted(Formatting.GRAY)
                 .append(Text.literal(fee(books)).formatted(Formatting.GOLD)));
         CurrencyDef note = books.primaryVirtual();
         if (note != null) {
-            lines.add(Text.literal("兑付 ").formatted(Formatting.GRAY)
+            lines.add(Text.literal("银行券兑付 ").formatted(Formatting.GRAY)
                     .append(Text.literal(CompactFormat.formatRatio(books.tightness(note.id()))).formatted(Formatting.WHITE)));
         }
         lines.add(Text.literal(books.statusLabel()).formatted(statusColor(books)));
@@ -339,10 +339,10 @@ public final class DisplayService {
         }
         CurrencyDef note = books.primaryVirtual();
         if (note != null) {
-            text.append(Text.literal("兑付能力 ").formatted(Formatting.DARK_AQUA))
+            text.append(Text.literal("银行券兑付能力 ").formatted(Formatting.DARK_AQUA))
                     .append(Text.literal(CompactFormat.formatRatio(books.tightness(note.id())) + "\n").formatted(Formatting.WHITE));
             if (note.backing() != null && books.currency(note.backing()) != null) {
-                text.append(Text.literal("库存 " + books.currency(note.backing()).name() + " ").formatted(Formatting.GRAY))
+                text.append(Text.literal("发行准备金 " + books.currency(note.backing()).name() + " ").formatted(Formatting.GRAY))
                         .append(Text.literal(CompactFormat.format(books.supply(note.backing()).freeReserve()) + "\n").formatted(Formatting.WHITE));
             }
         }

@@ -654,28 +654,28 @@ public final class BankBooks {
     public String statusLabel() {
         CurrencyDef note = primaryVirtual();
         if (note == null) {
-            return frozen ? "暂停兑付" : "兑付正常";
+            return frozen ? "银行券兑付已暂停" : "银行券兑付正常";
         }
         if (abundance(note.id()) == null) {
-            return "无法兑付";
+            return "无法兑付银行券";
         }
         if (frozen) {
-            return "暂停兑付";
+            return "银行券兑付已暂停";
         }
         BigDecimal tight = tightness(note.id());
         if (tight == null) {
-            return "兑付正常";
+            return "银行券兑付正常";
         }
         if (tight.compareTo(new BigDecimal("0.05")) < 0) {
-            return "无法兑付";
+            return "无法兑付银行券";
         }
         if (tight.compareTo(new BigDecimal("0.25")) < 0) {
-            return "准备金不足";
+            return "发行准备金不足";
         }
         if (tight.compareTo(new BigDecimal("0.80")) < 0) {
-            return "准备金紧张";
+            return "发行准备金紧张";
         }
-        return "兑付正常";
+        return "银行券兑付正常";
     }
 
     /** English status for {@code /bank supply}. Displays keep {@link #statusLabel()}. */
