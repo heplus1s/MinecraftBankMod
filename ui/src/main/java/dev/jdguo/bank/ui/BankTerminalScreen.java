@@ -64,8 +64,9 @@ public final class BankTerminalScreen extends Screen {
             return;
         }
         addDrawableChild(ButtonWidget.builder(Text.literal("返回"), b -> back()).dimensions(x, this.height - 28, 60, 18).build());
-        int listHeight = Math.max(72, Math.min(160, this.height - y - 64));
-        list = new ChoiceListWidget(client, x, y + 16, 220, listHeight);
+        int listTop = y + 8 + headerLines() * 11;
+        int listHeight = Math.max(72, Math.min(150, this.height - listTop - 36));
+        list = new ChoiceListWidget(client, x, listTop, 220, listHeight);
         list.setChoices(choices());
         addSelectableChild(list);
         if ("issuance".equals(category) && data.has("personal") && level == Level.LIST) {
@@ -133,8 +134,6 @@ public final class BankTerminalScreen extends Screen {
         context.drawText(textRenderer, titleLine(), x, 12, 0xFFD0B060, false);
         if ("management".equals(category) && level != Level.CONFIRM) {
             context.drawText(textRenderer, "M0 " + text("m0") + "   M1 " + text("m1") + "   M2 " + text("m2"), x, 24, 0xFFE8E8E8, false);
-        } else if (level == Level.HOME) {
-            context.drawText(textRenderer, "状态 " + text("status"), x, 24, 0xFFB7C7B0, false);
         }
         if (level == Level.CONFIRM) {
             context.drawText(textRenderer, "确认后才会作废「" + text("personal") + "」。返回则账目不变。", x, 80, 0xFFFF7777, false);
@@ -147,7 +146,7 @@ public final class BankTerminalScreen extends Screen {
             extra.render(context, mouseX, mouseY, delta);
         }
         if (level != Level.FORM) {
-            renderFigures(context, x + 236, 70);
+            renderFigures(context, x, 36);
         } else if (level == Level.FORM) {
             context.drawText(textRenderer, pickedLabel.isBlank() ? "数量" : pickedLabel, x + 236, 52, 0xFFE8D090, false);
             if ("market".equals(category) && "swap".equals(regime)) {
@@ -158,6 +157,37 @@ public final class BankTerminalScreen extends Screen {
                 context.drawText(textRenderer, "名称", x + 236, 78, 0xFFAAAAAA, false);
             }
         }
+    }
+
+    private int headerLines() {
+        if (level == Level.FORM || level == Level.CONFIRM) {
+            return 0;
+        }
+        if ("management".equals(category)) {
+            return 2 + centralCount("savings") + centralCount("reserve");
+        }
+        if ("issuance".equals(category) && data.has("personal")) {
+            return 3;
+        }
+        if (level == Level.HOME || "savings".equals(category) || "deposit".equals(category) || "withdraw".equals(category)) {
+            int count = data.has("accounts") ? data.getAsJsonArray("accounts").size() : 0;
+            return 1 + count;
+        }
+        return 0;
+    }
+
+    private int centralCount(String field) {
+        if (!data.has("central")) {
+            return 0;
+        }
+        int count = 0;
+        JsonArray rows = data.getAsJsonArray("central");
+        for (int i = 0; i < rows.size(); i++) {
+            if (rows.get(i).getAsJsonObject().has(field)) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private void renderFigures(DrawContext context, int x, int y) {

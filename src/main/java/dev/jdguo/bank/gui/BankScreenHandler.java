@@ -991,7 +991,6 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         inventory.setStack(4, marker(Items.GOLD_BLOCK,
                 Text.literal("中央银行管理").formatted(Formatting.AQUA, Formatting.BOLD),
                 List.of(Text.literal("Central bank").formatted(Formatting.GRAY),
-                        Text.literal(books.statusLabel()).formatted(Formatting.YELLOW),
                         Text.literal("汇率 " + BankPhrases.copperPerDiamond(books) + " 铜锭/钻石").formatted(Formatting.WHITE),
                         Text.literal("手续费 " + percent(books.feeFraction())).formatted(Formatting.GRAY),
                         Text.literal("中央银行年利率 " + percent(books.interestFraction())).formatted(Formatting.GOLD),
@@ -1046,9 +1045,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         BigDecimal tight = note == null ? null : books.tightness(note.id());
         inventory.setStack(31, marker(concrete(tight),
                 Text.literal("银行券兑付能力 " + CompactFormat.formatRatio(tight)).formatted(Formatting.WHITE),
-                List.of(Text.literal(books.statusLabel()).formatted(Formatting.YELLOW),
-                        Text.literal(books.frozen() ? "银行券兑付已暂停" : "银行券兑付正常").formatted(Formatting.GRAY),
-                        Text.literal(books.frozen() ? "Redemption suspended" : "Redemption available").formatted(Formatting.DARK_GRAY)),
+                List.of(),
                 "noop", 1));
         inventory.setStack(40, marker(Items.CLOCK,
                 Text.literal("中央银行年利率 " + percent(books.interestFraction())).formatted(Formatting.GOLD),

@@ -14,15 +14,11 @@ import net.minecraft.entity.boss.BossBar;
 import net.minecraft.entity.boss.ServerBossBar;
 import net.minecraft.entity.decoration.DisplayEntity;
 import net.minecraft.network.packet.s2c.play.PlayerListHeaderS2CPacket;
-import net.minecraft.network.packet.s2c.play.ScoreboardDisplayS2CPacket;
 import net.minecraft.network.packet.s2c.play.ScoreboardObjectiveUpdateS2CPacket;
-import net.minecraft.network.packet.s2c.play.ScoreboardPlayerUpdateS2CPacket;
-import net.minecraft.network.packet.s2c.play.TeamS2CPacket;
 import net.minecraft.scoreboard.AbstractTeam;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.ScoreboardCriterion;
 import net.minecraft.scoreboard.ScoreboardObjective;
-import net.minecraft.scoreboard.ServerScoreboard;
 import net.minecraft.scoreboard.Team;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -42,7 +38,7 @@ import java.util.UUID;
 
 /**
  * Lobby readouts built only from vanilla packets and a text display.
- * The sidebar numbers are line positions: 1.20.1 always prints them, and they are not balances.
+ * The scoreboard sidebar is not used. Saved sidebar preferences are left on disk and never sent.
  */
 public final class DisplayService {
     private static final String OBJECTIVE = "banksb";
@@ -199,13 +195,7 @@ public final class DisplayService {
 
     private void refreshPlayer(ServerPlayerEntity player, BankBooks books) {
         UUID id = player.getUuid();
-        if (books.showSidebar(id)) {
-            sendSidebar(player, books);
-        } else if (sidebarReady.remove(id)) {
-            player.networkHandler.sendPacket(new ScoreboardObjectiveUpdateS2CPacket(
-                    objective, ScoreboardObjectiveUpdateS2CPacket.REMOVE_MODE));
-            sidebarLines.remove(id);
-        }
+        clearSidebar(player);
         if (books.showTab(id)) {
             player.networkHandler.sendPacket(new PlayerListHeaderS2CPacket(tabHeader(books), tabFooter()));
         } else {
@@ -213,81 +203,12 @@ public final class DisplayService {
         }
     }
 
-    private void sendSidebar(ServerPlayerEntity player, BankBooks books) {
-        List<Text> lines = sidebarLines(player, books);
-        objective.setDisplayName(Text.literal("✦ 中央银行 ✦").formatted(TITLE_COLORS[frame % TITLE_COLORS.length], Formatting.BOLD));
-        boolean fresh = sidebarReady.add(player.getUuid());
-        player.networkHandler.sendPacket(new ScoreboardObjectiveUpdateS2CPacket(objective,
-                fresh ? ScoreboardObjectiveUpdateS2CPacket.ADD_MODE : ScoreboardObjectiveUpdateS2CPacket.UPDATE_MODE));
-        if (fresh) {
-            player.networkHandler.sendPacket(new ScoreboardDisplayS2CPacket(Scoreboard.SIDEBAR_DISPLAY_SLOT_ID, objective));
-        }
-        int previous = sidebarLines.getOrDefault(player.getUuid(), 0);
-        for (int i = 0; i < lines.size(); i++) {
-            Team team = board.getTeam(teamName(i));
-            team.setPrefix(lines.get(i));
-            player.networkHandler.sendPacket(TeamS2CPacket.updateTeam(team, true));
-            player.networkHandler.sendPacket(new ScoreboardPlayerUpdateS2CPacket(
-                    ServerScoreboard.UpdateMode.CHANGE, OBJECTIVE, entry(i), lines.size() - i));
-        }
-        for (int i = lines.size(); i < previous; i++) {
-            player.networkHandler.sendPacket(new ScoreboardPlayerUpdateS2CPacket(
-                    ServerScoreboard.UpdateMode.REMOVE, OBJECTIVE, entry(i), 0));
-        }
-        sidebarLines.put(player.getUuid(), lines.size());
-    }
-
-    private List<Text> sidebarLines(ServerPlayerEntity player, BankBooks books) {
-        List<Text> lines = new ArrayList<>();
-        lines.add(Text.literal(frame / 15 % 2 == 0 ? "✦ ✧ ✦ ✧ ✦" : "✧ ✦ ✧ ✦ ✧").formatted(Formatting.LIGHT_PURPLE));
-        int shown = 0;
-        for (CurrencyDef def : books.currencies()) {
-            if (shown++ >= 4) {
-                break;
-            }
-            lines.add(Text.literal(def.name() + " ").formatted(color(def))
-                    .append(Text.literal(CompactFormat.format(books.balance(player.getUuid(), def.id()))).formatted(Formatting.WHITE)));
-        }
-        lines.add(Text.literal("────────").formatted(Formatting.DARK_GRAY));
-        CurrencyDef base = books.currency(books.numeraire());
-        String baseName = base == null ? books.numeraire() : base.name();
-        int rates = 0;
-        for (CurrencyDef def : books.currencies()) {
-            if (def.id().equals(books.numeraire()) || rates++ >= 3) {
-                continue;
-            }
-            lines.add(Text.literal("1" + baseName + " ").formatted(Formatting.GRAY)
-                    .append(Text.literal(CompactFormat.formatRate(books.unitsPer(def.id(), books.numeraire())) + def.name()).formatted(Formatting.WHITE)));
-        }
-        lines.add(Text.literal("手续费 ").formatted(Formatting.GRAY)
-                .append(Text.literal(fee(books)).formatted(Formatting.GOLD)));
-        CurrencyDef note = books.primaryVirtual();
-        if (note != null) {
-            lines.add(Text.literal("银行券兑付 ").formatted(Formatting.GRAY)
-                    .append(Text.literal(CompactFormat.formatRatio(books.tightness(note.id()))).formatted(Formatting.WHITE)));
-        }
-        lines.add(Text.literal(books.statusLabel()).formatted(statusColor(books)));
-        lines.add(nearestLine(player, books));
-        return lines;
-    }
-
-    private Text nearestLine(ServerPlayerEntity player, BankBooks books) {
-        String world = player.getWorld().getRegistryKey().getValue().toString();
-        OutletPoint best = null;
-        double bestDistance = Double.POSITIVE_INFINITY;
-        for (OutletPoint outlet : books.outlets()) {
-            double distance = outlet.distanceSquared(world, player.getX(), player.getY(), player.getZ());
-            if (distance < bestDistance) {
-                best = outlet;
-                bestDistance = distance;
-            }
-        }
-        if (best == null) {
-            return Text.literal("尚未设立网点").formatted(Formatting.DARK_GRAY);
-        }
-        int blocks = (int) Math.sqrt(bestDistance);
-        return Text.literal("网点 ").formatted(Formatting.GRAY)
-                .append(Text.literal(best.name() + " " + blocks + "m").formatted(Formatting.AQUA));
+    /** Drops any sidebar already on the client. Saved preferences stay on disk and are not shown. */
+    private void clearSidebar(ServerPlayerEntity player) {
+        player.networkHandler.sendPacket(new ScoreboardObjectiveUpdateS2CPacket(
+                objective, ScoreboardObjectiveUpdateS2CPacket.REMOVE_MODE));
+        sidebarReady.remove(player.getUuid());
+        sidebarLines.remove(player.getUuid());
     }
 
     private void refreshBossBar(MinecraftServer server, BankBooks books) {
@@ -295,9 +216,7 @@ public final class DisplayService {
         BigDecimal tight = note == null ? null : books.tightness(note.id());
         BigDecimal copperPerDiamond = books.currency("copper") == null || books.currency("diamond") == null
                 ? null : books.unitsPer("copper", "diamond");
-        String rateText = copperPerDiamond == null ? "—" : CompactFormat.formatRate(copperPerDiamond);
-        bossBar.setName(Text.literal("汇率：" + rateText + " 铜/钻  ·  " + books.statusLabel())
-                .formatted(statusColor(books), Formatting.BOLD));
+        bossBar.setName(Text.literal("银行券兑付能力 " + CompactFormat.formatRatio(tight)).formatted(Formatting.WHITE));
         float percent = 1.0f;
         if (tight != null) {
             percent = tight.max(BigDecimal.ZERO).min(BigDecimal.ONE).floatValue();
@@ -341,12 +260,7 @@ public final class DisplayService {
         if (note != null) {
             text.append(Text.literal("银行券兑付能力 ").formatted(Formatting.DARK_AQUA))
                     .append(Text.literal(CompactFormat.formatRatio(books.tightness(note.id())) + "\n").formatted(Formatting.WHITE));
-            if (note.backing() != null && books.currency(note.backing()) != null) {
-                text.append(Text.literal("发行准备金 " + books.currency(note.backing()).name() + " ").formatted(Formatting.GRAY))
-                        .append(Text.literal(CompactFormat.format(books.supply(note.backing()).freeReserve()) + "\n").formatted(Formatting.WHITE));
-            }
         }
-        text.append(Text.literal(books.statusLabel() + "\n").formatted(statusColor(books), Formatting.BOLD));
         text.append(Text.literal("右键此方块开启柜台").formatted(Formatting.DARK_GRAY));
         return text;
     }
@@ -456,7 +370,7 @@ public final class DisplayService {
             header.append(Text.literal("1" + baseName + "=").formatted(Formatting.GRAY))
                     .append(Text.literal(CompactFormat.formatRate(books.unitsPer(def.id(), books.numeraire())) + def.name()).formatted(color(def)));
         }
-        header.append(Text.literal("\n费率 " + fee(books) + "  ·  " + books.statusLabel()).formatted(statusColor(books)));
+        header.append(Text.literal("\n手续费 " + fee(books)).formatted(Formatting.GRAY));
         return header;
     }
 
@@ -466,20 +380,6 @@ public final class DisplayService {
 
     private static String fee(BankBooks books) {
         return books.feeFraction().multiply(new BigDecimal("100")).stripTrailingZeros().toPlainString() + "%";
-    }
-
-    private static Formatting statusColor(BankBooks books) {
-        String label = books.statusLabel();
-        if (label.contains("无法") || label.contains("暂停")) {
-            return Formatting.RED;
-        }
-        if (label.contains("不足")) {
-            return Formatting.GOLD;
-        }
-        if (label.contains("紧张")) {
-            return Formatting.YELLOW;
-        }
-        return Formatting.GREEN;
     }
 
     private static Formatting color(CurrencyDef def) {
