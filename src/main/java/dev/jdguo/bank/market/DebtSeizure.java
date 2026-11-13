@@ -8,6 +8,9 @@ import java.util.Map;
  * Turns commodity stacks into repayment of a central-bank debt.
  * Same-currency items pay that debt first. Copper and diamonds cross at the live whole rate.
  * A diamond is taken for a copper debt only when the debt covers a whole diamond.
+ *
+ * <p>This class prices only registered commodity currencies. Arbitrary backpack items
+ * wait for {@link ShopQuote}; do not add a shop price list here.
  */
 public final class DebtSeizure {
     /** Once a second at 20 ticks. */

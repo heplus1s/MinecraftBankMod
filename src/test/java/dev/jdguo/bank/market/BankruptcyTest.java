@@ -123,6 +123,7 @@ class BankruptcyTest {
         assertEquals(new BigInteger("1000000").add(copperPile), books.supply("copper").reserve());
         assertEquals(BigInteger.ZERO, books.balance(issuer, "copper"));
 
+        assertTrue(ShopQuote.installed() == null);
         assertTrue(DebtSeizure.due(20));
         assertFalse(DebtSeizure.due(19));
         BankBooks loaded = BankBooks.fromJson(books.toJson(), BankConfig.defaults());

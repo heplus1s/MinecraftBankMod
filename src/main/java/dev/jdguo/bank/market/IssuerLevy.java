@@ -19,7 +19,14 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Once a second, commodity items on a bankrupt issuer are taken and booked against their debt. */
+/**
+ * Once a second, commodity items on a bankrupt issuer are taken and booked against their debt.
+ * Copper, diamonds, and any other registered commodity currency are seized now.
+ *
+ * <p>When {@link ShopQuote#installed()} is set by a future shop, the same pass should also
+ * value every other backpack stack at that live quote, remove the stack, and apply the
+ * diamond value to this debt. This build does not do that, and it does not invent prices.
+ */
 public final class IssuerLevy {
     private IssuerLevy() {}
 
@@ -34,6 +41,8 @@ public final class IssuerLevy {
                 continue;
             }
             Map<String, BigInteger> available = availableCommodities(player, books);
+            // ShopQuote.installed() stays null until a shop exists. Non-commodity
+            // backpack stacks are left in place; only commodity currencies are counted above.
             Map<String, BigInteger> taken = books.seizeCommodities(player.getUuid(), available);
             if (taken.isEmpty()) {
                 continue;
