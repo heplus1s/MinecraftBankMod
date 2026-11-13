@@ -51,8 +51,8 @@
 
 打开柜台先看到「储蓄」，也就是你自己的存款。底栏可以切换：储蓄、存入、取出、兑换、汇票、交易、个人发行。个人发行用来给自己的银行券记名和开价。「管理」只有管理员能看见，里面是央行的准备金、发行额、汇率，以及央行发行、注销和暂停兑付。普通玩家必须在网点才能开柜台；管理员用 `/bank admin` 可以在别处打开管理页。
 
-- **存入**：把铜锭或钻石放进空格。你的余额、银行准备金和账面发行额会一起增加。
-- **取出**：可以按 1、10、64 或「尽可能多」来取。库存不够会拒绝；选「尽可能多」时，会按实际库存少给。一次最多取 4096 个，再多请开汇票。
+- **存入**：把铜锭、钻石，或纸质银行券放进空格。铜锭和钻石会让余额、准备金和发行额一起增加。银行券只是把纸上的余额存回账户，发行额不变。
+- **取出**：铜锭和钻石可以按 1、10、64 或「尽可能多」来取。库存不够会拒绝；选「尽可能多」时，会按实际库存少给。银行券取出来是原版纸，面额相同的叠成一摞，64 张是一摞。一次最多取 4096 张，再多可以用 `/bank withdraw note <amount>`，会给一张这个面额的纸，同样的面额还能继续叠。
 - **兑换**：先选付出哪种货币、得到哪种货币。按钮上写的是已经算上手续费的价格。
 - **汇票**：从余额里开出一本成书，可以写成持票人或仅本人。把书放进兑付格，钱会回到账户。
 - **发行**：给自己的个人银行券起名、定开价，准备金够了再发行。央行的增发、注销和暂停兑付在管理员的「管理」页。
@@ -85,7 +85,7 @@
 | --- | --- | --- | --- | --- |
 | `copper` | 实物 | 铜锭 | 1,000,000 | 铜 |
 | `diamond` | 实物 | 钻石 | 1,000 | 计价货币 |
-| `note` | 纸币 | 用成书当汇票，不能把普通纸张存进去 | 1,000 | 银行券，开局 1 张兑 1 钻 |
+| `note` | 纸币 | 原版纸，同面额可叠放；汇票仍是成书 | 1,000 | 银行券，开局 1 张兑 1 钻 |
 
 默认手续费是 2%。每种货币的差额权重 α 默认是 1000‰。汇率默认不设上下限，这样银行券贬值时，数字可以变得很大。如果要限制，可以用：
 
@@ -151,6 +151,17 @@ V = R + (L - R) × α / 1000
 
 `<par>` 和 `<amount>` 可以用 `1_000`、`1.5k`、`2m` 这种写法，适合箱子按钮上没有的数量。底栏「发行」用来记名和按 1、10、64、100 发行；常见开价是 1 钻、10 钻、1000 铜，名字用你游戏名里前三个汉字或字母。「交易」用来按同样的数量买卖。别的数量用上面的指令。
 
+手里的个人银行券也是这种纸，名字写成「个人银行券「名字」」，不会和央行银行券叠在一起。取出用柜台按钮，或：
+
+```
+/bank note withdraw <amount>
+/bank note withdraw <name> <amount>
+/bank withdraw <currency> <amount>
+/bank deposit
+```
+
+`/bank deposit` 存的是主手上的那一摞纸。已经入过账的，以及多出来的复制件，都会被收回，不会再次入账。
+
 发行前，个人准备金至少要盖住「已发行加这次要发的数量 × 开价 × 覆盖倍数」。覆盖倍数默认是 1，管理员用 `/bank note coverage <ratio>` 改。
 
 买卖的计价是央行银行券。开局 1 张央行银行券 = 1 钻。不够整张，或者钻石那边凑不齐，就按 1 钻 = 1,000 铜用铜锭找零。
@@ -170,7 +181,7 @@ V = R + (L - R) × α / 1000
 
 开出来的是一本原版成书，里面记着编号、币种、金额和出票人等信息，并标成「破损」，不能用工作台再复制。就算用别的办法复制了，服务器也只认第一次兑付，同一编号的第二本会被没收。书上的金额如果和存根对不上，同样没收。如果汇票写了抬头，而你不是那个人，书会还给你，存根不动。
 
-从自己余额开票，只是把存款换成一张纸，总发行额不变。管理员的 `/bank credit check` 则是新印出来的发行额，玩家必须在线才能拿到书。
+从自己余额开票，只是把存款换成一张汇票，总发行额不变。管理员的 `/bank credit check` 则是新印出来的发行额，玩家必须在线才能拿到书。纸质银行券是另一样东西：用来把账户里的银行券拿进背包，不是汇票。
 
 ## 存档和配置
 
@@ -214,7 +225,7 @@ V = R + (L - R) × α / 1000
 ./gradlew test
 ```
 
-`./gradlew test` 不会启动游戏。它主要检查存取、兑换、汇票是否只兑一次、滥发后银行券会不会贬值、按准备金发行会不会锁钻，以及大数字会不会算爆。
+`./gradlew test` 不会启动游戏。它主要检查存取、兑换、汇票是否只兑一次、纸质银行券拆开或复制后会不会多出来、滥发后银行券会不会贬值、按准备金发行会不会锁钻，以及大数字会不会算爆。
 
 许可是 MIT，版权归 heplus1s。Minecraft 是 Mojang 的商标，本项目与 Mojang 无关。
 
@@ -273,8 +284,8 @@ The interface is a vanilla large chest. The buttons in the slots are ordinary it
 
 The counter opens on Savings, which is your own deposits. The bottom row switches pages: savings, deposit, withdraw, exchange, bills, personal trading, and personal issuance. Personal issuance is where you name your own note and set its opening price. Management is operators only: central reserves, amount issued, rates, and central-bank issuance, retirement, and the freeze control. Regular players can only open the counter at an outlet. Operators can use `/bank admin` to open Management elsewhere.
 
-- **Deposit**: Put copper ingots or diamonds in an empty slot. Your balance, the bank's reserves, and the amount issued all go up together.
-- **Withdraw**: You can take 1, 10, 64, or "as many as possible". If the stock doesn't have enough, the request is refused; "as many as possible" gives you whatever is actually in stock. The cap per withdrawal is 4096 items; for more, issue a bill.
+- **Deposit**: Put copper ingots, diamonds, or bank-note paper in an empty slot. Copper and diamonds increase your balance, the reserves, and the amount issued together. Bank-note paper only moves that balance back onto the account. The amount issued does not change.
+- **Withdraw**: Copper and diamonds can be taken as 1, 10, 64, or "as many as possible". If the stock doesn't have enough, the request is refused; "as many as possible" gives you whatever is actually in stock. Bank notes come out as vanilla paper. The same face value stacks, and 64 sheets are one pile. One withdrawal gives at most 4096 sheets. For more, `/bank withdraw note <amount>` gives a single sheet of that face, and another withdrawal of the same face stacks with it.
 - **Exchange**: First pick what you pay and what you get. The button already shows the price with the fee included.
 - **Bills**: Issue a written book from your balance, payable to bearer or to yourself only. Put the book in the redeem slot and the money goes back to the account.
 - **Issuance**: Name your personal note, set its opening price, and issue it once your personal reserve covers the amount. Central issue, retire, and freeze live on the operator Management page.
@@ -307,7 +318,7 @@ There are three default currencies, written in `config/bank.json`. They are copi
 | --- | --- | --- | --- | --- |
 | `copper` | commodity | copper ingot | 1,000,000 | copper |
 | `diamond` | commodity | diamond | 1,000 | the unit of account |
-| `note` | paper | Uses written books as bills; ordinary paper can't be deposited | 1,000 | bank note. At the start, 1 bank note buys 1 diamond |
+| `note` | paper | Vanilla paper that stacks by face value; bills stay written books | 1,000 | bank note. At the start, 1 bank note buys 1 diamond |
 
 The default fee is 2%. The difference weight α for each currency defaults to 1000‰. Rates have no min/max limit by default, so the numbers can get very large when bank notes depreciate. If you want limits:
 
@@ -373,6 +384,17 @@ These are not savings, not the personal reserve, and not the central bank note. 
 
 `<par>` and `<amount>` accept `1_000`, `1.5k`, and `2m`, for amounts the chest buttons don't show. The Issuance tab names the note and issues 1, 10, 64, or 100. Common opening prices are 1 diamond, 10 diamonds, or 1000 copper, and the name is the first three Chinese characters or letters of your player name. The personal-trading tab buys and sells those same amounts. Use the commands above for anything else.
 
+Personal notes use the same paper. The name reads as a personal note, so it does not stack with central bank notes. Withdraw them from the counter, or with:
+
+```
+/bank note withdraw <amount>
+/bank note withdraw <name> <amount>
+/bank withdraw <currency> <amount>
+/bank deposit
+```
+
+`/bank deposit` deposits the pile in your main hand. Paper that was already deposited, and any extra copies, are taken back and are not credited again.
+
 Before issuing, the personal reserve has to cover `(already issued + this issue) × par × coverage`. Coverage defaults to 1. Operators change it with `/bank note coverage <ratio>`.
 
 Trades are priced in the central bank note. At the start, 1 central bank note = 1 diamond. Anything short of a whole note, or a diamond the stock can't pay, is settled in copper at 1 diamond = 1,000 copper.
@@ -392,7 +414,7 @@ Before anything is issued, the diamond price is just the par converted into diam
 
 What you get is a vanilla written book. It records an id, the currency, the amount, the issuer, and so on, and is marked tattered so it can't be copied at a crafting table. Even if it is copied some other way, the server only honors the first redemption; a second book with the same id is confiscated. If the amount on the book doesn't match the stub, it's confiscated too. If the bill has a named payee and you aren't that person, the book is returned and the stub is left alone.
 
-Issuing a bill from your own balance just turns a deposit into a piece of paper. The total amount issued doesn't change. An operator's `/bank credit check` is newly issued money, and the player has to be online to receive the book.
+Issuing a bill from your own balance just turns a deposit into a bill. The total amount issued doesn't change. An operator's `/bank credit check` is newly issued money, and the player has to be online to receive the book. Bank-note paper is separate: it moves note balances into the inventory, and it is not a bill.
 
 ## Saves and config
 
@@ -436,6 +458,6 @@ There's no stock market yet. If that gets built later, it will be a separate mod
 ./gradlew test
 ```
 
-`./gradlew test` does not start the game. It mainly checks deposits, withdrawals, exchange, that bills redeem only once, that unbacked issuance depreciates notes, that backed issuance locks diamonds, and that huge numbers don't blow up the math.
+`./gradlew test` does not start the game. It mainly checks deposits, withdrawals, exchange, that bills redeem only once, that split or copied bank-note paper cannot mint extra value, that unbacked issuance depreciates notes, that backed issuance locks diamonds, and that huge numbers don't blow up the math.
 
 The license is MIT, copyright heplus1s. Minecraft is a trademark of Mojang. This project is not affiliated with Mojang.

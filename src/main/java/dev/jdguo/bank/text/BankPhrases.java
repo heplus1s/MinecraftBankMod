@@ -58,6 +58,22 @@ public final class BankPhrases {
         return withdraw(books, player, currency, amount, BigInteger.ZERO);
     }
 
+    public static Spoken depositPaper(BankBooks books, UUID player, String zhName, String enName, BigInteger amount, boolean trimmed) {
+        String n = CompactFormat.format(amount);
+        String extra = trimmed ? "，多出的是复制件，已收回" : "";
+        String extraEn = trimmed ? ". Extra copies were taken back" : "";
+        return line(Tone.GOLD,
+                "存入 " + zhName + " ×" + n + " 成功" + extra + balancesZh(books, player),
+                "Deposited " + enName + " ×" + n + extraEn + balancesEn(books, player));
+    }
+
+    public static Spoken withdrawPersonal(BankBooks books, UUID player, String name, BigInteger amount, BigInteger left) {
+        String n = CompactFormat.format(amount);
+        return line(Tone.GOLD,
+                "取出 个人银行券「" + name + "」×" + n + " 成功 ｜账户剩余 " + CompactFormat.format(left) + balancesZh(books, player),
+                "Withdrew personal note \"" + name + "\" ×" + n + " | " + CompactFormat.format(left) + " still on the account" + balancesEn(books, player));
+    }
+
     public static Spoken withdraw(BankBooks books, UUID player, String currency, BigInteger amount, BigInteger copper) {
         String n = CompactFormat.format(amount);
         Tone tone = "diamond".equals(currency) ? Tone.AQUA : Tone.GOLD;
@@ -104,7 +120,10 @@ public final class BankPhrases {
             case "insufficient_reserves" -> line(Tone.RED, "银行准备金不足。", "The vault doesn't have enough reserves.");
             case "unknown_currency" -> line(Tone.RED, "没有这种货币。", "No such currency.");
             case "bad_amount" -> line(Tone.RED, "金额无效。", "That amount isn't valid.");
-            case "not_commodity" -> line(Tone.RED, "这里只收铜锭、钻石，或银行汇票。", "This slot only takes copper ingots, diamonds, or a bank bill.");
+            case "not_commodity" -> line(Tone.RED, "这里只收铜锭、钻石，或纸质银行券。", "This slot only takes copper ingots, diamonds, or bank-note paper.");
+            case "not_note" -> line(Tone.RED, "手上要拿着纸质银行券。", "Hold bank-note paper in your main hand.");
+            case "note_spent" -> line(Tone.RED, "这些银行券已经入过账，或是复制件，不能再存。", "These bank notes were already deposited, or they are copies.");
+            case "note_tampered" -> line(Tone.RED, "这张纸和账对不上。", "This paper doesn't match the books.");
             case "too_many_items" -> line(Tone.RED, "一次取太多了。大额请开汇票。", "That's too many items at once. Issue a bill for a large amount.");
             case "frozen" -> line(Tone.RED, "已暂停银行券兑付。", "Bank-note redemption is suspended.");
             case "no_market" -> line(Tone.RED, "这种货币无法报价。", "That currency cannot be quoted.");

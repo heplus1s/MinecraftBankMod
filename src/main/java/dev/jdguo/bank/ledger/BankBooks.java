@@ -15,7 +15,10 @@ import dev.jdguo.bank.fx.FxMath;
 import dev.jdguo.bank.instruments.CheckBook;
 import dev.jdguo.bank.instruments.CheckRecord;
 import dev.jdguo.bank.instruments.CheckStatus;
+import dev.jdguo.bank.instruments.NoteSeries;
+import dev.jdguo.bank.instruments.PaperTake;
 import dev.jdguo.bank.instruments.PresentedCheck;
+import dev.jdguo.bank.instruments.PresentedNote;
 import dev.jdguo.bank.market.NoteTrade;
 import dev.jdguo.bank.market.PersonalMarket;
 import dev.jdguo.bank.market.PersonalNote;
@@ -50,6 +53,8 @@ public final class BankBooks {
     private final Map<UUID, PersonalNote> personalNotes = new LinkedHashMap<>();
     private final Map<UUID, Map<UUID, BigInteger>> personalHoldings = new LinkedHashMap<>();
     private final CheckBook checks = new CheckBook();
+    /** Sheets of stackable paper still out. Keyed by series, not by individual item. */
+    private final Map<String, BigInteger> notePaper = new LinkedHashMap<>();
     private final List<OutletPoint> outlets = new ArrayList<>();
     private final Map<UUID, DisplayPref> prefs = new LinkedHashMap<>();
     private final Map<String, BigDecimal> alphas = new LinkedHashMap<>();
@@ -98,7 +103,7 @@ public final class BankBooks {
             return TxResult.fail("unknown_currency", "Unknown currency");
         }
         if (def.kind() != CurrencyKind.COMMODITY) {
-            return TxResult.fail("not_commodity", "Notes can't be deposited as items. Redeem a bill instead.");
+            return TxResult.fail("not_commodity", "Deposit bank-note paper through the note counter, not as a commodity.");
         }
         if (amount == null || amount.signum() <= 0) {
             return TxResult.fail("bad_amount", "Invalid amount");
@@ -115,7 +120,7 @@ public final class BankBooks {
             return TxResult.fail("unknown_currency", "Unknown currency");
         }
         if (def.kind() != CurrencyKind.COMMODITY) {
-            return TxResult.fail("not_commodity", "Notes have no physical item. Issue a bill or exchange them.");
+            return TxResult.fail("not_commodity", "Notes are withdrawn as stackable paper, not as a commodity pile.");
         }
         if (amount == null || amount.signum() <= 0) {
             return TxResult.fail("bad_amount", "Invalid amount");
@@ -189,6 +194,98 @@ public final class BankBooks {
         }
         return TxResult.ok(diamonds, copper, "Withdrew diamonds " + CompactFormat.format(diamonds)
                 + (copper.signum() > 0 ? " change copper " + CompactFormat.format(copper) : ""));
+    }
+
+    /**
+     * Moves central-note balance onto stackable paper. Liability stays put; the paper is still a claim.
+     * At most {@link #MAX_PHYSICAL} unit sheets. A larger amount is one sheet of that face.
+     */
+    public PaperTake issueCentralPaper(UUID player, BigInteger amount) {
+        CurrencyDef note = primaryVirtual();
+        if (note == null || note.kind() != CurrencyKind.VIRTUAL) {
+            return PaperTake.fail("unknown_currency", "No central note");
+        }
+        if (amount == null || amount.signum() <= 0) {
+            return PaperTake.fail("bad_amount", "Invalid amount");
+        }
+        if (balance(player, note.id()).compareTo(amount) < 0) {
+            return PaperTake.fail("insufficient_funds", "Not enough balance");
+        }
+        NoteSeries.PaperSlip slip = NoteSeries.plan(amount);
+        debitBalance(player, note.id(), slip.value());
+        addPaper(NoteSeries.key(note.id(), null, slip.face()), slip.sheets());
+        return PaperTake.ok(slip.value(), slip.face(), slip.sheets(), "Withdrew bank-note paper");
+    }
+
+    /** Moves a personal-note holding onto stackable paper. Circulation and the lock do not change. */
+    public PaperTake issuePersonalPaper(UUID player, UUID noteId, BigInteger amount) {
+        PersonalNote note = personalNotes.get(noteId);
+        if (note == null) {
+            return PaperTake.fail("none", "No personal note");
+        }
+        if (amount == null || amount.signum() <= 0) {
+            return PaperTake.fail("bad_amount", "Invalid amount");
+        }
+        if (personalHolding(noteId, player).compareTo(amount) < 0) {
+            return PaperTake.fail("insufficient_funds", "Not enough personal notes");
+        }
+        NoteSeries.PaperSlip slip = NoteSeries.plan(amount);
+        addHolding(noteId, player, slip.value().negate());
+        addPaper(NoteSeries.key(null, noteId, slip.face()), slip.sheets());
+        return PaperTake.ok(slip.value(), slip.face(), slip.sheets(), "Withdrew personal-note paper");
+    }
+
+    /**
+     * Puts paper back. Pays at most the sheets still outstanding, so a split cannot mint value
+     * and a copy pays nothing once the series is exhausted. The caller confiscates the whole pile.
+     */
+    public TxResult redeemPaper(UUID player, PresentedNote presented, BigInteger sheets) {
+        if (presented == null || presented.face() == null || presented.face().signum() <= 0
+                || sheets == null || sheets.signum() <= 0) {
+            return TxResult.fail("note_tampered", "Paper doesn't match the books");
+        }
+        if (presented.central()) {
+            CurrencyDef def = need(presented.currency());
+            if (def == null || def.kind() != CurrencyKind.VIRTUAL) {
+                return TxResult.fail("note_tampered", "Paper doesn't match the books");
+            }
+        } else if (!personalNotes.containsKey(presented.personalNote())) {
+            return TxResult.fail("note_tampered", "Paper doesn't match the books");
+        }
+        String key = NoteSeries.key(presented);
+        BigInteger out = notePaper.getOrDefault(key, BigInteger.ZERO);
+        if (out.signum() <= 0) {
+            return TxResult.fail("note_spent", "These notes were already deposited or are copies");
+        }
+        BigInteger accept = sheets.min(out);
+        addPaper(key, accept.negate());
+        BigInteger value = accept.multiply(presented.face());
+        if (presented.central()) {
+            creditBalance(player, presented.currency(), value);
+        } else {
+            addHolding(presented.personalNote(), player, value);
+        }
+        boolean trimmed = accept.compareTo(sheets) < 0;
+        return new TxResult(true, trimmed ? "trimmed" : "ok", "Deposited bank-note paper", value, null, BigInteger.ZERO);
+    }
+
+    public BigInteger paperOutstanding(String currency, UUID personalNote, BigInteger face) {
+        if (face == null || face.signum() <= 0) {
+            return BigInteger.ZERO;
+        }
+        return notePaper.getOrDefault(NoteSeries.key(currency, personalNote, face), BigInteger.ZERO);
+    }
+
+    private void addPaper(String key, BigInteger delta) {
+        BigInteger next = notePaper.getOrDefault(key, BigInteger.ZERO).add(delta);
+        if (next.signum() < 0) {
+            throw new IllegalStateException("note paper underflow");
+        }
+        if (next.signum() == 0) {
+            notePaper.remove(key);
+        } else {
+            notePaper.put(key, next);
+        }
     }
 
     /** Copper the central bank can hand out without touching depositors' savings. */
@@ -758,6 +855,10 @@ public final class BankBooks {
         return personalNotes.values();
     }
 
+    public PersonalNote personalNoteById(UUID id) {
+        return id == null ? null : personalNotes.get(id);
+    }
+
     public PersonalNote personalNote(UUID issuer) {
         for (PersonalNote note : personalNotes.values()) {
             if (note.issuer().equals(issuer)) {
@@ -1050,6 +1151,16 @@ public final class BankBooks {
                 }
             }
         }
+        for (PersonalNote note : personalNotes.values()) {
+            if (holdingTotal(note.id()).add(personalPaperValue(note.id())).compareTo(note.circulation()) != 0) {
+                throw new AssertionError("personal note " + note.name() + " holdings and paper diverged from circulation");
+            }
+        }
+        for (BigInteger count : notePaper.values()) {
+            if (count.signum() < 0) {
+                throw new AssertionError("negative note paper");
+            }
+        }
     }
 
     public String audit() {
@@ -1179,6 +1290,14 @@ public final class BankBooks {
             checkJson.add(o);
         }
         root.add("checks", checkJson);
+
+        JsonObject paperJson = new JsonObject();
+        notePaper.forEach((key, count) -> {
+            if (count.signum() > 0) {
+                paperJson.addProperty(key, count.toString());
+            }
+        });
+        root.add("notePaper", paperJson);
 
         JsonArray outletJson = new JsonArray();
         for (OutletPoint outlet : outlets) {
@@ -1311,6 +1430,14 @@ public final class BankBooks {
                 }
             }
         }
+        if (root.has("notePaper")) {
+            for (Map.Entry<String, JsonElement> entry : root.getAsJsonObject("notePaper").entrySet()) {
+                BigInteger count = new BigInteger(entry.getValue().getAsString());
+                if (count.signum() > 0) {
+                    books.notePaper.put(entry.getKey(), count);
+                }
+            }
+        }
         if (root.has("checks")) {
             for (JsonElement element : root.getAsJsonArray("checks")) {
                 JsonObject o = element.getAsJsonObject();
@@ -1439,7 +1566,45 @@ public final class BankBooks {
                 claims.merge(record.currency(), record.amount(), BigInteger::add);
             }
         }
+        for (Map.Entry<String, BigInteger> entry : notePaper.entrySet()) {
+            String key = entry.getKey();
+            if (!key.startsWith("c/")) {
+                continue;
+            }
+            int slash = key.indexOf('/', 2);
+            if (slash < 0) {
+                continue;
+            }
+            String currency = key.substring(2, slash);
+            BigInteger face = new BigInteger(key.substring(slash + 1));
+            claims.merge(currency, face.multiply(entry.getValue()), BigInteger::add);
+        }
         return claims;
+    }
+
+    private BigInteger holdingTotal(UUID noteId) {
+        Map<UUID, BigInteger> row = personalHoldings.get(noteId);
+        if (row == null) {
+            return BigInteger.ZERO;
+        }
+        BigInteger sum = BigInteger.ZERO;
+        for (BigInteger value : row.values()) {
+            sum = sum.add(value);
+        }
+        return sum;
+    }
+
+    private BigInteger personalPaperValue(UUID noteId) {
+        String prefix = "p/" + noteId + "/";
+        BigInteger sum = BigInteger.ZERO;
+        for (Map.Entry<String, BigInteger> entry : notePaper.entrySet()) {
+            if (!entry.getKey().startsWith(prefix)) {
+                continue;
+            }
+            BigInteger face = new BigInteger(entry.getKey().substring(prefix.length()));
+            sum = sum.add(face.multiply(entry.getValue()));
+        }
+        return sum;
     }
 
     private void creditBalance(UUID player, String currency, BigInteger amount) {

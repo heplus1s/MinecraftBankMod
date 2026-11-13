@@ -3,7 +3,10 @@ package dev.jdguo.bank.gui;
 import dev.jdguo.bank.currency.CurrencyDef;
 import dev.jdguo.bank.currency.CurrencyKind;
 import dev.jdguo.bank.instruments.CheckItems;
+import dev.jdguo.bank.instruments.NotePaper;
+import dev.jdguo.bank.instruments.PaperTake;
 import dev.jdguo.bank.instruments.PresentedCheck;
+import dev.jdguo.bank.instruments.PresentedNote;
 import dev.jdguo.bank.ledger.BankBooks;
 import dev.jdguo.bank.ledger.CompactFormat;
 import dev.jdguo.bank.ledger.Supply;
@@ -199,6 +202,9 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
     }
 
     private boolean canDeposit(ItemStack stack) {
+        if (NotePaper.tagged(stack)) {
+            return page == Page.DEPOSIT;
+        }
         if (CheckItems.read(stack) != null) {
             return page == Page.CHECKS || page == Page.DEPOSIT;
         }
@@ -215,6 +221,38 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         if (stack.isEmpty() || GuiItems.isMarker(stack)) {
             if (GuiItems.isMarker(stack)) {
                 inventory.setStack(deposit, ItemStack.EMPTY);
+            }
+            return;
+        }
+        if (NotePaper.tagged(stack)) {
+            if (page != Page.DEPOSIT) {
+                return;
+            }
+            PresentedNote presented = NotePaper.read(stack);
+            if (presented == null) {
+                inventory.setStack(deposit, ItemStack.EMPTY);
+                tell(player, BankPhrases.failure(BankPhrases.Kind.DEPOSIT, "note_tampered", null, null));
+                return;
+            }
+            BigInteger sheets = BigInteger.valueOf(stack.getCount());
+            TxResult result = BankRuntime.books().redeemPaper(player.getUuid(), presented, sheets);
+            boolean confiscate = result.success()
+                    || "note_spent".equals(result.code())
+                    || "note_tampered".equals(result.code());
+            if (confiscate) {
+                inventory.setStack(deposit, ItemStack.EMPTY);
+            }
+            if (result.success()) {
+                BankRuntime.save();
+                tell(player, BankPhrases.depositPaper(
+                        BankRuntime.books(),
+                        player.getUuid(),
+                        paperNameZh(presented),
+                        paperNameEn(presented),
+                        result.amount(),
+                        "trimmed".equals(result.code())));
+            } else {
+                tell(player, BankPhrases.failure(BankPhrases.Kind.DEPOSIT, result.code(), null, null));
             }
             return;
         }
@@ -327,6 +365,14 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
             default -> {
                 if (action.startsWith("wd:")) {
                     String[] parts = action.split(":");
+                    if (parts.length >= 4 && "c".equals(parts[1])) {
+                        withdrawCentralPaper(player, books, parts);
+                        return;
+                    }
+                    if (parts.length >= 4 && "pn".equals(parts[1])) {
+                        withdrawPersonalPaper(player, books, parts);
+                        return;
+                    }
                     boolean max = "max".equals(parts[2]);
                     BigInteger amount = max ? books.balance(player.getUuid(), parts[1]) : new BigInteger(parts[2]);
                     TxResult result = books.withdraw(player.getUuid(), parts[1], amount, max);
@@ -712,8 +758,9 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
 
     private void paintDeposit() {
         inventory.setStack(4, marker(Items.OAK_SIGN,
-                Text.literal("把铜锭或钻石放进中间空格").formatted(Formatting.GOLD),
-                List.of(Text.literal("汇票请到「汇票」页兑付").formatted(Formatting.GRAY),
+                Text.literal("把铜锭、钻石或银行券放进中间空格").formatted(Formatting.GOLD),
+                List.of(Text.literal("同面额的纸可以叠放。复制件不能重复入账").formatted(Formatting.GRAY),
+                        Text.literal("汇票请到「汇票」页兑付").formatted(Formatting.DARK_GRAY),
                         Text.literal("Bills are paid on the Bills page").formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
         inventory.setStack(13, marker(Items.SPECTRAL_ARROW,
@@ -725,8 +772,9 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
     private void paintWithdraw() {
         BankBooks books = BankRuntime.books();
         inventory.setStack(4, marker(Items.CHEST,
-                Text.literal("取出实物").formatted(Formatting.GOLD),
-                List.of(Text.literal("单次最多 " + BankBooks.MAX_PHYSICAL + " 个").formatted(Formatting.GRAY)),
+                Text.literal("取出").formatted(Formatting.GOLD),
+                List.of(Text.literal("铜锭、钻石，以及可叠放的银行券").formatted(Formatting.GRAY),
+                        Text.literal("单次最多 " + BankBooks.MAX_PHYSICAL + " 个").formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
         int row = 0;
         for (CurrencyDef def : books.currencies()) {
@@ -741,14 +789,101 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
             placeAmount(base, icon(def), "取出 " + def.name(), "wd:" + def.id(), free);
             row++;
         }
+        int base = 10 + row * 9;
         CurrencyDef note = books.primaryVirtual();
-        if (note != null) {
-            inventory.setStack(40, marker(Items.PAPER,
-                    Text.literal(note.name() + " 没有实物").formatted(Formatting.YELLOW),
-                    List.of(Text.literal("请开汇票，或兑换成铜锭、钻石").formatted(Formatting.GRAY),
-                            Text.literal("Issue a bill, or exchange for copper or diamonds").formatted(Formatting.DARK_GRAY)),
-                    "noop", 1));
+        if (note != null && base <= 28) {
+            BigInteger balance = books.balance(owner.getUuid(), note.id());
+            placePaper(base, Items.PAPER, "取出 " + note.name(), "wd:c:" + note.id(), balance);
+            base += 9;
         }
+        if (base <= 37) {
+            PersonalNote own = books.personalNote(owner.getUuid());
+            if (own != null) {
+                BigInteger holding = books.personalHolding(own.id(), owner.getUuid());
+                placePaper(base, Items.PAPER, "取出 「" + own.name() + "」", "wd:pn:" + own.id(), holding);
+            }
+        }
+    }
+
+    private void withdrawCentralPaper(ServerPlayerEntity player, BankBooks books, String[] parts) {
+        CurrencyDef note = books.currency(parts[2]);
+        if (note == null || note.kind() != CurrencyKind.VIRTUAL) {
+            tell(player, BankPhrases.failure(BankPhrases.Kind.WITHDRAW, "unknown_currency", null, null));
+            return;
+        }
+        BigInteger amount = paperAmount(player, books, note.id(), null, parts[3]);
+        if (amount == null) {
+            tell(player, BankPhrases.failure(BankPhrases.Kind.WITHDRAW, "insufficient_funds", note.id(), null));
+            return;
+        }
+        PaperTake take = books.issueCentralPaper(player.getUuid(), amount);
+        if (!take.result().success()) {
+            tell(player, BankPhrases.failure(BankPhrases.Kind.WITHDRAW, take.result().code(), note.id(), null));
+            return;
+        }
+        NotePaper.give(player, new PresentedNote(note.id(), null, take.face()), note.name(), take.sheets());
+        BankRuntime.save();
+        tell(player, BankPhrases.withdraw(books, player.getUuid(), note.id(), take.result().amount()));
+    }
+
+    private void withdrawPersonalPaper(ServerPlayerEntity player, BankBooks books, String[] parts) {
+        UUID noteId;
+        try {
+            noteId = UUID.fromString(parts[2]);
+        } catch (IllegalArgumentException error) {
+            tell(player, BankPhrases.noteRejected("none"));
+            return;
+        }
+        PersonalNote note = books.personalNoteById(noteId);
+        if (note == null) {
+            tell(player, BankPhrases.noteRejected("none"));
+            return;
+        }
+        BigInteger amount = paperAmount(player, books, null, noteId, parts[3]);
+        if (amount == null) {
+            tell(player, BankPhrases.failure(BankPhrases.Kind.WITHDRAW, "insufficient_funds", null, null));
+            return;
+        }
+        PaperTake take = books.issuePersonalPaper(player.getUuid(), noteId, amount);
+        if (!take.result().success()) {
+            Spoken spoken = "none".equals(take.result().code())
+                    ? BankPhrases.noteRejected("none")
+                    : BankPhrases.failure(BankPhrases.Kind.WITHDRAW, take.result().code(), null, null);
+            tell(player, spoken);
+            return;
+        }
+        NotePaper.give(player, new PresentedNote(null, noteId, take.face()), note.name(), take.sheets());
+        BankRuntime.save();
+        tell(player, BankPhrases.withdrawPersonal(
+                books, player.getUuid(), note.name(), take.result().amount(), books.personalHolding(noteId, player.getUuid())));
+    }
+
+    private BigInteger paperAmount(ServerPlayerEntity player, BankBooks books, String currency, UUID personal, String raw) {
+        BigInteger available = personal == null
+                ? books.balance(player.getUuid(), currency)
+                : books.personalHolding(personal, player.getUuid());
+        if ("max".equals(raw)) {
+            BigInteger amount = available.min(BankBooks.MAX_PHYSICAL);
+            return amount.signum() > 0 ? amount : null;
+        }
+        return new BigInteger(raw);
+    }
+
+    private String paperNameZh(PresentedNote note) {
+        if (note.central()) {
+            CurrencyDef def = BankRuntime.books().currency(note.currency());
+            return def == null ? note.currency() : def.name();
+        }
+        PersonalNote personal = BankRuntime.books().personalNoteById(note.personalNote());
+        return personal == null ? "个人银行券" : "个人银行券「" + personal.name() + "」";
+    }
+
+    private String paperNameEn(PresentedNote note) {
+        if (note.central()) {
+            return "bank note";
+        }
+        PersonalNote personal = BankRuntime.books().personalNoteById(note.personalNote());
+        return personal == null ? "personal note" : "personal note \"" + personal.name() + "\"";
     }
 
     private void paintExchange() {
@@ -807,6 +942,23 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                 List.of(Text.literal("复制件会被拒付").formatted(Formatting.RED)),
                 "noop", 1));
         inventory.setStack(31, ItemStack.EMPTY);
+    }
+
+    private void placePaper(int base, net.minecraft.item.Item item, String label, String actionPrefix, BigInteger available) {
+        int[] amounts = {1, 10, 64, 100};
+        for (int i = 0; i < amounts.length; i++) {
+            inventory.setStack(base + i, marker(item,
+                    Text.literal(label + " ×" + amounts[i]).formatted(Formatting.YELLOW),
+                    List.of(Text.literal("面额 1，同面额叠成一摞").formatted(Formatting.GRAY),
+                            Text.literal("可取出 " + CompactFormat.format(available)).formatted(Formatting.DARK_GRAY),
+                            Text.literal("Face value 1, stacks to 64").formatted(Formatting.DARK_GRAY)),
+                    actionPrefix + ":" + amounts[i], 1));
+        }
+        inventory.setStack(base + 4, marker(item,
+                Text.literal(label + " 尽可能多").formatted(Formatting.GOLD),
+                List.of(Text.literal("单次最多 " + BankBooks.MAX_PHYSICAL + " 张").formatted(Formatting.GRAY),
+                        Text.literal("更大的数用 /bank withdraw").formatted(Formatting.DARK_GRAY)),
+                actionPrefix + ":max", 1));
     }
 
     private void placeAmount(int base, net.minecraft.item.Item item, String label, String actionPrefix, BigInteger free) {

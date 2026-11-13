@@ -7,7 +7,12 @@ import dev.jdguo.bank.currency.BankConfig;
 import dev.jdguo.bank.currency.ConfigJson;
 import dev.jdguo.bank.display.DisplayService;
 import dev.jdguo.bank.gui.BankMenus;
+import dev.jdguo.bank.currency.CurrencyDef;
+import dev.jdguo.bank.currency.CurrencyKind;
 import dev.jdguo.bank.instruments.CheckItems;
+import dev.jdguo.bank.instruments.NotePaper;
+import dev.jdguo.bank.instruments.PaperTake;
+import dev.jdguo.bank.instruments.PresentedNote;
 import dev.jdguo.bank.ledger.Amounts;
 import dev.jdguo.bank.ledger.BankBooks;
 import dev.jdguo.bank.ledger.TxResult;
@@ -20,9 +25,13 @@ import dev.jdguo.bank.text.BankTalk;
 import dev.jdguo.bank.text.Spoken;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.command.argument.GameProfileArgumentType;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
+import net.minecraft.registry.Registries;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
@@ -102,6 +111,13 @@ public final class BankCommands {
                                                         GameProfileArgumentType.getProfileArgument(ctx, "player"),
                                                         StringArgumentType.getString(ctx, "currency"),
                                                         StringArgumentType.getString(ctx, "amount"))))))))
+                        .then(literal("withdraw")
+                                .then(argument("currency", StringArgumentType.word())
+                                        .then(argument("amount", StringArgumentType.word()).executes(ctx -> withdraw(
+                                                ctx.getSource(),
+                                                StringArgumentType.getString(ctx, "currency"),
+                                                StringArgumentType.getString(ctx, "amount"))))))
+                        .then(literal("deposit").executes(ctx -> depositHeld(ctx.getSource())))
                         .then(literal("note")
                                 .then(literal("create")
                                         .then(literal("diamond").then(argument("name", StringArgumentType.string())
@@ -109,6 +125,13 @@ public final class BankCommands {
                                         .then(literal("copper").then(argument("name", StringArgumentType.string())
                                                 .then(argument("par", StringArgumentType.word()).executes(ctx -> createNote(ctx.getSource(), true, StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "par")))))))
                                 .then(literal("issue").then(argument("amount", StringArgumentType.word()).executes(ctx -> issueNote(ctx.getSource(), StringArgumentType.getString(ctx, "amount")))))
+                                .then(literal("withdraw")
+                                        .then(argument("amount", StringArgumentType.word()).executes(ctx -> withdrawPersonal(ctx.getSource(), null, StringArgumentType.getString(ctx, "amount"))))
+                                        .then(argument("name", StringArgumentType.string())
+                                                .then(argument("amount", StringArgumentType.word()).executes(ctx -> withdrawPersonal(
+                                                        ctx.getSource(),
+                                                        StringArgumentType.getString(ctx, "name"),
+                                                        StringArgumentType.getString(ctx, "amount"))))))
                                 .then(literal("rate").executes(ctx -> noteRate(ctx.getSource(), null))
                                         .then(argument("name", StringArgumentType.string()).executes(ctx -> noteRate(ctx.getSource(), StringArgumentType.getString(ctx, "name")))))
                                 .then(literal("buy").then(argument("name", StringArgumentType.string())
@@ -422,6 +445,117 @@ public final class BankCommands {
         }
         BankRuntime.save();
         return ok(source, BankPhrases.noteNamed(result.note()));
+    }
+
+    private static int withdraw(ServerCommandSource source, String currency, String raw) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        BigInteger amount;
+        try {
+            amount = Amounts.parse(raw);
+        } catch (RuntimeException error) {
+            return fail(source, BankPhrases.amountProblem(error.getMessage()));
+        }
+        ServerPlayerEntity player = source.getPlayerOrThrow();
+        CurrencyDef def = books().currency(currency);
+        if (def == null) {
+            return fail(source, BankPhrases.failure(BankPhrases.Kind.WITHDRAW, "unknown_currency", currency, null));
+        }
+        if (def.kind() == CurrencyKind.VIRTUAL) {
+            CurrencyDef central = books().primaryVirtual();
+            if (central == null || !central.id().equals(def.id())) {
+                return fail(source, BankPhrases.failure(BankPhrases.Kind.WITHDRAW, "not_commodity", currency, null));
+            }
+            PaperTake take = books().issueCentralPaper(player.getUuid(), amount);
+            if (!take.result().success()) {
+                return fail(source, BankPhrases.failure(BankPhrases.Kind.WITHDRAW, take.result().code(), currency, null));
+            }
+            NotePaper.give(player, new PresentedNote(def.id(), null, take.face()), def.name(), take.sheets());
+            BankRuntime.save();
+            return ok(source, BankPhrases.withdraw(books(), player.getUuid(), def.id(), take.result().amount()));
+        }
+        TxResult result = books().withdraw(player.getUuid(), currency, amount, false);
+        if (!result.success()) {
+            return fail(source, BankPhrases.failure(BankPhrases.Kind.WITHDRAW, result.code(), currency, null));
+        }
+        giveCommodity(player, def, result.amount());
+        if (result.copperPaid().signum() > 0) {
+            giveCommodity(player, books().currency("copper"), result.copperPaid());
+        }
+        BankRuntime.save();
+        return ok(source, BankPhrases.withdraw(books(), player.getUuid(), currency, result.amount(), result.copperPaid()));
+    }
+
+    private static int depositHeld(ServerCommandSource source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayerEntity player = source.getPlayerOrThrow();
+        ItemStack hand = player.getMainHandStack();
+        if (!NotePaper.tagged(hand)) {
+            return fail(source, BankPhrases.failure(BankPhrases.Kind.DEPOSIT, "not_note", null, null));
+        }
+        PresentedNote presented = NotePaper.read(hand);
+        if (presented == null) {
+            player.getInventory().setStack(player.getInventory().selectedSlot, ItemStack.EMPTY);
+            return fail(source, BankPhrases.failure(BankPhrases.Kind.DEPOSIT, "note_tampered", null, null));
+        }
+        TxResult result = books().redeemPaper(player.getUuid(), presented, BigInteger.valueOf(hand.getCount()));
+        if (result.success() || "note_spent".equals(result.code()) || "note_tampered".equals(result.code())) {
+            player.getInventory().setStack(player.getInventory().selectedSlot, ItemStack.EMPTY);
+        }
+        if (!result.success()) {
+            return fail(source, BankPhrases.failure(BankPhrases.Kind.DEPOSIT, result.code(), null, null));
+        }
+        BankRuntime.save();
+        String zh;
+        String en;
+        if (presented.central()) {
+            CurrencyDef def = books().currency(presented.currency());
+            zh = def == null ? presented.currency() : def.name();
+            en = "bank note";
+        } else {
+            PersonalNote personal = books().personalNoteById(presented.personalNote());
+            String name = personal == null ? "?" : personal.name();
+            zh = "个人银行券「" + name + "」";
+            en = "personal note \"" + name + "\"";
+        }
+        return ok(source, BankPhrases.depositPaper(books(), player.getUuid(), zh, en, result.amount(), "trimmed".equals(result.code())));
+    }
+
+    private static int withdrawPersonal(ServerCommandSource source, String name, String raw) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        BigInteger amount;
+        try {
+            amount = Amounts.parse(raw);
+        } catch (RuntimeException error) {
+            return fail(source, BankPhrases.amountProblem(error.getMessage()));
+        }
+        ServerPlayerEntity player = source.getPlayerOrThrow();
+        PersonalNote note = name == null ? books().personalNote(player.getUuid()) : books().personalNoteByName(name);
+        if (note == null) {
+            return fail(source, BankPhrases.noteRejected("none"));
+        }
+        PaperTake take = books().issuePersonalPaper(player.getUuid(), note.id(), amount);
+        if (!take.result().success()) {
+            return fail(source, "none".equals(take.result().code())
+                    ? BankPhrases.noteRejected("none")
+                    : BankPhrases.failure(BankPhrases.Kind.WITHDRAW, take.result().code(), null, null));
+        }
+        NotePaper.give(player, new PresentedNote(null, note.id(), take.face()), note.name(), take.sheets());
+        BankRuntime.save();
+        return ok(source, BankPhrases.withdrawPersonal(
+                books(), player.getUuid(), note.name(), take.result().amount(), books().personalHolding(note.id(), player.getUuid())));
+    }
+
+    private static void giveCommodity(ServerPlayerEntity player, CurrencyDef def, BigInteger amount) {
+        if (def == null || amount == null || amount.signum() <= 0) {
+            return;
+        }
+        var item = Registries.ITEM.get(new Identifier(def.itemId()));
+        if (item == Items.AIR) {
+            return;
+        }
+        int left = amount.intValue();
+        while (left > 0) {
+            int count = Math.min(item.getMaxCount(), left);
+            player.getInventory().offerOrDrop(new ItemStack(item, count));
+            left -= count;
+        }
     }
 
     private static int issueNote(ServerCommandSource source, String raw) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
