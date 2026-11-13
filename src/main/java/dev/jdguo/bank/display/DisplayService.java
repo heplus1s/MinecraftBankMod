@@ -5,8 +5,11 @@ import dev.jdguo.bank.ledger.BankBooks;
 import dev.jdguo.bank.ledger.CompactFormat;
 import dev.jdguo.bank.outlet.OutletPoint;
 import dev.jdguo.bank.persistence.BankRuntime;
+import dev.jdguo.bank.text.BankPhrases;
+import dev.jdguo.bank.text.BankTalk;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
+import net.minecraft.entity.vehicle.ChestMinecartEntity;
 import net.minecraft.entity.boss.BossBar;
 import net.minecraft.entity.boss.ServerBossBar;
 import net.minecraft.entity.decoration.DisplayEntity;
@@ -27,6 +30,7 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
+import net.minecraft.util.math.Vec3d;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -67,7 +71,10 @@ public final class DisplayService {
         }
     }
 
+    public static final String MARKER_TAG = "bankmod_outlet";
+
     public void tick(MinecraftServer server) {
+        syncMarkers(server);
         frame++;
         if (frame % 15 != 0) {
             return;
@@ -86,8 +93,7 @@ public final class DisplayService {
     public void onJoin(ServerPlayerEntity player) {
         resync(player);
         if (BankRuntime.state != null && BankRuntime.books().joinMessage()) {
-            player.sendMessage(Text.literal("[Bank] Find an outlet and right-click the counter. You can also use /bank while standing nearby.")
-                    .formatted(Formatting.AQUA), false);
+            player.sendMessage(BankTalk.text(player, BankPhrases.joinHint()), false);
         }
     }
 
@@ -108,6 +114,87 @@ public final class DisplayService {
             entity.discard();
         }
         outlet.setHologramId(null);
+    }
+
+    public void discardMarker(MinecraftServer server, OutletPoint outlet) {
+        Entity entity = findMarker(server, outlet, true);
+        if (entity != null) {
+            entity.discard();
+        }
+        outlet.setMarkerId(null);
+    }
+
+    public void ensureMarker(MinecraftServer server, OutletPoint outlet) {
+        pinMarker(server, outlet, true);
+    }
+
+    private void syncMarkers(MinecraftServer server) {
+        if (BankRuntime.books() == null) {
+            return;
+        }
+        for (OutletPoint outlet : BankRuntime.books().outlets()) {
+            pinMarker(server, outlet, false);
+        }
+    }
+
+    /**
+     * A named chest minecart, the same kind of marker the datapack used.
+     * Vanilla clients can see it. Right-click is handled as the bank counter.
+     */
+    private void pinMarker(MinecraftServer server, OutletPoint outlet, boolean loadChunk) {
+        ServerWorld world = world(server, outlet.world());
+        if (world == null) {
+            return;
+        }
+        if (loadChunk) {
+            world.getChunk(outlet.x() >> 4, outlet.z() >> 4);
+        } else if (!world.isChunkLoaded(outlet.x() >> 4, outlet.z() >> 4)) {
+            return;
+        }
+        double x = outlet.x() + 0.5;
+        double y = outlet.y() + 1.0;
+        double z = outlet.z() + 0.5;
+        Entity found = outlet.markerId() == null ? null : world.getEntity(outlet.markerId());
+        ChestMinecartEntity cart = found instanceof ChestMinecartEntity existing && existing.isAlive()
+                && existing.getCommandTags().contains(MARKER_TAG) ? existing : null;
+        boolean spawned = false;
+        if (cart == null) {
+            if (found != null) {
+                found.discard();
+            }
+            cart = new ChestMinecartEntity(EntityType.CHEST_MINECART, world);
+            cart.addCommandTag(MARKER_TAG);
+            cart.setInvulnerable(true);
+            cart.setNoGravity(true);
+            cart.setSilent(true);
+            cart.setCustomNameVisible(true);
+            world.spawnEntity(cart);
+            outlet.setMarkerId(cart.getUuid());
+            spawned = true;
+        }
+        cart.setCustomName(Text.literal("中央银行 · " + outlet.name()).formatted(Formatting.AQUA));
+        cart.setCustomNameVisible(true);
+        cart.setInvulnerable(true);
+        cart.setNoGravity(true);
+        cart.setVelocity(Vec3d.ZERO);
+        cart.refreshPositionAndAngles(x, y, z, cart.getYaw(), 0.0f);
+        cart.clear();
+        if (spawned) {
+            BankRuntime.save();
+        }
+    }
+
+    private Entity findMarker(MinecraftServer server, OutletPoint outlet, boolean loadChunk) {
+        ServerWorld world = world(server, outlet.world());
+        if (world == null || outlet.markerId() == null) {
+            return null;
+        }
+        if (loadChunk) {
+            world.getChunk(outlet.x() >> 4, outlet.z() >> 4);
+        } else if (!world.isChunkLoaded(outlet.x() >> 4, outlet.z() >> 4)) {
+            return null;
+        }
+        return world.getEntity(outlet.markerId());
     }
 
     private void refreshPlayer(ServerPlayerEntity player, BankBooks books) {
@@ -206,15 +293,16 @@ public final class DisplayService {
     private void refreshBossBar(MinecraftServer server, BankBooks books) {
         CurrencyDef note = books.primaryVirtual();
         BigDecimal tight = note == null ? null : books.tightness(note.id());
-        BigDecimal rate = note == null ? books.unitsPer("copper", books.numeraire()) : books.unitsPer(note.id(), books.numeraire());
-        String name = note == null ? "汇率" : note.name();
-        bossBar.setName(Text.literal(name + "  1钻=" + CompactFormat.formatRate(rate) + "  ·  " + books.statusLabel())
+        BigDecimal copperPerDiamond = books.currency("copper") == null || books.currency("diamond") == null
+                ? null : books.unitsPer("copper", "diamond");
+        String rateText = copperPerDiamond == null ? "—" : CompactFormat.formatRate(copperPerDiamond);
+        bossBar.setName(Text.literal("汇率：" + rateText + " 铜/钻  ·  " + books.statusLabel())
                 .formatted(statusColor(books), Formatting.BOLD));
         float percent = 1.0f;
         if (tight != null) {
             percent = tight.max(BigDecimal.ZERO).min(BigDecimal.ONE).floatValue();
         }
-        if (rate == null) {
+        if (copperPerDiamond == null) {
             percent = 0.0f;
         }
         bossBar.setPercent(percent);

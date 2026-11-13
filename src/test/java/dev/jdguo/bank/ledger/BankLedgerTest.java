@@ -48,15 +48,14 @@ class BankLedgerTest {
         books.deposit(player, "diamond", BigInteger.valueOf(10));
         books.setReserve("diamond", BigInteger.valueOf(3));
 
+        BigInteger rate = books.copperPerDiamond();
         TxResult exact = books.withdraw(player, "diamond", BigInteger.valueOf(10), false);
-        assertEquals("insufficient_reserves", exact.code());
-        assertEquals(BigInteger.valueOf(10), books.balance(player, "diamond"));
-
-        TxResult partial = books.withdraw(player, "diamond", BigInteger.valueOf(10), true);
-        assertTrue(partial.success());
-        assertEquals(BigInteger.valueOf(3), partial.amount());
-        assertEquals(BigInteger.valueOf(7), books.balance(player, "diamond"));
+        assertTrue(exact.success());
+        assertEquals(BigInteger.valueOf(3), exact.amount());
+        assertEquals(rate.multiply(BigInteger.valueOf(7)), exact.copperPaid());
+        assertEquals(BigInteger.ZERO, books.balance(player, "diamond"));
         assertEquals(BigInteger.ZERO, books.supply("diamond").reserve());
+        assertEquals(new BigInteger("1000000").subtract(exact.copperPaid()), books.supply("copper").reserve());
         books.checkInvariants();
     }
 
@@ -86,10 +85,14 @@ class BankLedgerTest {
         books.deposit(player, "copper", new BigInteger("50000000"));
         books.setReserve("diamond", BigInteger.valueOf(2));
 
+        BigInteger rate = books.copperPerDiamond();
         TxResult result = books.exchange(player, "copper", "diamond", BigInteger.TEN);
 
-        assertEquals("insufficient_reserves", result.code());
-        assertEquals(BigInteger.ZERO, books.balance(player, "diamond"));
+        assertTrue(result.success());
+        assertEquals(rate.multiply(BigInteger.valueOf(8)), result.copperPaid());
+        assertEquals(BigInteger.TWO, books.balance(player, "diamond"));
+        assertEquals(new BigInteger("50000000").subtract(result.amount()).add(result.copperPaid()),
+                books.balance(player, "copper"));
         books.checkInvariants();
     }
 

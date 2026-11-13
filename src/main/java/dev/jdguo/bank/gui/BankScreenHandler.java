@@ -8,6 +8,9 @@ import dev.jdguo.bank.ledger.BankBooks;
 import dev.jdguo.bank.ledger.CompactFormat;
 import dev.jdguo.bank.ledger.Supply;
 import dev.jdguo.bank.ledger.TxResult;
+import dev.jdguo.bank.text.BankPhrases;
+import dev.jdguo.bank.text.BankTalk;
+import dev.jdguo.bank.text.Spoken;
 import dev.jdguo.bank.persistence.BankRuntime;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
@@ -33,13 +36,13 @@ import java.util.List;
  * {@link ScreenHandlerType#GENERIC_9X6}. Button items never leave the server inventory.
  */
 public final class BankScreenHandler extends GenericContainerScreenHandler {
-    public enum Page { OVERVIEW, DEPOSIT, WITHDRAW, EXCHANGE, CHECKS, ADMIN }
+    public enum Page { SAVINGS, DEPOSIT, WITHDRAW, EXCHANGE, CHECKS, MANAGEMENT, ADMIN }
 
     private final SimpleInventory inventory;
     private final ServerPlayerEntity owner;
     private final String outletName;
     private final boolean remoteAdmin;
-    private Page page = Page.OVERVIEW;
+    private Page page = Page.SAVINGS;
     private int payIndex;
     private int receiveIndex = 1;
     private int checkIndex;
@@ -222,7 +225,9 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
             if (result.success()) {
                 BankRuntime.save();
             }
-            tell(player, result);
+            tell(player, result.success()
+                    ? BankPhrases.redeem(BankRuntime.books(), player.getUuid(), check.currency(), result.amount(), result.copperPaid())
+                    : BankPhrases.failure(BankPhrases.Kind.REDEEM, result.code(), check.currency(), null));
             return;
         }
         if (page != Page.DEPOSIT) {
@@ -230,15 +235,18 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         }
         CurrencyDef def = itemCurrency(stack);
         if (def == null || def.kind() != CurrencyKind.COMMODITY) {
-            tell(player, TxResult.fail("not_commodity", "这里只收铜锭、钻石，或银行汇票"));
+            tell(player, BankPhrases.failure(BankPhrases.Kind.DEPOSIT, "not_commodity", null, null));
             return;
         }
-        TxResult result = BankRuntime.books().deposit(player.getUuid(), def.id(), BigInteger.valueOf(stack.getCount()));
+        BigInteger count = BigInteger.valueOf(stack.getCount());
+        TxResult result = BankRuntime.books().deposit(player.getUuid(), def.id(), count);
         if (result.success()) {
             inventory.setStack(deposit, ItemStack.EMPTY);
             BankRuntime.save();
+            tell(player, BankPhrases.deposit(BankRuntime.books(), player.getUuid(), def.id(), result.amount()));
+        } else {
+            tell(player, BankPhrases.failure(BankPhrases.Kind.DEPOSIT, result.code(), def.id(), null));
         }
-        tell(player, result);
     }
 
     private void activate(ServerPlayerEntity player, String action) {
@@ -247,7 +255,14 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         }
         if (action.startsWith("nav:")) {
             switch (action.substring(4)) {
-                case "overview" -> changePage(player, Page.OVERVIEW);
+                case "savings" -> changePage(player, Page.SAVINGS);
+                case "management" -> {
+                    if (player.hasPermissionLevel(2)) {
+                        changePage(player, Page.MANAGEMENT);
+                    } else {
+                        tell(player, BankPhrases.failure(BankPhrases.Kind.GENERIC, "denied", null, null));
+                    }
+                }
                 case "deposit" -> changePage(player, Page.DEPOSIT);
                 case "withdraw" -> changePage(player, Page.WITHDRAW);
                 case "exchange" -> changePage(player, Page.EXCHANGE);
@@ -256,7 +271,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                     if (player.hasPermissionLevel(2)) {
                         changePage(player, Page.ADMIN);
                     } else {
-                        tell(player, TxResult.fail("denied", "只有管理员能打开信贷柜台"));
+                        tell(player, BankPhrases.failure(BankPhrases.Kind.GENERIC, "denied", null, null));
                     }
                 }
                 case "close" -> player.closeHandledScreen();
@@ -287,7 +302,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                 }
                 books.setFrozen(!books.frozen());
                 BankRuntime.save();
-                tell(player, TxResult.ok(BigInteger.ZERO, books.frozen() ? "已停止纸币兑现" : "纸币兑现已恢复"));
+                tell(player, BankPhrases.freeze(books.frozen()));
             }
             case "ad:backed" -> {
                 if (!player.hasPermissionLevel(2)) {
@@ -296,12 +311,14 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                 CurrencyDef note = currencies.get(Math.floorMod(adminIndex, currencies.size()));
                 BigInteger room = books.backedRoom(note);
                 TxResult result = room.signum() <= 0
-                        ? TxResult.fail("over_cap", "没有剩余的准备金额度")
+                        ? TxResult.fail("over_cap", "over cap")
                         : books.creditBacked(player.getUuid(), note.id(), room);
                 if (result.success()) {
                     BankRuntime.save();
+                    tell(player, BankPhrases.credit(books, "backed", note.id(), result.amount(), player.getName().getString()));
+                } else {
+                    tell(player, BankPhrases.failure(BankPhrases.Kind.CREDIT_BACKED, result.code(), note.id(), null));
                 }
-                tell(player, result);
             }
             default -> {
                 if (action.startsWith("wd:")) {
@@ -311,9 +328,14 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                     TxResult result = books.withdraw(player.getUuid(), parts[1], amount, max);
                     if (result.success()) {
                         giveItem(player, books.currency(parts[1]), result.amount());
+                        if (result.copperPaid().signum() > 0) {
+                            giveItem(player, books.currency("copper"), result.copperPaid());
+                        }
                         BankRuntime.save();
+                        tell(player, BankPhrases.withdraw(books, player.getUuid(), parts[1], result.amount(), result.copperPaid()));
+                    } else {
+                        tell(player, BankPhrases.failure(BankPhrases.Kind.WITHDRAW, result.code(), parts[1], null));
                     }
-                    tell(player, result);
                 } else if (action.startsWith("ex:buy:")) {
                     CurrencyDef pay = currencies.get(Math.floorMod(payIndex, currencies.size()));
                     CurrencyDef recv = currencies.get(Math.floorMod(receiveIndex, currencies.size()));
@@ -321,8 +343,14 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                     TxResult result = books.exchange(player.getUuid(), pay.id(), recv.id(), qty);
                     if (result.success()) {
                         BankRuntime.save();
+                        BigInteger shown = qty;
+                        if ("diamond".equals(recv.id()) && result.copperPaid().signum() > 0 && books.copperPerDiamond().signum() > 0) {
+                            shown = qty.subtract(result.copperPaid().divide(books.copperPerDiamond()));
+                        }
+                        tell(player, BankPhrases.exchange(books, player.getUuid(), pay.id(), recv.id(), shown, result.copperPaid()));
+                    } else {
+                        tell(player, BankPhrases.failure(BankPhrases.Kind.EXCHANGE, result.code(), recv.id(), pay.id()));
                     }
-                    tell(player, result);
                 } else if (action.startsWith("ck:issue:")) {
                     CurrencyDef cur = currencies.get(Math.floorMod(checkIndex, currencies.size()));
                     BigInteger amount = new BigInteger(action.substring("ck:issue:".length()));
@@ -331,11 +359,13 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                     if (result.success()) {
                         player.getInventory().offerOrDrop(CheckItems.create(books, books.check(result.instrumentId())));
                         BankRuntime.save();
+                        tell(player, BankPhrases.issue(books, cur.id(), result.amount(), null));
+                    } else {
+                        tell(player, BankPhrases.failure(BankPhrases.Kind.ISSUE, result.code(), cur.id(), null));
                     }
-                    tell(player, result);
                 } else if (action.startsWith("ad:unbacked:") || action.startsWith("ad:retire:")) {
                     if (!player.hasPermissionLevel(2)) {
-                        tell(player, TxResult.fail("denied", "只有管理员能发行信贷"));
+                        tell(player, BankPhrases.failure(BankPhrases.Kind.GENERIC, "denied", null, null));
                         return;
                     }
                     CurrencyDef note = currencies.get(Math.floorMod(adminIndex, currencies.size()));
@@ -346,8 +376,10 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                             : books.creditUnbacked(player.getUuid(), note.id(), amount);
                     if (result.success()) {
                         BankRuntime.save();
+                        tell(player, BankPhrases.credit(books, retire ? "retire" : "unbacked", note.id(), result.amount(), player.getName().getString()));
+                    } else {
+                        tell(player, BankPhrases.failure(retire ? BankPhrases.Kind.RETIRE : BankPhrases.Kind.CREDIT_UNBACKED, result.code(), note.id(), null));
                     }
-                    tell(player, result);
                 }
             }
         }
@@ -370,11 +402,19 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         }
         paintNav();
         switch (page) {
-            case OVERVIEW -> paintOverview();
+            case SAVINGS -> paintSavings();
             case DEPOSIT -> paintDeposit();
             case WITHDRAW -> paintWithdraw();
             case EXCHANGE -> paintExchange();
             case CHECKS -> paintChecks();
+            case MANAGEMENT -> {
+                if (owner.hasPermissionLevel(2)) {
+                    paintManagement();
+                } else {
+                    page = Page.SAVINGS;
+                    paintSavings();
+                }
+            }
             case ADMIN -> paintAdmin();
         }
         if (depositSlot() >= 0) {
@@ -386,24 +426,25 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
     }
 
     private void paintNav() {
-        nav(45, Items.RECOVERY_COMPASS, "总览", "nav:overview");
+        nav(45, Items.GOLD_INGOT, "储蓄", "nav:savings");
         nav(46, Items.HOPPER, "存入", "nav:deposit");
         nav(47, Items.CHEST, "取出", "nav:withdraw");
         nav(48, Items.EMERALD, "兑换", "nav:exchange");
         nav(49, Items.WRITABLE_BOOK, "汇票", "nav:checks");
         boolean op = owner.hasPermissionLevel(2);
         if (op) {
+            nav(51, Items.RECOVERY_COMPASS, "管理", "nav:management");
             nav(52, Items.NETHER_STAR, "信贷", "nav:admin");
         }
         nav(53, Items.BARRIER, "关闭", "nav:close");
     }
 
-    private void paintOverview() {
+    private void paintSavings() {
         BankBooks books = BankRuntime.books();
-        inventory.setStack(4, marker(Items.GOLD_BLOCK,
-                Text.literal("中央银行").formatted(Formatting.AQUA, Formatting.BOLD),
-                List.of(Text.literal(books.statusLabel()).formatted(Formatting.YELLOW),
-                        Text.literal("手续费 " + percent(books.feeFraction())).formatted(Formatting.GRAY)),
+        inventory.setStack(4, marker(Items.GOLD_INGOT,
+                Text.literal("个人储蓄").formatted(Formatting.GOLD, Formatting.BOLD),
+                List.of(Text.literal("Personal savings").formatted(Formatting.GRAY),
+                        Text.literal("这是你的存款，不是金库").formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
         int slot = 10;
         var uuid = owner.getUuid();
@@ -416,6 +457,41 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                     Text.literal(def.name() + "  " + CompactFormat.format(balance)).formatted(color(def)),
                     List.of(Text.literal(balance.toString()).formatted(Formatting.DARK_GRAY),
                             Text.literal(def.nameEn()).formatted(Formatting.GRAY)),
+                    "noop", 1));
+            slot += 2;
+        }
+        var own = books.personalNote(uuid);
+        if (own != null) {
+            inventory.setStack(22, marker(Items.PAPER,
+                    Text.literal("个人银行券 " + own.name()).formatted(Formatting.YELLOW),
+                    List.of(Text.literal("Personal note").formatted(Formatting.GRAY),
+                            Text.literal("现价 " + CompactFormat.formatRate(books.personalDiamondPrice(own)) + " 钻").formatted(Formatting.WHITE),
+                            Text.literal("持有 " + CompactFormat.format(books.personalHolding(own.id(), uuid))).formatted(Formatting.GRAY)),
+                    "noop", 1));
+        }
+    }
+
+    private void paintManagement() {
+        BankBooks books = BankRuntime.books();
+        inventory.setStack(4, marker(Items.GOLD_BLOCK,
+                Text.literal("管理").formatted(Formatting.AQUA, Formatting.BOLD),
+                List.of(Text.literal("Central bank").formatted(Formatting.GRAY),
+                        Text.literal(books.statusLabel()).formatted(Formatting.YELLOW),
+                        Text.literal("汇率 " + BankPhrases.copperPerDiamond(books) + " 铜/钻").formatted(Formatting.WHITE),
+                        Text.literal("手续费 " + percent(books.feeFraction())).formatted(Formatting.GRAY)),
+                "noop", 1));
+        int slot = 10;
+        for (CurrencyDef def : books.currencies()) {
+            if (slot > 16) {
+                break;
+            }
+            Supply supply = books.supply(def.id());
+            inventory.setStack(slot, marker(icon(def),
+                    Text.literal(def.name()).formatted(color(def)),
+                    List.of(Text.literal(def.nameEn()).formatted(Formatting.GRAY),
+                            Text.literal("准备金 " + CompactFormat.format(supply.reserve())).formatted(Formatting.WHITE),
+                            Text.literal("负债 " + CompactFormat.format(supply.liability())).formatted(Formatting.WHITE),
+                            Text.literal("锁定 " + CompactFormat.format(supply.locked())).formatted(Formatting.YELLOW)),
                     "noop", 1));
             slot += 2;
         }
@@ -701,8 +777,8 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         return (current + 1) % currencies.size();
     }
 
-    private static void tell(ServerPlayerEntity player, TxResult result) {
-        Text text = Text.literal("[银行] " + result.message()).formatted(result.success() ? Formatting.GREEN : Formatting.RED);
+    private static void tell(ServerPlayerEntity player, Spoken spoken) {
+        Text text = BankTalk.text(player, spoken);
         player.sendMessage(text, false);
         player.sendMessage(text, true);
     }

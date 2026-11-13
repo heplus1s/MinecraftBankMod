@@ -16,12 +16,17 @@ import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
+import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.ItemEntity;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.world.World;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
+import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.math.Box;
 
 import java.nio.file.Files;
@@ -59,6 +64,8 @@ public final class BankMod implements ModInitializer {
             return ActionResult.SUCCESS;
         });
 
+        UseEntityCallback.EVENT.register((player, world, hand, entity, hit) -> openMarker(player, world, hand, entity, hit));
+
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             BankRuntime.server = server;
             BankRuntime.state = BankWorldState.get(server);
@@ -92,6 +99,21 @@ public final class BankMod implements ModInitializer {
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> displays.onJoin(handler.player));
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> displays.onQuit(handler.player));
         ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, newPlayer, alive) -> displays.resync(newPlayer));
+    }
+
+    private static ActionResult openMarker(PlayerEntity player, World world, Hand hand, Entity entity, EntityHitResult hit) {
+        if (world.isClient() || hand != Hand.MAIN_HAND || !(player instanceof ServerPlayerEntity serverPlayer)) {
+            return ActionResult.PASS;
+        }
+        if (!entity.getCommandTags().contains(DisplayService.MARKER_TAG) || BankRuntime.state == null) {
+            return ActionResult.PASS;
+        }
+        OutletPoint outlet = BankRuntime.books().outletByMarker(entity.getUuid());
+        if (outlet == null) {
+            return ActionResult.PASS;
+        }
+        BankMenus.open(serverPlayer, outlet);
+        return ActionResult.SUCCESS;
     }
 
     private static void loadConfig() {

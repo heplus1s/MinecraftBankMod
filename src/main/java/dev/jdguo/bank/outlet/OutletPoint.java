@@ -13,9 +13,15 @@ public final class OutletPoint {
     private double lift;
     private boolean hologram;
     private UUID hologramId;
+    private UUID markerId;
 
     public OutletPoint(String name, String world, int x, int y, int z, double radius, double lift,
                        boolean hologram, UUID hologramId) {
+        this(name, world, x, y, z, radius, lift, hologram, hologramId, null);
+    }
+
+    public OutletPoint(String name, String world, int x, int y, int z, double radius, double lift,
+                       boolean hologram, UUID hologramId, UUID markerId) {
         this.name = name;
         this.world = world;
         this.x = x;
@@ -25,6 +31,7 @@ public final class OutletPoint {
         this.lift = lift;
         this.hologram = hologram;
         this.hologramId = hologramId;
+        this.markerId = markerId;
     }
 
     public String name() { return name; }
@@ -36,6 +43,7 @@ public final class OutletPoint {
     public double lift() { return lift; }
     public boolean hologram() { return hologram; }
     public UUID hologramId() { return hologramId; }
+    public UUID markerId() { return markerId; }
 
     public void relocate(String world, int x, int y, int z) {
         this.world = world;
@@ -43,12 +51,14 @@ public final class OutletPoint {
         this.y = y;
         this.z = z;
         this.hologramId = null;
+        this.markerId = null;
     }
 
     public void setRadius(double radius) { this.radius = radius; }
     public void setLift(double lift) { this.lift = lift; }
     public void setHologram(boolean hologram) { this.hologram = hologram; }
     public void setHologramId(UUID hologramId) { this.hologramId = hologramId; }
+    public void setMarkerId(UUID markerId) { this.markerId = markerId; }
 
     public boolean sameBlock(String world, int x, int y, int z) {
         return this.world.equals(world) && this.x == x && this.y == y && this.z == z;

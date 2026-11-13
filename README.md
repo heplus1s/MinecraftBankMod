@@ -30,7 +30,7 @@
 
 如果没看准方块，会用你脚下那一格。网点名字只能是 ASCII，1 到 32 个字符：开头是字母或数字，后面只能是字母、数字、下划线或连字符。已经存下来的旧名字，包括中文，还能用 move、remove、tp、radius、lift、hologram 指到。
 
-设好以后，玩家右键这个方块就会打开箱子界面。如果这格本来就是箱子，这次右键会改由银行处理。站在网点附近（默认 4 格）也可以输入 `/bank`。全息字牌会浮在柜台上方，服务器重启后还在。
+设好以后，方块上会停一辆写着「中央银行 · 名字」的箱子矿车，原版客户端也能看见。右键方块或这辆矿车都会打开箱子界面，矿车会跟着存档留下；`/bank outlet remove` 和 `move` 会把它拆掉或挪走。如果这格本来就是箱子，右键方块会改由银行处理。站在网点附近（默认 4 格）也可以输入 `/bank`。全息字牌会浮在柜台上方，服务器重启后还在。
 
 一个世界可以设多个网点。账是全服共用的，不是每个柜台一本。
 
@@ -49,7 +49,7 @@
 
 界面是原版的大箱子。格子里的按钮是普通物品，拿不走；万一进了背包或掉在地上，也会被清掉。
 
-底栏可以切换：总览、存入、取出、兑换、汇票。管理员会多一个「信贷」。普通玩家必须在网点才能开柜台；管理员用 `/bank admin` 可以在别处打开信贷页。
+打开柜台先看到「储蓄」，也就是你自己的存款。底栏可以切换：储蓄、存入、取出、兑换、汇票。管理员还会看到「管理」（央行的准备金、负债、汇率和覆盖）和「信贷」。普通玩家看不到管理页。普通玩家必须在网点才能开柜台；管理员用 `/bank admin` 可以在别处打开信贷页。
 
 - **存入**：把铜锭或钻石放进空格。你的余额、银行准备金和账面负债会一起增加。
 - **取出**：可以按 1、10、64 或「尽可能多」来取。金库不够会拒绝；选「尽可能多」时，会按实际库存少给。一次最多取 4096 个，再多请开汇票。
@@ -57,7 +57,7 @@
 - **汇票**：从余额里开出一本成书，可以写成持票人或仅本人。把书放进兑现格，钱会回到账户。
 - **信贷**（管理员）：可以无准备金增发、按准备金发行、注销，也可以暂停用纸币兑换硬通货。
 
-做成或被拒绝时，会在聊天里说一声，动作栏也会闪一下。汇率不会刷在聊天里。
+做成或被拒绝时，会在聊天里说一声，动作栏也会闪一下。中文客户端看到数据包那种说法，例如 `[银行] 存入 铜锭 ×64 成功 ｜余额：铜 64，钻 0，银行券 0`，取出和兑换也带上这笔余额。英文客户端看到对应的英文，例如 `[Bank] Deposited copper ×64 | Balance: Cu 64, Dia 0, bank note 0`。汇率本身不写进每一条聊天。
 
 ## 大厅里能看到什么
 
@@ -65,7 +65,7 @@
 
 - **侧边栏**：每人一份，大概每秒更新一次。上面有余额、对钻石的汇率、手续费、兑现情况和最近的网点。1.20.1 的侧边栏行尾会带一个红色数字，那只是排列用的序号，不是余额。
 - **全息字牌**：浮在网点上方，面向玩家，显示汇率和状态。
-- **Boss 条**：银票对钻石的价格，进度表示还能兑出多少。紧了会变黄，挤兑或停止兑现会变红。
+- **Boss 条**：开局写着 `汇率：1000 铜/钻`。进度表示银行券还能兑出多少。紧了会变黄，挤兑或停止兑现会变红。
 - **玩家列表**：页眉和页脚会显示银行名称和主要汇率。
 
 ```
@@ -85,7 +85,7 @@
 | --- | --- | --- | --- | --- |
 | `copper` | 实物 | 铜锭 | 1,000,000 | 铜 |
 | `diamond` | 实物 | 钻石 | 1,000 | 计价货币 |
-| `note` | 纸币 | 用成书当汇票，不能把普通纸张存进去 | 100,000 | 银票，开局 100 张兑 1 钻 |
+| `note` | 纸币 | 用成书当汇票，不能把普通纸张存进去 | 1,000 | 银行券，开局 1 张兑 1 钻 |
 
 默认手续费是 2%。每种货币的差额权重 α 默认是 1000‰。汇率默认不设上下限，这样纸币贬值时，数字可以变得很大。如果要限制，可以用：
 
@@ -96,9 +96,9 @@
 /bank alpha note 1000
 ```
 
-如果把 α 设成 0，银票会钉在平价上，多印也不会改汇率。不过准备金率照样会下降，金库空了还是兑不出来。
+如果把 α 设成 0，银行券会钉在平价上，多印也不会改汇率。不过准备金率照样会下降，金库空了还是兑不出来。
 
-和旧版银行数据包相比，这里把差额的方向改了一下：多印负债、准备金不动时，这种货币会变弱，而不是变硬。开局把种子准备金同时记作负债，所以账是平的。1 钻石一开始仍值 1000 铜，和原来看到的汇率一样。计算用高精度小数，付款时向上取整到整数。
+默认准备金是 1,000,000 铜锭和 1,000 钻石，所以一进世界就是 1 钻 = 1,000 铜，和数据包行动栏上的 `汇率：1000 铜/钻` 一样。和旧版银行数据包相比，这里把差额的方向改了一下：多印负债、准备金不动时，这种货币会变弱，而不是变硬。开局把种子准备金同时记作负债，所以账是平的。计算用高精度小数，付款时向上取整到整数。
 
 有效数量按下面这个式子算：
 
@@ -106,9 +106,9 @@
 V = R + (L - R) × α / 1000
 ```
 
-其中 `R` 是准备金，`L` 是负债。α 为 1000 时，`V` 就等于负债。银票对钻石还会再看一层：负债相对准备金越高，1 钻要换的银票就越多；无准备增发如果把这个比例从 1 拉到 2，1 钻就会从 100 张变成 200 张。金库里的钻石被取光，且 α 不是 0 时，报价会记成崩溃，并拒绝再兑。
+其中 `R` 是准备金，`L` 是负债。α 为 1000 时，`V` 就等于负债。银行券对钻石还会再看一层：负债相对准备金越高，1 钻要换的银行券就越多；无准备增发如果把这个比例从 1 拉到 2，1 钻就会从 1 张变成 2 张。金库里的钻石被取光，且 α 不是 0 时，报价会记成崩溃，并拒绝再兑。钻石不够，或者钻石价值凑不成整数时，差额按当时的铜/钻汇率用铜锭补上，开局就是 1 钻 = 1,000 铜。
 
-存入实物时，余额、准备金和负债一起加。取出时一起减，但已经锁给银票的那部分钻石取不走。兑换只调整负债，不动金库。用纸币换实物时，不能超过金库实际还能兑出的数量。
+存入实物时，余额、准备金和负债一起加。取出时一起减，但已经锁给银行券的那部分钻石取不走。兑换只调整负债，不动金库。用纸币换实物时，不能超过金库实际还能兑出的数量。
 
 ## 信贷
 
@@ -126,12 +126,43 @@ V = R + (L - R) × α / 1000
 
 金额可以写成 `1_000`、`1.5k`、`2m`、`1e40`。
 
-- **无准备发行**：给玩家加余额和负债，准备金不变。银票会贬值。发得特别多时，Boss 条和全息字牌会显示挤兑。
-- **按准备金发行**：额度按钻石库存和设置计算。默认情况下，开局 1000 钻正好覆盖已有的 10 万银票，所以一开始额度为 0，要先存进钻石才有新额度。这样发出去的银票会锁住对应的钻石，平价不变。
+- **无准备发行**：给玩家加余额和负债，准备金不变。银行券会贬值。发得特别多时，Boss 条和全息字牌会显示挤兑。
+- **按准备金发行**：额度按钻石库存和设置计算。默认 1 张银行券兑 1 钻，开局 1000 钻正好覆盖已有的 1000 张，所以一开始额度为 0，要先存进钻石才有新额度。这样发出去的银行券会锁住对应的钻石，平价不变。
 - **注销**：先销掉没有准备金的部分，汇率会好转；再往下销，才会解锁钻石。
-- **停止兑现**：只阻止用纸币换铜或钻石。普通存取、用铜钻换银票、汇票进出账户都还可以。
+- **停止兑现**：只阻止用纸币换铜或钻石。普通存取、用铜钻换银行券、汇票进出账户都还可以。
 
-`/bank reserve` 用来直接改库存数字，给运维用。锁住的部分不能改得比锁定数量更少。
+`/bank reserve <currency> <amount>` 用来改这种货币的开局准备金。玩家已经存进来的钱还在，金库和负债会跟着开局数一起挪，所以汇率和能不能兑会对得上新账，而不是只改一个库存数字。锁住的部分不能改得比锁定数量更少。改完聊天里会报金库、负债、锁定和现在的铜/钻汇率。
+
+个人准备金是另一本账，留给以后的个人发币，跟存款、跟央行金库都分开。管理员可以用 `/bank personal get <player>` 查看，用 `/bank personal set <player> <currency> <amount>` 记下。设成 0 就是清掉。这不会改玩家余额，也不会改金库。
+
+## 个人银行券
+
+这和存款、个人准备金、央行的银行券都不是一回事。每个人只能有一张。名字最多三个汉字或英文字母，不能和别人重名。
+
+```
+/bank note create diamond <name> <par>
+/bank note create copper <name> <par>
+/bank note issue <amount>
+/bank note rate
+/bank note rate <name>
+/bank note buy <name> <amount>
+/bank note sell <name> <amount>
+```
+
+`<par>` 是一张券开局兑多少钻，或多少铜。发行前，个人准备金至少要盖住「已发行加这次要发的数量 × 开价 × 覆盖倍数」。覆盖倍数默认是 1，管理员用 `/bank note coverage <ratio>` 改。
+
+买卖的计价是央行银行券。开局 1 张央行银行券 = 1 钻。不够整张，或者钻石那边凑不齐，就按 1 钻 = 1,000 铜用铜锭找零。
+
+价钱这样算。M1 是已经发出去的张数。有效准备是个人准备金和发行时锁住的数里较小的那个，再除以开价，得到能撑住多少张，记成准备张数。M2 = M1 + 准备张数。
+
+```
+强度 = 有效准备 / (开价 × M1)
+流向 = (买入张数 - 卖出张数) / M1
+流向系数 = 1 + 0.1 × 流向    （夹在 0.25 和 4 之间）
+钻价 = 开价换成钻 × 强度 × 流向系数
+```
+
+还没发行时，钻价就等于开价换成钻。买入会把流向系数抬高，卖出会把它压低。准备不够，强度就小于 1，券会变便宜。
 
 ## 汇票
 
@@ -163,7 +194,7 @@ V = R + (L - R) × α / 1000
   "currencies": [
     { "id": "copper", "kind": "commodity", "item": "minecraft:copper_ingot", "initialReserve": "1000000", "alphaPermille": "1000" },
     { "id": "diamond", "kind": "commodity", "item": "minecraft:diamond", "initialReserve": "1000", "alphaPermille": "1000" },
-    { "id": "note", "kind": "virtual", "name": "银票", "initialReserve": "100000", "issuable": true, "backing": "diamond", "parPerBacking": "100", "haircut": "1", "minReserveRatio": "1", "alphaPermille": "1000" }
+    { "id": "note", "kind": "virtual", "name": "银行券", "nameEn": "bank note", "initialReserve": "1000", "issuable": true, "backing": "diamond", "parPerBacking": "1", "haircut": "1", "minReserveRatio": "1", "alphaPermille": "1000" }
   ]
 }
 ```
@@ -181,7 +212,7 @@ V = R + (L - R) × α / 1000
 ./gradlew test
 ```
 
-`./gradlew test` 不会启动游戏。它主要检查存取、兑换、汇票是否只兑一次、滥发后银票会不会贬值、按准备金发行会不会锁钻，以及大数字会不会算爆。
+`./gradlew test` 不会启动游戏。它主要检查存取、兑换、汇票是否只兑一次、滥发后银行券会不会贬值、按准备金发行会不会锁钻，以及大数字会不会算爆。
 
 许可是 MIT，版权归 heplus1s。Minecraft 是 Mojang 的商标，本项目与 Mojang 无关。
 
@@ -219,7 +250,7 @@ Look at the block you want as the counter (within about 6 blocks) and run:
 
 If you aren't looking at a block, it uses the one under your feet. Outlet names have to be ASCII, 1 to 32 characters: start with a letter or digit, then only letters, digits, underscore, or hyphen. Names already saved, including old non-ASCII ones, can still be used with move, remove, tp, radius, lift, and hologram.
 
-After that, right-clicking the block opens the chest menu. If the block is already a chest, that right-click is handled by the bank instead. Players standing near the outlet (4 blocks by default) can also type `/bank`. A hologram floats above the counter and comes back after a restart.
+After that, a chest minecart labeled "中央银行 · name" sits on the block. Vanilla clients can see it. Right-clicking the block or the cart opens the chest menu, and the cart is saved with the world. `/bank outlet remove` and `move` delete it or place it again. If the block is already a chest, right-clicking the block is handled by the bank instead. Players standing near the outlet (4 blocks by default) can also type `/bank`. A hologram floats above the counter and comes back after a restart.
 
 A world can have more than one outlet. The ledger is shared across the server, not one book per counter.
 
@@ -227,7 +258,7 @@ A world can have more than one outlet. The ledger is shared across the server, n
 | --- | --- | --- |
 | `/bank outlet set <name>` | operators | Turn the block you're looking at into an outlet |
 | `/bank outlet move <name>` | operators | Move the outlet to the block you're looking at |
-| `/bank outlet remove <name>` | operators | Remove the outlet and its hologram |
+| `/bank outlet remove <name>` | operators | Remove the outlet, its minecart, and its hologram |
 | `/bank outlet radius <name> <1-32>` | operators | How close you have to be to use `/bank` |
 | `/bank outlet lift <name> <0.5-16>` | operators | How high the hologram sits above the block, default 2.4 |
 | `/bank outlet hologram <name> on\|off` | operators | Whether this outlet shows a hologram |
@@ -238,7 +269,7 @@ A world can have more than one outlet. The ledger is shared across the server, n
 
 The interface is a vanilla large chest. The buttons in the slots are ordinary items and can't be taken. If one ends up in an inventory or on the ground, it gets cleared.
 
-The bottom row switches pages: overview, deposit, withdraw, exchange, and bills. Operators also get a Credit page. Regular players can only open the counter at an outlet. Operators can use `/bank admin` to open the credit page elsewhere.
+The counter opens on Savings, which is your own deposits. The bottom row switches pages: savings, deposit, withdraw, exchange, and bills. Operators also get Management (central reserves, liabilities, rates, and coverage) and Credit. Regular players do not see Management. Regular players can only open the counter at an outlet. Operators can use `/bank admin` to open the credit page elsewhere.
 
 - **Deposit**: Put copper ingots or diamonds in an empty slot. Your balance, the bank's reserves, and recorded liabilities all go up together.
 - **Withdraw**: You can take 1, 10, 64, or "as many as possible". If the vault doesn't have enough, the request is refused; "as many as possible" gives you whatever is actually in stock. The cap per withdrawal is 4096 items; for more, issue a bill.
@@ -246,7 +277,7 @@ The bottom row switches pages: overview, deposit, withdraw, exchange, and bills.
 - **Bills**: Issue a written book from your balance, payable to bearer or to yourself only. Put the book in the redeem slot and the money goes back to the account.
 - **Credit** (operators): You can issue currency without reserves, issue against reserves, retire it, or temporarily stop redeeming paper for hard currency.
 
-Successful or refused actions get a chat message and a flash on the action bar. Exchange rates are not spammed in chat.
+Successful or refused actions get a chat message and a flash on the action bar. A Chinese client sees the datapack wording, for example `[银行] 存入 铜锭 ×64 成功 ｜余额：铜 64，钻 0，银行券 0`. Withdrawals and exchanges include that balance too. An English client sees the matching English line, for example `[Bank] Deposited copper ×64 | Balance: Cu 64, Dia 0, bank note 0`. The rate itself is not repeated in every chat line.
 
 ## What you see in the lobby
 
@@ -254,7 +285,7 @@ These displays are on by default. Very large numbers are written as `k`, `M`, or
 
 - **Sidebar**: One per player, updated about once a second. It shows balances, rates against diamond, the fee, convertibility, and the nearest outlet. On 1.20.1 the end of each sidebar line has a red number. That's just a sort index, not a balance.
 - **Hologram**: Floats above the outlet, faces the player, and shows rates and status.
-- **Boss bar**: The note-to-diamond price. The bar fill shows how much can still be redeemed. It turns yellow when tight, and red on a bank run or when convertibility is frozen.
+- **Boss bar**: It opens on `汇率：1000 铜/钻` (1 diamond = 1000 copper). The bar fill shows how many bank notes can still be redeemed. It turns yellow when tight, and red on a bank run or when convertibility is frozen.
 - **Player list**: The header and footer show the bank name and the main rates.
 
 ```
@@ -274,7 +305,7 @@ There are three default currencies, written in `config/bank.json`. They are copi
 | --- | --- | --- | --- | --- |
 | `copper` | commodity | copper ingot | 1,000,000 | copper |
 | `diamond` | commodity | diamond | 1,000 | the unit of account |
-| `note` | paper | Uses written books as bills; ordinary paper can't be deposited | 100,000 | 银票 (notes). At the start, 100 notes buy 1 diamond |
+| `note` | paper | Uses written books as bills; ordinary paper can't be deposited | 1,000 | bank note. At the start, 1 bank note buys 1 diamond |
 
 The default fee is 2%. The difference weight α for each currency defaults to 1000‰. Rates have no min/max clamp by default, so the numbers can get very large when paper money depreciates. If you want limits:
 
@@ -287,7 +318,7 @@ The default fee is 2%. The difference weight α for each currency defaults to 10
 
 If you set α to 0, notes stay at par and printing more doesn't change the rate. The reserve ratio still falls, and you still can't redeem once the vault is empty.
 
-Compared with the old bank datapack, the sign of the difference term is flipped: when liabilities are printed without adding reserves, the currency gets weaker, not stronger. Opening books record the seed reserves as liabilities as well, so the books start square. One diamond is still worth 1000 copper at the start, same as the rate you would have seen before. Calculations use high-precision decimals; payments are rounded up to a whole number.
+The default reserves are 1,000,000 copper ingots and 1,000 diamonds, so a fresh world starts at 1 diamond = 1,000 copper, the same `汇率：1000 铜/钻` the datapack showed on the action bar. Compared with the old bank datapack, the sign of the difference term is flipped: when liabilities are printed without adding reserves, the currency gets weaker, not stronger. Opening books record the seed reserves as liabilities as well, so the books start square. Calculations use high-precision decimals; payments are rounded up to a whole number.
 
 Effective quantity is:
 
@@ -295,7 +326,7 @@ Effective quantity is:
 V = R + (L - R) × α / 1000
 ```
 
-`R` is reserves, `L` is liabilities. When α is 1000, `V` equals liabilities. Notes versus diamonds have an extra layer: the more liabilities there are relative to reserves, the more notes it takes to buy one diamond. If unbacked issuance pulls that ratio from 1 to 2, one diamond goes from 100 notes to 200. When the diamond vault is emptied and α is not 0, the quote is marked collapsed and further conversion is refused.
+`R` is reserves, `L` is liabilities. When α is 1000, `V` equals liabilities. Bank notes versus diamonds have an extra layer: the more liabilities there are relative to reserves, the more bank notes it takes to buy one diamond. If unbacked issuance pulls that ratio from 1 to 2, one diamond goes from 1 bank note to 2. When the diamond vault is emptied and α is not 0, the quote is marked collapsed and further conversion is refused. If diamonds run short, or the diamond value is not a whole number, the remainder is paid in copper at the current copper-per-diamond rate, which opens at 1 diamond = 1,000 copper.
 
 Depositing a commodity increases the balance, reserves, and liabilities together. Withdrawals decrease all three, but diamonds already locked to notes can't be taken out. Exchange only adjusts liabilities, not the vault. Converting paper into a commodity can't exceed what the vault can actually still redeem.
 
@@ -316,11 +347,42 @@ Operators (or permission level 2) can use:
 Amounts can be written as `1_000`, `1.5k`, `2m`, or `1e40`.
 
 - **Unbacked issuance**: Adds to the player's balance and to liabilities, without changing reserves. Notes depreciate. If you issue a great deal, the boss bar and hologram will show a bank run.
-- **Backed issuance**: The allowance is computed from diamond stock and the settings. By default, the opening 1000 diamonds already cover the existing 100,000 notes, so the starting allowance is 0. You have to deposit diamonds first to get more room. Notes issued this way lock the corresponding diamonds and stay at par.
+- **Backed issuance**: The allowance is computed from diamond stock and the settings. By default 1 bank note is worth 1 diamond, and the opening 1000 diamonds already cover the existing 1,000 bank notes, so the starting allowance is 0. You have to deposit diamonds first to get more room. Notes issued this way lock the corresponding diamonds and stay at par.
 - **Retirement**: Unbacked amounts are retired first, which improves the rate; only further retirement unlocks diamonds.
 - **Freeze convertibility**: Only blocks exchanging paper for copper or diamonds. Ordinary deposits and withdrawals, exchanging copper or diamonds for notes, and bills in or out of accounts still work.
 
-`/bank reserve` is for operators to change the stock figure directly. You can't set it below the locked amount.
+`/bank reserve <currency> <amount>` sets that currency's opening reserve. Money players have already deposited stays. The vault and liabilities move with the new opening figure, so the quote and what can be redeemed match the new books instead of only one stock number changing. You can't set it below the locked amount. The chat reply reports the vault, liabilities, locked amount, and the current copper-per-diamond rate.
+
+Personal reserves are a separate ledger reserved for later personal currency issuance. They are not savings deposits and they are not the central vault. Operators can read them with `/bank personal get <player>` and record them with `/bank personal set <player> <currency> <amount>`. Setting 0 clears that entry. It does not change the player's balance or the vault.
+
+## Personal notes
+
+These are not savings, not the personal reserve, and not the central bank note. Each player can have one. The name is at most three Chinese characters or English letters, and it can't match someone else's.
+
+```
+/bank note create diamond <name> <par>
+/bank note create copper <name> <par>
+/bank note issue <amount>
+/bank note rate
+/bank note rate <name>
+/bank note buy <name> <amount>
+/bank note sell <name> <amount>
+```
+
+`<par>` is how many diamonds, or how many copper, one note starts at. Before issuing, the personal reserve has to cover `(already issued + this issue) × par × coverage`. Coverage defaults to 1. Operators change it with `/bank note coverage <ratio>`.
+
+Trades are priced in the central bank note. At the start, 1 central bank note = 1 diamond. Anything short of a whole note, or a diamond the vault can't pay, is settled in copper at 1 diamond = 1,000 copper.
+
+The price works like this. M1 is notes already issued. Effective backing is the smaller of the personal reserve and the amount locked at issue, divided by par, which is how many notes that reserve can still support. M2 = M1 + that reserve-note count.
+
+```
+strength = effective backing / (par × M1)
+flow = (notes bought - notes sold) / M1
+flow factor = 1 + 0.1 × flow    (clamped between 0.25 and 4)
+diamond price = par in diamonds × strength × flow factor
+```
+
+Before anything is issued, the diamond price is just the par converted into diamonds. Buying pushes the flow factor up, selling pushes it down. If the reserve runs thin, strength drops below 1 and the note gets cheaper.
 
 ## Bills of exchange
 
@@ -352,7 +414,7 @@ The part of `config/bank.json` that matches the default economy looks like this:
   "currencies": [
     { "id": "copper", "kind": "commodity", "item": "minecraft:copper_ingot", "initialReserve": "1000000", "alphaPermille": "1000" },
     { "id": "diamond", "kind": "commodity", "item": "minecraft:diamond", "initialReserve": "1000", "alphaPermille": "1000" },
-    { "id": "note", "kind": "virtual", "name": "银票", "initialReserve": "100000", "issuable": true, "backing": "diamond", "parPerBacking": "100", "haircut": "1", "minReserveRatio": "1", "alphaPermille": "1000" }
+    { "id": "note", "kind": "virtual", "name": "银行券", "nameEn": "bank note", "initialReserve": "1000", "issuable": true, "backing": "diamond", "parPerBacking": "1", "haircut": "1", "minReserveRatio": "1", "alphaPermille": "1000" }
   ]
 }
 ```

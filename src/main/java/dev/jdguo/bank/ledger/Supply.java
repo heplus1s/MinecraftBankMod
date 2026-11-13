@@ -31,6 +31,7 @@ public final class Supply {
 
     void setReserve(BigInteger reserve) { this.reserve = reserve; }
     void setLiability(BigInteger liability) { this.liability = liability; }
+    void setAnchor(BigInteger anchor) { this.anchor = anchor; }
     void setLocked(BigInteger locked) { this.locked = locked; }
 
     void addReserve(BigInteger delta) { this.reserve = this.reserve.add(delta); }

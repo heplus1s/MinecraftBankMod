@@ -10,11 +10,14 @@ import dev.jdguo.bank.gui.BankMenus;
 import dev.jdguo.bank.instruments.CheckItems;
 import dev.jdguo.bank.ledger.Amounts;
 import dev.jdguo.bank.ledger.BankBooks;
-import dev.jdguo.bank.ledger.CompactFormat;
-import dev.jdguo.bank.ledger.Supply;
 import dev.jdguo.bank.ledger.TxResult;
+import dev.jdguo.bank.market.NoteTrade;
+import dev.jdguo.bank.market.PersonalNote;
 import dev.jdguo.bank.outlet.OutletPoint;
 import dev.jdguo.bank.persistence.BankRuntime;
+import dev.jdguo.bank.text.BankPhrases;
+import dev.jdguo.bank.text.BankTalk;
+import dev.jdguo.bank.text.Spoken;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.command.argument.GameProfileArgumentType;
 import net.minecraft.server.command.ServerCommandSource;
@@ -28,6 +31,7 @@ import net.minecraft.util.math.BlockPos;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.Collection;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 import static net.minecraft.server.command.CommandManager.argument;
@@ -73,12 +77,12 @@ public final class BankCommands {
                         .then(toggle("freeze", (src, on) -> {
                             books().setFrozen(on);
                             BankRuntime.save();
-                            return ok(src, on ? "Note redemption halted" : "Note redemption restored");
+                            return ok(src, BankPhrases.freeze(on));
                         }).requires(BankCommands::op))
                         .then(literal("fee").requires(BankCommands::op).then(argument("percent", DoubleArgumentType.doubleArg(0, 100)).executes(ctx -> {
                             books().setFeeFraction(BigDecimal.valueOf(DoubleArgumentType.getDouble(ctx, "percent")).movePointLeft(2));
                             BankRuntime.save();
-                            return ok(ctx.getSource(), "Fee is now " + DoubleArgumentType.getDouble(ctx, "percent") + "%");
+                            return ok(ctx.getSource(), BankPhrases.feeSet(DoubleArgumentType.getDouble(ctx, "percent")));
                         })))
                         .then(literal("alpha").requires(BankCommands::op)
                                 .then(argument("currency", StringArgumentType.word())
@@ -89,6 +93,29 @@ public final class BankCommands {
                         .then(literal("reserve").requires(BankCommands::op)
                                 .then(argument("currency", StringArgumentType.word())
                                         .then(argument("amount", StringArgumentType.word()).executes(ctx -> setReserve(ctx.getSource(), StringArgumentType.getString(ctx, "currency"), StringArgumentType.getString(ctx, "amount"))))))
+                        .then(literal("personal").requires(BankCommands::op)
+                                .then(literal("get").then(argument("player", GameProfileArgumentType.gameProfile()).executes(ctx -> personalGet(ctx.getSource(), GameProfileArgumentType.getProfileArgument(ctx, "player")))))
+                                .then(literal("set").then(argument("player", GameProfileArgumentType.gameProfile())
+                                        .then(argument("currency", StringArgumentType.word())
+                                                .then(argument("amount", StringArgumentType.word()).executes(ctx -> personalSet(
+                                                        ctx.getSource(),
+                                                        GameProfileArgumentType.getProfileArgument(ctx, "player"),
+                                                        StringArgumentType.getString(ctx, "currency"),
+                                                        StringArgumentType.getString(ctx, "amount"))))))))
+                        .then(literal("note")
+                                .then(literal("create")
+                                        .then(literal("diamond").then(argument("name", StringArgumentType.string())
+                                                .then(argument("par", StringArgumentType.word()).executes(ctx -> createNote(ctx.getSource(), false, StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "par"))))))
+                                        .then(literal("copper").then(argument("name", StringArgumentType.string())
+                                                .then(argument("par", StringArgumentType.word()).executes(ctx -> createNote(ctx.getSource(), true, StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "par")))))))
+                                .then(literal("issue").then(argument("amount", StringArgumentType.word()).executes(ctx -> issueNote(ctx.getSource(), StringArgumentType.getString(ctx, "amount")))))
+                                .then(literal("rate").executes(ctx -> noteRate(ctx.getSource(), null))
+                                        .then(argument("name", StringArgumentType.string()).executes(ctx -> noteRate(ctx.getSource(), StringArgumentType.getString(ctx, "name")))))
+                                .then(literal("buy").then(argument("name", StringArgumentType.string())
+                                        .then(argument("amount", StringArgumentType.word()).executes(ctx -> tradeNote(ctx.getSource(), true, StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "amount"))))))
+                                .then(literal("sell").then(argument("name", StringArgumentType.string())
+                                        .then(argument("amount", StringArgumentType.word()).executes(ctx -> tradeNote(ctx.getSource(), false, StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "amount"))))))
+                                .then(literal("coverage").requires(BankCommands::op).then(argument("ratio", StringArgumentType.word()).executes(ctx -> noteCoverage(ctx.getSource(), StringArgumentType.getString(ctx, "ratio"))))))
                         .then(literal("supply").requires(BankCommands::op).executes(ctx -> supply(ctx.getSource())))
                         .then(literal("audit").requires(BankCommands::op).executes(ctx -> {
                             ctx.getSource().sendMessage(Text.literal(books().audit()).formatted(Formatting.GRAY));
@@ -98,7 +125,7 @@ public final class BankCommands {
                         .then(literal("import-scores").requires(BankCommands::op).executes(ctx -> {
                             int count = ScoreImporter.importAll(ctx.getSource().getServer(), books());
                             BankRuntime.save();
-                            return ok(ctx.getSource(), "Imported " + count + " scoreboard balances (once per player per currency)");
+                            return ok(ctx.getSource(), BankPhrases.imported(count));
                         }))
         ));
     }
@@ -129,9 +156,7 @@ public final class BankCommands {
         String world = player.getWorld().getRegistryKey().getValue().toString();
         OutletPoint outlet = books().nearest(world, player.getX(), player.getY(), player.getZ(), 0);
         if (outlet == null) {
-            info(source, books().outlets().isEmpty()
-                    ? "No outlets yet. An operator should look at a block and run /bank outlet set <name>"
-                    : "You aren't within an outlet. /bank outlets lists the coordinates");
+            info(source, books().outlets().isEmpty() ? BankPhrases.noOutletsYet() : BankPhrases.notInRange());
             return 0;
         }
         BankMenus.open(player, outlet);
@@ -145,27 +170,26 @@ public final class BankCommands {
 
     private static int listOutlets(ServerCommandSource source) {
         if (books().outlets().isEmpty()) {
-            return info(source, "No outlets yet");
+            return info(source, BankPhrases.noOutlets());
         }
         for (OutletPoint outlet : books().outlets()) {
-            source.sendMessage(Text.literal(outlet.name() + "  " + outlet.world()
-                    + "  " + outlet.x() + " " + outlet.y() + " " + outlet.z()
-                    + "  radius " + outlet.radius()).formatted(Formatting.AQUA));
+            source.sendMessage(BankTalk.text(source, BankPhrases.outletLine(
+                    outlet.name(), outlet.world(), outlet.x(), outlet.y(), outlet.z(), outlet.radius())));
         }
         return books().outlets().size();
     }
 
     private static int setOutlet(ServerCommandSource source, DisplayService displays, String name, boolean mustExist) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         if (!mustExist && !validNewOutletName(name)) {
-            return fail(source, "Outlet names must be 1-32 characters: a letter or digit, then letters, digits, underscore, or hyphen.");
+            return fail(source, BankPhrases.badOutletName());
         }
         ServerPlayerEntity player = source.getPlayerOrThrow();
         OutletPoint existing = books().outlet(name);
         if (mustExist && existing == null) {
-            return fail(source, "No outlet with that name");
+            return fail(source, BankPhrases.noSuchOutlet());
         }
         if (!mustExist && existing != null) {
-            return fail(source, "That name is already used. Move it with /bank outlet move");
+            return fail(source, BankPhrases.outletExists());
         }
         BlockPos pos = lookingAt(player);
         String world = player.getWorld().getRegistryKey().getValue().toString();
@@ -174,27 +198,33 @@ public final class BankCommands {
                     BankRuntime.config.outletRadius(), 2.4, true, null));
         } else {
             displays.discardHologram(source.getServer(), existing);
+            displays.discardMarker(source.getServer(), existing);
             existing.relocate(world, pos.getX(), pos.getY(), pos.getZ());
         }
+        OutletPoint placed = existing == null ? books().outlet(name) : existing;
+        if (placed != null) {
+            displays.ensureMarker(source.getServer(), placed);
+        }
         BankRuntime.save();
-        return ok(source, "Outlet " + name + " -> " + pos.getX() + " " + pos.getY() + " " + pos.getZ() + ". Right-click that block to open the counter.");
+        return ok(source, BankPhrases.outletSet(name, pos.getX(), pos.getY(), pos.getZ()));
     }
 
     private static int removeOutlet(ServerCommandSource source, DisplayService displays, String name) {
         OutletPoint outlet = books().outlet(name);
         if (outlet == null) {
-            return fail(source, "No outlet with that name");
+            return fail(source, BankPhrases.noSuchOutlet());
         }
         displays.discardHologram(source.getServer(), outlet);
+        displays.discardMarker(source.getServer(), outlet);
         books().removeOutlet(name);
         BankRuntime.save();
-        return ok(source, "Removed outlet " + name);
+        return ok(source, BankPhrases.outletRemoved(name));
     }
 
     private static int teleport(ServerCommandSource source, String name) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         OutletPoint outlet = books().outlet(name);
         if (outlet == null) {
-            return fail(source, "No outlet with that name");
+            return fail(source, BankPhrases.noSuchOutlet());
         }
         ServerPlayerEntity player = source.getPlayerOrThrow();
         net.minecraft.server.world.ServerWorld target = null;
@@ -205,63 +235,63 @@ public final class BankCommands {
             }
         }
         if (target == null) {
-            return fail(source, "That outlet's dimension isn't loaded");
+            return fail(source, BankPhrases.dimensionUnloaded());
         }
         player.teleport(target, outlet.x() + 0.5, outlet.y() + 1.0, outlet.z() + 0.5, player.getYaw(), player.getPitch());
-        return ok(source, "Teleported to " + name);
+        return ok(source, BankPhrases.teleported(name));
     }
 
     private static int radius(ServerCommandSource source, String name, double blocks) {
         OutletPoint outlet = books().outlet(name);
         if (outlet == null) {
-            return fail(source, "No outlet with that name");
+            return fail(source, BankPhrases.noSuchOutlet());
         }
         outlet.setRadius(blocks);
         BankRuntime.save();
-        return ok(source, name + " radius is now " + blocks);
+        return ok(source, BankPhrases.radiusSet(name, blocks));
     }
 
     private static int lift(ServerCommandSource source, DisplayService displays, String name, double blocks) {
         OutletPoint outlet = books().outlet(name);
         if (outlet == null) {
-            return fail(source, "No outlet with that name");
+            return fail(source, BankPhrases.noSuchOutlet());
         }
         displays.discardHologram(source.getServer(), outlet);
         outlet.setLift(blocks);
         BankRuntime.save();
-        return ok(source, name + " hologram height is now " + blocks + " blocks");
+        return ok(source, BankPhrases.liftSet(name, blocks));
     }
 
     private static int hologram(ServerCommandSource source, DisplayService displays, String name, boolean on) {
         OutletPoint outlet = books().outlet(name);
         if (outlet == null) {
-            return fail(source, "No outlet with that name");
+            return fail(source, BankPhrases.noSuchOutlet());
         }
         outlet.setHologram(on);
         if (!on) {
             displays.discardHologram(source.getServer(), outlet);
         }
         BankRuntime.save();
-        return ok(source, name + (on ? " hologram on" : " hologram off"));
+        return ok(source, BankPhrases.hologramSet(name, on));
     }
 
     private static int credit(ServerCommandSource source, String mode, Collection<GameProfile> profiles, String currency, String rawAmount) {
         if (profiles.size() != 1) {
-            return fail(source, "Name one player");
+            return fail(source, BankPhrases.nameOnePlayer());
         }
         BigInteger amount;
         try {
             amount = Amounts.parse(rawAmount);
         } catch (RuntimeException error) {
-            return fail(source, error.getMessage());
+            return fail(source, BankPhrases.amountProblem(error.getMessage()));
         }
         if (books().currency(currency) == null) {
-            return fail(source, "Unknown currency");
+            return fail(source, BankPhrases.failure(BankPhrases.Kind.GENERIC, "unknown_currency", currency, null));
         }
         GameProfile profile = profiles.iterator().next();
         var online = source.getServer().getPlayerManager().getPlayer(profile.getId());
         if ("check".equals(mode) && online == null) {
-            return fail(source, "That player is offline, so the bill can't be given");
+            return fail(source, BankPhrases.playerOffline());
         }
         TxResult result = switch (mode) {
             case "unbacked" -> books().creditUnbacked(profile.getId(), currency, amount);
@@ -271,31 +301,34 @@ public final class BankCommands {
             default -> TxResult.fail("bad_amount", "Unknown action");
         };
         if (!result.success()) {
-            return fail(source, result.message());
+            return fail(source, BankPhrases.failure(BankPhrases.Kind.GENERIC, result.code(), currency, null));
         }
         if ("check".equals(mode)) {
             online.getInventory().offerOrDrop(CheckItems.create(books(), books().check(result.instrumentId())));
         }
         BankRuntime.save();
-        return ok(source, result.message() + " → " + profile.getName());
+        Spoken done = "check".equals(mode)
+                ? BankPhrases.issue(books(), currency, result.amount(), profile.getName())
+                : BankPhrases.credit(books(), mode, currency, result.amount(), profile.getName());
+        return ok(source, done);
     }
 
     private static int setAlpha(ServerCommandSource source, String currency, String raw) {
         if (books().currency(currency) == null) {
-            return fail(source, "Unknown currency");
+            return fail(source, BankPhrases.failure(BankPhrases.Kind.GENERIC, "unknown_currency", currency, null));
         }
         BigDecimal alpha;
         try {
             alpha = new BigDecimal(raw);
         } catch (NumberFormatException error) {
-            return fail(source, "alpha isn't a number");
+            return fail(source, BankPhrases.alphaNotNumber());
         }
         if (alpha.signum() < 0 || alpha.compareTo(new BigDecimal("100000")) > 0) {
-            return fail(source, "alpha must be from 0 to 100000 permille");
+            return fail(source, BankPhrases.alphaRange());
         }
         books().setAlpha(currency, alpha);
         BankRuntime.save();
-        return ok(source, currency + " alpha is now " + alpha.toPlainString() + " permille");
+        return ok(source, BankPhrases.alphaSet(currency, alpha.toPlainString()));
     }
 
     private static int clamp(ServerCommandSource source, boolean min, String raw) {
@@ -306,16 +339,16 @@ public final class BankCommands {
                 books().setClampMax(null);
             }
             BankRuntime.save();
-            return ok(source, (min ? "Minimum" : "Maximum") + " clamp cleared");
+            return ok(source, BankPhrases.clampCleared(min));
         }
         BigDecimal value;
         try {
             value = new BigDecimal(raw);
         } catch (NumberFormatException error) {
-            return fail(source, "Not a number. Use off to clear the clamp.");
+            return fail(source, BankPhrases.clampNotNumber());
         }
         if (value.signum() <= 0) {
-            return fail(source, "Clamp must be positive, or off");
+            return fail(source, BankPhrases.clampPositive());
         }
         if (min) {
             books().setClampMin(value);
@@ -323,43 +356,127 @@ public final class BankCommands {
             books().setClampMax(value);
         }
         BankRuntime.save();
-        return ok(source, (min ? "Minimum " : "Maximum ") + value.toPlainString());
+        return ok(source, BankPhrases.clampSet(min, value.toPlainString()));
     }
 
     private static int setReserve(ServerCommandSource source, String currency, String raw) {
         if (books().currency(currency) == null) {
-            return fail(source, "Unknown currency");
+            return fail(source, BankPhrases.failure(BankPhrases.Kind.GENERIC, "unknown_currency", currency, null));
         }
         BigInteger amount;
         try {
             amount = "0".equals(raw) ? BigInteger.ZERO : Amounts.parse(raw);
         } catch (RuntimeException error) {
-            return fail(source, error.getMessage());
+            return fail(source, BankPhrases.amountProblem(error.getMessage()));
         }
         try {
-            books().setReserve(currency, amount);
+            books().setOpeningReserve(currency, amount);
         } catch (IllegalArgumentException error) {
-            return fail(source, error.getMessage());
+            return fail(source, BankPhrases.reserveRejected(error.getMessage()));
         }
         BankRuntime.save();
-        return ok(source, currency + " reserve is now " + CompactFormat.format(amount));
+        return ok(source, BankPhrases.reserveSet(books(), currency));
+    }
+
+    private static int personalGet(ServerCommandSource source, Collection<GameProfile> profiles) {
+        if (profiles.size() != 1) {
+            return fail(source, BankPhrases.nameOnePlayer());
+        }
+        GameProfile profile = profiles.iterator().next();
+        return ok(source, BankPhrases.personalGet(profile.getName(), books(), profile.getId()));
+    }
+
+    private static int personalSet(ServerCommandSource source, Collection<GameProfile> profiles, String currency, String raw) {
+        if (profiles.size() != 1) {
+            return fail(source, BankPhrases.nameOnePlayer());
+        }
+        if (books().currency(currency) == null) {
+            return fail(source, BankPhrases.failure(BankPhrases.Kind.GENERIC, "unknown_currency", currency, null));
+        }
+        BigInteger amount;
+        try {
+            amount = "0".equals(raw) ? BigInteger.ZERO : Amounts.parse(raw);
+        } catch (RuntimeException error) {
+            return fail(source, BankPhrases.amountProblem(error.getMessage()));
+        }
+        GameProfile profile = profiles.iterator().next();
+        try {
+            books().setPersonalReserve(profile.getId(), currency, amount);
+        } catch (IllegalArgumentException error) {
+            return fail(source, BankPhrases.reserveRejected(error.getMessage()));
+        }
+        BankRuntime.save();
+        return ok(source, BankPhrases.personalSet(profile.getName(), books(), currency, amount));
+    }
+
+    private static int createNote(ServerCommandSource source, boolean copperPar, String name, String rawPar) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        BigInteger par;
+        try {
+            par = Amounts.parse(rawPar);
+        } catch (RuntimeException error) {
+            return fail(source, BankPhrases.amountProblem(error.getMessage()));
+        }
+        NoteTrade result = books().createPersonalNote(source.getPlayerOrThrow().getUuid(), name, copperPar, par);
+        if (!result.success()) {
+            return fail(source, BankPhrases.noteRejected(result.code()));
+        }
+        BankRuntime.save();
+        return ok(source, BankPhrases.noteNamed(result.note()));
+    }
+
+    private static int issueNote(ServerCommandSource source, String raw) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        BigInteger amount;
+        try {
+            amount = Amounts.parse(raw);
+        } catch (RuntimeException error) {
+            return fail(source, BankPhrases.amountProblem(error.getMessage()));
+        }
+        UUID player = source.getPlayerOrThrow().getUuid();
+        NoteTrade result = books().issuePersonalNote(player, amount);
+        if (!result.success()) {
+            return fail(source, BankPhrases.noteRejected(result.code()));
+        }
+        BankRuntime.save();
+        return ok(source, BankPhrases.noteIssued(books(), result.note(), amount));
+    }
+
+    private static int noteRate(ServerCommandSource source, String name) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        PersonalNote note = name == null ? books().personalNote(source.getPlayerOrThrow().getUuid()) : books().personalNoteByName(name);
+        if (note == null) {
+            return fail(source, BankPhrases.noteRejected("none"));
+        }
+        return info(source, BankPhrases.noteRate(books(), note));
+    }
+
+    private static int tradeNote(ServerCommandSource source, boolean buy, String name, String raw) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        BigInteger amount;
+        try {
+            amount = Amounts.parse(raw);
+        } catch (RuntimeException error) {
+            return fail(source, BankPhrases.amountProblem(error.getMessage()));
+        }
+        UUID player = source.getPlayerOrThrow().getUuid();
+        NoteTrade result = buy ? books().buyPersonalNote(player, name, amount) : books().sellPersonalNote(player, name, amount);
+        if (!result.success()) {
+            return fail(source, BankPhrases.noteRejected(result.code()));
+        }
+        BankRuntime.save();
+        return ok(source, BankPhrases.noteTrade(buy, result.note().name(), amount, result.centralPaid(), result.copperPaid(), books(), player));
+    }
+
+    private static int noteCoverage(ServerCommandSource source, String raw) {
+        try {
+            books().setPersonalNoteCoverage(new BigDecimal(raw));
+        } catch (RuntimeException error) {
+            return fail(source, BankPhrases.noteRejected("coverage"));
+        }
+        BankRuntime.save();
+        return ok(source, BankPhrases.noteCoverage(books().personalNoteCoverage()));
     }
 
     private static int supply(ServerCommandSource source) {
-        BankBooks books = books();
-        source.sendMessage(Text.literal("Status " + books.statusLabelEn() + "  fee "
-                + books.feeFraction().movePointRight(2).stripTrailingZeros().toPlainString() + "%").formatted(Formatting.AQUA));
-        for (var def : books.currencies()) {
-            Supply supply = books.supply(def.id());
-            BigDecimal rate = def.id().equals(books.numeraire()) ? null : books.unitsPer(def.id(), books.numeraire());
-            String shown = def.nameEn() == null || def.nameEn().isBlank() ? def.id() : def.nameEn();
-            source.sendMessage(Text.literal(shown
-                    + "  reserve " + CompactFormat.format(supply.reserve())
-                    + "  liabilities " + CompactFormat.format(supply.liability())
-                    + "  locked " + CompactFormat.format(supply.locked())
-                    + "  cover " + CompactFormat.formatRatio(books.tightness(def.id()))
-                    + (rate == null ? "" : "  1 " + books.numeraire() + " = " + CompactFormat.formatRate(rate))
-            ).formatted(Formatting.GRAY));
+        for (Spoken line : BankPhrases.supply(books())) {
+            source.sendMessage(BankTalk.text(source, line));
         }
         return 1;
     }
@@ -368,22 +485,22 @@ public final class BankCommands {
         try {
             var path = net.fabricmc.loader.api.FabricLoader.getInstance().getConfigDir().resolve("bank.json");
             if (!java.nio.file.Files.exists(path)) {
-                return fail(source, "config/bank.json is missing");
+                return fail(source, BankPhrases.missingConfig());
             }
             BankConfig config = ConfigJson.parse(java.nio.file.Files.readString(path));
             BankRuntime.config = config;
             books().applyPolicy(config);
             BankRuntime.save();
-            return ok(source, "Reloaded fees, alpha, clamps, and any new currencies. Existing accounts were kept.");
+            return ok(source, BankPhrases.reloaded());
         } catch (Exception error) {
-            return fail(source, "Couldn't read the config: " + error.getMessage());
+            return fail(source, BankPhrases.configUnreadable(String.valueOf(error.getMessage())));
         }
     }
 
     private static int pref(ServerCommandSource source, Boolean sidebar, Boolean bossbar, Boolean tab) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         books().setPref(source.getPlayerOrThrow().getUuid(), sidebar, bossbar, tab);
         BankRuntime.save();
-        return ok(source, "Personal display updated");
+        return ok(source, BankPhrases.displayUpdated());
     }
 
     private static int global(ServerCommandSource source, String which, boolean on) {
@@ -399,7 +516,7 @@ public final class BankCommands {
             }
         }
         BankRuntime.save();
-        return ok(source, which + (on ? " on" : " off"));
+        return ok(source, BankPhrases.globalToggle(which, on));
     }
 
     private static BlockPos lookingAt(ServerPlayerEntity player) {
@@ -422,18 +539,18 @@ public final class BankCommands {
         return BankRuntime.books();
     }
 
-    private static int ok(ServerCommandSource source, String message) {
-        source.sendMessage(Text.literal("[Bank] " + message).formatted(Formatting.GREEN));
+    private static int ok(ServerCommandSource source, Spoken spoken) {
+        source.sendMessage(BankTalk.text(source, spoken));
         return 1;
     }
 
-    private static int fail(ServerCommandSource source, String message) {
-        source.sendError(Text.literal("[Bank] " + message));
+    private static int fail(ServerCommandSource source, Spoken spoken) {
+        source.sendError(BankTalk.text(source, spoken));
         return 0;
     }
 
-    private static int info(ServerCommandSource source, String message) {
-        source.sendMessage(Text.literal("[Bank] " + message).formatted(Formatting.GRAY));
+    private static int info(ServerCommandSource source, Spoken spoken) {
+        source.sendMessage(BankTalk.text(source, spoken));
         return 0;
     }
 }

@@ -16,10 +16,14 @@ import dev.jdguo.bank.instruments.CheckBook;
 import dev.jdguo.bank.instruments.CheckRecord;
 import dev.jdguo.bank.instruments.CheckStatus;
 import dev.jdguo.bank.instruments.PresentedCheck;
+import dev.jdguo.bank.market.NoteTrade;
+import dev.jdguo.bank.market.PersonalMarket;
+import dev.jdguo.bank.market.PersonalNote;
 import dev.jdguo.bank.outlet.OutletPoint;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -41,6 +45,10 @@ public final class BankBooks {
     private final Map<String, CurrencyDef> currencies;
     private final Map<String, Supply> supplies = new LinkedHashMap<>();
     private final Map<UUID, Map<String, BigInteger>> accounts = new LinkedHashMap<>();
+    /** Per-player reserves for a later personal mint. Not savings, and not the central vault. */
+    private final Map<UUID, Map<String, BigInteger>> personalReserves = new LinkedHashMap<>();
+    private final Map<UUID, PersonalNote> personalNotes = new LinkedHashMap<>();
+    private final Map<UUID, Map<UUID, BigInteger>> personalHoldings = new LinkedHashMap<>();
     private final CheckBook checks = new CheckBook();
     private final List<OutletPoint> outlets = new ArrayList<>();
     private final Map<UUID, DisplayPref> prefs = new LinkedHashMap<>();
@@ -57,6 +65,7 @@ public final class BankBooks {
     private boolean globalTab = true;
     private boolean globalHologram = true;
     private boolean joinMessage = true;
+    private BigDecimal personalNoteCoverage = BigDecimal.ONE;
     private long clock;
 
     private BankBooks(Map<String, CurrencyDef> currencies) {
@@ -111,6 +120,9 @@ public final class BankBooks {
         if (amount == null || amount.signum() <= 0) {
             return TxResult.fail("bad_amount", "Invalid amount");
         }
+        if ("diamond".equals(currency)) {
+            return withdrawDiamond(player, amount, partial);
+        }
         BigInteger bal = balance(player, currency);
         BigInteger free = supply(currency).freeReserve();
         BigInteger give = amount;
@@ -140,6 +152,99 @@ public final class BankBooks {
         return TxResult.ok(give, "Withdrew " + label(def) + " " + CompactFormat.format(give) + extra);
     }
 
+    /**
+     * Pays diamonds from the vault, and the missing or fractional part in copper at
+     * {@link #copperPerDiamond()} (1,000 copper per diamond when the books are freshly opened).
+     */
+    private TxResult withdrawDiamond(UUID player, BigInteger amount, boolean partial) {
+        if (!partial && amount.compareTo(MAX_PHYSICAL) > 0) {
+            return TxResult.fail("too_many_items", "You can withdraw at most " + MAX_PHYSICAL + " at once. Issue a bill for more.");
+        }
+        BigInteger bal = balance(player, "diamond");
+        BigInteger want = partial ? amount.min(bal).min(MAX_PHYSICAL) : amount;
+        if (want.signum() <= 0 || (!partial && bal.compareTo(amount) < 0)) {
+            return TxResult.fail("insufficient_funds", "Not enough balance");
+        }
+        BigInteger diamonds = want.min(supply("diamond").freeReserve());
+        BigInteger shortfall = want.subtract(diamonds);
+        BigInteger rate = copperPerDiamond();
+        BigInteger copper = shortfall.multiply(rate);
+        if (copper.compareTo(bankStock("copper")) > 0) {
+            if (!partial) {
+                return TxResult.fail("insufficient_reserves", "The vault doesn't have enough to pay this out");
+            }
+            BigInteger affordable = bankStock("copper").divide(rate);
+            copper = affordable.multiply(rate);
+            shortfall = affordable;
+            want = diamonds.add(shortfall);
+            if (want.signum() <= 0) {
+                return TxResult.fail("insufficient_reserves", "The vault doesn't have enough to pay this out");
+            }
+        }
+        debitBalance(player, "diamond", want);
+        supply("diamond").addReserve(diamonds.negate());
+        supply("diamond").addLiability(want.negate());
+        if (copper.signum() > 0) {
+            payCopperFromVault(copper);
+        }
+        return TxResult.ok(diamonds, copper, "Withdrew diamonds " + CompactFormat.format(diamonds)
+                + (copper.signum() > 0 ? " change copper " + CompactFormat.format(copper) : ""));
+    }
+
+    /** Copper the central bank can hand out without touching depositors' savings. */
+    private BigInteger bankStock(String currency) {
+        Supply self = supply(currency);
+        BigInteger stock = self.freeReserve().subtract(claimsOf(currency));
+        return stock.signum() < 0 ? BigInteger.ZERO : stock;
+    }
+
+    /**
+     * A redeemed bank note is paid in diamonds, with copper for a short vault or a fractional diamond.
+     * One bank note opens at one diamond, and one diamond opens at 1,000 copper.
+     */
+    private TxResult cashNotes(UUID player, BigInteger notes) {
+        BigDecimal perNote = unitsPer("diamond", "note");
+        if (perNote == null) {
+            creditBalance(player, "note", notes);
+            return TxResult.ok(notes, "Redeemed notes");
+        }
+        BigDecimal exact = perNote.multiply(new BigDecimal(notes), FxMath.MC);
+        BigInteger whole = exact.setScale(0, RoundingMode.FLOOR).toBigInteger();
+        BigDecimal fraction = exact.subtract(new BigDecimal(whole));
+        BigInteger rate = copperPerDiamond();
+        BigInteger copper = fraction.multiply(new BigDecimal(rate), FxMath.MC)
+                .setScale(0, RoundingMode.HALF_UP).toBigInteger();
+        if (copper.signum() < 0) {
+            copper = BigInteger.ZERO;
+        }
+        BigInteger headroom = supply("diamond").freeReserve().subtract(claimsOf("diamond"));
+        if (headroom.signum() < 0) {
+            headroom = BigInteger.ZERO;
+        }
+        if (whole.compareTo(headroom) > 0) {
+            copper = copper.add(whole.subtract(headroom).multiply(rate));
+            whole = headroom;
+        }
+        supply("note").addLiability(notes.negate());
+        if (whole.signum() > 0) {
+            creditBalance(player, "diamond", whole);
+            supply("diamond").addLiability(whole);
+        }
+        if (copper.signum() > 0) {
+            creditBalance(player, "copper", copper);
+            supply("copper").addLiability(copper);
+        }
+        return TxResult.ok(whole, copper, "Redeemed notes for " + CompactFormat.format(whole) + " diamonds"
+                + (copper.signum() > 0 ? " change " + CompactFormat.format(copper) + " copper" : ""));
+    }
+
+    private void payCopperFromVault(BigInteger copper) {
+        Supply self = supply("copper");
+        self.addReserve(copper.negate());
+        self.setAnchor(self.anchor().subtract(copper));
+        self.addLiability(copper.negate());
+    }
+
     public TxResult exchange(UUID player, String payId, String receiveId, BigInteger receiveQty) {
         if (payId.equals(receiveId)) {
             return TxResult.fail("bad_amount", "Can't exchange a currency for itself");
@@ -158,7 +263,17 @@ public final class BankBooks {
         if (frozen && pay.kind() == CurrencyKind.VIRTUAL && recv.kind() == CurrencyKind.COMMODITY) {
             return TxResult.fail("frozen", "Note redemption is halted");
         }
-        if (recv.kind() == CurrencyKind.COMMODITY) {
+        BigInteger deliver = receiveQty;
+        BigInteger copperChange = BigInteger.ZERO;
+        if ("diamond".equals(receiveId)) {
+            BigInteger claims = claimsOf(receiveId);
+            BigInteger headroom = supply(receiveId).freeReserve().subtract(claims);
+            if (headroom.signum() < 0) {
+                headroom = BigInteger.ZERO;
+            }
+            deliver = receiveQty.min(headroom);
+            copperChange = receiveQty.subtract(deliver).multiply(copperPerDiamond());
+        } else if (recv.kind() == CurrencyKind.COMMODITY) {
             BigInteger claims = claimsOf(receiveId);
             BigInteger headroom = supply(receiveId).freeReserve().subtract(claims);
             if (headroom.signum() < 0) {
@@ -177,10 +292,17 @@ public final class BankBooks {
         }
         debitBalance(player, payId, cost);
         supply(payId).addLiability(cost.negate());
-        creditBalance(player, receiveId, receiveQty);
-        supply(receiveId).addLiability(receiveQty);
-        return TxResult.ok(cost, "Exchanged " + CompactFormat.format(cost) + " " + label(pay)
-                + " for " + CompactFormat.format(receiveQty) + " " + label(recv));
+        if (deliver.signum() > 0) {
+            creditBalance(player, receiveId, deliver);
+            supply(receiveId).addLiability(deliver);
+        }
+        if (copperChange.signum() > 0) {
+            creditBalance(player, "copper", copperChange);
+            supply("copper").addLiability(copperChange);
+        }
+        return TxResult.ok(cost, copperChange, "Exchanged " + CompactFormat.format(cost) + " " + label(pay)
+                + " for " + CompactFormat.format(deliver) + " " + label(recv)
+                + (copperChange.signum() > 0 ? " change " + CompactFormat.format(copperChange) + " copper" : ""));
     }
 
     public TxResult issueCheck(UUID player, String currency, BigInteger amount, String issuerName, UUID payee, boolean fromBalance) {
@@ -214,6 +336,9 @@ public final class BankBooks {
             case ALREADY -> TxResult.fail("already_redeemed", "This bill was already redeemed");
             case WRONG_PAYEE -> TxResult.fail("wrong_payee", "This bill isn't made out to you");
             case OK -> {
+                if ("note".equals(presented.currency())) {
+                    yield cashNotes(player, presented.amount());
+                }
                 creditBalance(player, presented.currency(), presented.amount());
                 CurrencyDef def = need(presented.currency());
                 String name = def == null ? presented.currency() : label(def);
@@ -534,15 +659,263 @@ public final class BankBooks {
     public void setGlobalHologram(boolean v) { this.globalHologram = v; }
     public void setJoinMessage(boolean v) { this.joinMessage = v; }
 
+    /**
+     * Sets the opening stock of one currency. Player savings and outstanding bills stay.
+     * The vault moves by the same amount as the opening anchor, and liabilities stay
+     * {@code anchor + claims}, so the quote follows the new books instead of a leftover seed.
+     */
+    public void setOpeningReserve(String currency, BigInteger opening) {
+        if (need(currency) == null) {
+            throw new IllegalArgumentException("unknown");
+        }
+        if (opening == null || opening.signum() < 0) {
+            throw new IllegalArgumentException("negative");
+        }
+        Supply self = supply(currency);
+        BigInteger claims = claimsOf(currency);
+        BigInteger newReserve = self.reserve().add(opening.subtract(self.anchor()));
+        if (newReserve.signum() < 0) {
+            throw new IllegalArgumentException("negative");
+        }
+        if (newReserve.compareTo(self.locked()) < 0) {
+            throw new IllegalArgumentException("below_locked");
+        }
+        self.setAnchor(opening);
+        self.setLiability(opening.add(claims));
+        self.setReserve(newReserve);
+    }
+
+    /** Raw vault stock. Does not move the opening anchor. `/bank reserve` uses {@link #setOpeningReserve}. */
     public void setReserve(String currency, BigInteger reserve) {
-        if (reserve.signum() < 0) {
-            throw new IllegalArgumentException("Reserve can't be negative");
+        if (need(currency) == null) {
+            throw new IllegalArgumentException("unknown");
+        }
+        if (reserve == null || reserve.signum() < 0) {
+            throw new IllegalArgumentException("negative");
         }
         Supply self = supply(currency);
         if (reserve.compareTo(self.locked()) < 0) {
-            throw new IllegalArgumentException("Reserve can't be less than the locked amount");
+            throw new IllegalArgumentException("below_locked");
         }
         self.setReserve(reserve);
+    }
+
+    /** Whole copper ingots for one diamond. Opens at 1000; follows the live quote when there is one. */
+    public BigInteger copperPerDiamond() {
+        BigDecimal rate = unitsPer("copper", "diamond");
+        if (rate == null || rate.signum() <= 0) {
+            return BigInteger.valueOf(1000);
+        }
+        BigInteger rounded = rate.setScale(0, RoundingMode.HALF_UP).toBigInteger();
+        return rounded.signum() < 1 ? BigInteger.ONE : rounded;
+    }
+
+    public BigInteger personalReserve(UUID player, String currency) {
+        Map<String, BigInteger> row = personalReserves.get(player);
+        if (row == null) {
+            return BigInteger.ZERO;
+        }
+        return row.getOrDefault(currency, BigInteger.ZERO);
+    }
+
+    public Map<String, BigInteger> personalReservesOf(UUID player) {
+        Map<String, BigInteger> row = personalReserves.get(player);
+        if (row == null) {
+            return Map.of();
+        }
+        return Map.copyOf(row);
+    }
+
+    /** Stores a personal issuance reserve. Does not touch savings balances or central supplies. */
+    public void setPersonalReserve(UUID player, String currency, BigInteger amount) {
+        if (need(currency) == null) {
+            throw new IllegalArgumentException("unknown");
+        }
+        if (player == null || amount == null || amount.signum() < 0) {
+            throw new IllegalArgumentException("negative");
+        }
+        Map<String, BigInteger> row = personalReserves.computeIfAbsent(player, id -> new LinkedHashMap<>());
+        if (amount.signum() == 0) {
+            row.remove(currency);
+            if (row.isEmpty()) {
+                personalReserves.remove(player);
+            }
+            return;
+        }
+        row.put(currency, amount);
+    }
+
+    public BigDecimal personalNoteCoverage() { return personalNoteCoverage; }
+
+    public void setPersonalNoteCoverage(BigDecimal coverage) {
+        if (coverage == null || coverage.signum() <= 0 || coverage.compareTo(new BigDecimal("100")) > 0) {
+            throw new IllegalArgumentException("coverage");
+        }
+        this.personalNoteCoverage = coverage;
+    }
+
+    public java.util.Collection<PersonalNote> personalNotes() {
+        return personalNotes.values();
+    }
+
+    public PersonalNote personalNote(UUID issuer) {
+        for (PersonalNote note : personalNotes.values()) {
+            if (note.issuer().equals(issuer)) {
+                return note;
+            }
+        }
+        return null;
+    }
+
+    public PersonalNote personalNoteByName(String name) {
+        if (name == null) {
+            return null;
+        }
+        String key = PersonalMarket.canonicalName(name);
+        for (PersonalNote note : personalNotes.values()) {
+            if (PersonalMarket.canonicalName(note.name()).equals(key)) {
+                return note;
+            }
+        }
+        return null;
+    }
+
+    public BigInteger personalHolding(UUID noteId, UUID player) {
+        Map<UUID, BigInteger> row = personalHoldings.get(noteId);
+        if (row == null) {
+            return BigInteger.ZERO;
+        }
+        return row.getOrDefault(player, BigInteger.ZERO);
+    }
+
+    public BigDecimal personalDiamondPrice(PersonalNote note) {
+        return PersonalMarket.diamondPrice(note, copperPerDiamond(), effectiveBacking(note));
+    }
+
+    public BigInteger effectiveBacking(PersonalNote note) {
+        String backing = note.copperPar() ? "copper" : "diamond";
+        return personalReserve(note.issuer(), backing).min(note.locked());
+    }
+
+    public NoteTrade createPersonalNote(UUID issuer, String name, boolean copperPar, BigInteger par) {
+        if (!PersonalMarket.validName(name)) {
+            return NoteTrade.fail("name");
+        }
+        if (personalNote(issuer) != null) {
+            return NoteTrade.fail("exists");
+        }
+        if (personalNoteByName(name) != null) {
+            return NoteTrade.fail("taken");
+        }
+        if (par == null || par.signum() <= 0) {
+            return NoteTrade.fail("par");
+        }
+        PersonalNote note = new PersonalNote(UUID.randomUUID(), issuer, name, copperPar, par);
+        personalNotes.put(note.id(), note);
+        return NoteTrade.ok(note, BigInteger.ZERO, BigInteger.ZERO);
+    }
+
+    public NoteTrade issuePersonalNote(UUID issuer, BigInteger amount) {
+        PersonalNote note = personalNote(issuer);
+        if (note == null) {
+            return NoteTrade.fail("none");
+        }
+        if (amount == null || amount.signum() <= 0) {
+            return NoteTrade.fail("par");
+        }
+        BigInteger next = note.circulation().add(amount);
+        BigInteger required = requiredLock(note, next);
+        String backing = note.copperPar() ? "copper" : "diamond";
+        if (personalReserve(issuer, backing).compareTo(required) < 0) {
+            return NoteTrade.fail("reserve");
+        }
+        note.setLocked(required);
+        note.setCirculation(next);
+        addHolding(note.id(), issuer, amount);
+        return NoteTrade.ok(note, BigInteger.ZERO, BigInteger.ZERO);
+    }
+
+    public NoteTrade buyPersonalNote(UUID buyer, String name, BigInteger amount) {
+        return tradePersonalNote(buyer, name, amount, true);
+    }
+
+    public NoteTrade sellPersonalNote(UUID seller, String name, BigInteger amount) {
+        return tradePersonalNote(seller, name, amount, false);
+    }
+
+    private NoteTrade tradePersonalNote(UUID actor, String name, BigInteger amount, boolean buy) {
+        PersonalNote note = personalNoteByName(name);
+        if (note == null) {
+            return NoteTrade.fail("none");
+        }
+        if (amount == null || amount.signum() <= 0) {
+            return NoteTrade.fail("par");
+        }
+        if (actor.equals(note.issuer())) {
+            return NoteTrade.fail("self");
+        }
+        if (unitsPer("note", "diamond") == null) {
+            return NoteTrade.fail("market");
+        }
+        BigDecimal diamondEach = personalDiamondPrice(note);
+        BigDecimal diamonds = diamondEach.multiply(new BigDecimal(amount), FxMath.MC);
+        BigDecimal notesPerDiamond = unitsPer("note", "diamond");
+        BigDecimal exactCentral = diamonds.multiply(notesPerDiamond, FxMath.MC);
+        BigInteger central = exactCentral.setScale(0, RoundingMode.FLOOR).toBigInteger();
+        BigDecimal fraction = exactCentral.subtract(new BigDecimal(central));
+        BigInteger copper = fraction.multiply(new BigDecimal(copperPerDiamond()), FxMath.MC)
+                .setScale(0, RoundingMode.HALF_UP).toBigInteger();
+        if (copper.signum() < 0) {
+            copper = BigInteger.ZERO;
+        }
+        UUID payer = buy ? actor : note.issuer();
+        UUID payee = buy ? note.issuer() : actor;
+        UUID noteSource = buy ? note.issuer() : actor;
+        UUID noteDest = buy ? actor : note.issuer();
+        if (personalHolding(note.id(), noteSource).compareTo(amount) < 0) {
+            return NoteTrade.fail("empty");
+        }
+        if (balance(payer, "note").compareTo(central) < 0 || balance(payer, "copper").compareTo(copper) < 0) {
+            return NoteTrade.fail("funds");
+        }
+        if (central.signum() > 0) {
+            debitBalance(payer, "note", central);
+            creditBalance(payee, "note", central);
+        }
+        if (copper.signum() > 0) {
+            debitBalance(payer, "copper", copper);
+            creditBalance(payee, "copper", copper);
+        }
+        addHolding(note.id(), noteSource, amount.negate());
+        addHolding(note.id(), noteDest, amount);
+        if (buy) {
+            note.addBuy(amount);
+        } else {
+            note.addSell(amount);
+        }
+        return NoteTrade.ok(note, central, copper);
+    }
+
+    private BigInteger requiredLock(PersonalNote note, BigInteger circulation) {
+        BigDecimal raw = new BigDecimal(note.par().multiply(circulation)).multiply(personalNoteCoverage, FxMath.MC);
+        BigInteger required = raw.setScale(0, RoundingMode.CEILING).toBigInteger();
+        return required.signum() < 0 ? BigInteger.ZERO : required;
+    }
+
+    private void addHolding(UUID noteId, UUID player, BigInteger delta) {
+        Map<UUID, BigInteger> row = personalHoldings.computeIfAbsent(noteId, id -> new LinkedHashMap<>());
+        BigInteger next = row.getOrDefault(player, BigInteger.ZERO).add(delta);
+        if (next.signum() < 0) {
+            throw new IllegalStateException("personal note underflow");
+        }
+        if (next.signum() == 0) {
+            row.remove(player);
+            if (row.isEmpty()) {
+                personalHoldings.remove(noteId);
+            }
+        } else {
+            row.put(player, next);
+        }
     }
 
     public boolean showSidebar(UUID player) {
@@ -572,6 +945,18 @@ public final class BankBooks {
 
     public List<OutletPoint> outlets() {
         return outlets;
+    }
+
+    public OutletPoint outletByMarker(UUID markerId) {
+        if (markerId == null) {
+            return null;
+        }
+        for (OutletPoint outlet : outlets) {
+            if (markerId.equals(outlet.markerId())) {
+                return outlet;
+            }
+        }
+        return null;
     }
 
     public OutletPoint outlet(String name) {
@@ -735,6 +1120,49 @@ public final class BankBooks {
         }
         root.add("accounts", accountJson);
 
+        JsonObject personalJson = new JsonObject();
+        for (Map.Entry<UUID, Map<String, BigInteger>> entry : personalReserves.entrySet()) {
+            JsonObject row = new JsonObject();
+            entry.getValue().forEach((c, v) -> {
+                if (v.signum() != 0) {
+                    row.addProperty(c, v.toString());
+                }
+            });
+            if (row.size() > 0) {
+                personalJson.add(entry.getKey().toString(), row);
+            }
+        }
+        root.add("personalReserves", personalJson);
+        root.addProperty("personalNoteCoverage", personalNoteCoverage.toPlainString());
+        JsonArray noteJson = new JsonArray();
+        for (PersonalNote note : personalNotes.values()) {
+            JsonObject o = new JsonObject();
+            o.addProperty("id", note.id().toString());
+            o.addProperty("issuer", note.issuer().toString());
+            o.addProperty("name", note.name());
+            o.addProperty("copperPar", note.copperPar());
+            o.addProperty("par", note.par().toString());
+            o.addProperty("circulation", note.circulation().toString());
+            o.addProperty("buys", note.buys().toString());
+            o.addProperty("sells", note.sells().toString());
+            o.addProperty("locked", note.locked().toString());
+            noteJson.add(o);
+        }
+        root.add("personalNotes", noteJson);
+        JsonObject holdingJson = new JsonObject();
+        for (Map.Entry<UUID, Map<UUID, BigInteger>> entry : personalHoldings.entrySet()) {
+            JsonObject row = new JsonObject();
+            entry.getValue().forEach((player, amount) -> {
+                if (amount.signum() != 0) {
+                    row.addProperty(player.toString(), amount.toString());
+                }
+            });
+            if (row.size() > 0) {
+                holdingJson.add(entry.getKey().toString(), row);
+            }
+        }
+        root.add("personalHoldings", holdingJson);
+
         JsonArray checkJson = new JsonArray();
         for (CheckRecord record : checks.all()) {
             JsonObject o = new JsonObject();
@@ -764,6 +1192,7 @@ public final class BankBooks {
             o.addProperty("lift", outlet.lift());
             o.addProperty("hologram", outlet.hologram());
             o.add("hologramId", outlet.hologramId() == null ? JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(outlet.hologramId().toString()));
+            o.add("markerId", outlet.markerId() == null ? JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(outlet.markerId().toString()));
             outletJson.add(o);
         }
         root.add("outlets", outletJson);
@@ -809,6 +1238,8 @@ public final class BankBooks {
         books.globalTab = bool(root, "globalTab", true);
         books.globalHologram = bool(root, "globalHologram", true);
         books.joinMessage = bool(root, "joinMessage", true);
+        books.personalNoteCoverage = root.has("personalNoteCoverage")
+                ? new BigDecimal(root.get("personalNoteCoverage").getAsString()) : BigDecimal.ONE;
         books.clock = root.has("clock") ? root.get("clock").getAsLong() : 0L;
         if (root.has("alphas")) {
             root.getAsJsonObject("alphas").entrySet()
@@ -842,6 +1273,44 @@ public final class BankBooks {
                 books.accounts.put(id, bals);
             }
         }
+        if (root.has("personalReserves")) {
+            for (Map.Entry<String, JsonElement> entry : root.getAsJsonObject("personalReserves").entrySet()) {
+                UUID id = UUID.fromString(entry.getKey());
+                Map<String, BigInteger> row = new LinkedHashMap<>();
+                entry.getValue().getAsJsonObject().entrySet()
+                        .forEach(e -> row.put(e.getKey(), new BigInteger(e.getValue().getAsString())));
+                if (!row.isEmpty()) {
+                    books.personalReserves.put(id, row);
+                }
+            }
+        }
+        if (root.has("personalNotes")) {
+            for (JsonElement element : root.getAsJsonArray("personalNotes")) {
+                JsonObject o = element.getAsJsonObject();
+                PersonalNote note = new PersonalNote(
+                        UUID.fromString(o.get("id").getAsString()),
+                        UUID.fromString(o.get("issuer").getAsString()),
+                        o.get("name").getAsString(),
+                        o.get("copperPar").getAsBoolean(),
+                        new BigInteger(o.get("par").getAsString()));
+                note.setCirculation(new BigInteger(o.get("circulation").getAsString()));
+                note.setBuys(new BigInteger(o.get("buys").getAsString()));
+                note.setSells(new BigInteger(o.get("sells").getAsString()));
+                note.setLocked(new BigInteger(o.get("locked").getAsString()));
+                books.personalNotes.put(note.id(), note);
+            }
+        }
+        if (root.has("personalHoldings")) {
+            for (Map.Entry<String, JsonElement> entry : root.getAsJsonObject("personalHoldings").entrySet()) {
+                UUID noteId = UUID.fromString(entry.getKey());
+                Map<UUID, BigInteger> row = new LinkedHashMap<>();
+                entry.getValue().getAsJsonObject().entrySet()
+                        .forEach(e -> row.put(UUID.fromString(e.getKey()), new BigInteger(e.getValue().getAsString())));
+                if (!row.isEmpty()) {
+                    books.personalHoldings.put(noteId, row);
+                }
+            }
+        }
         if (root.has("checks")) {
             for (JsonElement element : root.getAsJsonArray("checks")) {
                 JsonObject o = element.getAsJsonObject();
@@ -870,7 +1339,8 @@ public final class BankBooks {
                         o.get("radius").getAsDouble(),
                         o.has("lift") ? o.get("lift").getAsDouble() : 2.4,
                         !o.has("hologram") || o.get("hologram").getAsBoolean(),
-                        nullableUuid(o, "hologramId")));
+                        nullableUuid(o, "hologramId"),
+                        nullableUuid(o, "markerId")));
             }
         }
         if (root.has("prefs")) {

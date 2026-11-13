@@ -19,15 +19,15 @@ class CreditInflationTest {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         BigDecimal before = books.unitsPer("note", "diamond");
         BigDecimal ratioBefore = books.reserveRatio("note");
-        assertEquals(0, new BigDecimal("100").compareTo(before));
+        assertEquals(0, BigDecimal.ONE.compareTo(before));
         assertEquals(0, BigDecimal.ONE.compareTo(ratioBefore));
 
-        books.creditUnbacked(player, "note", new BigInteger("100000"));
+        books.creditUnbacked(player, "note", new BigInteger("1000"));
 
         assertEquals(0, new BigDecimal("0.5").compareTo(books.reserveRatio("note")));
-        assertEquals(0, new BigDecimal("200").compareTo(books.unitsPer("note", "diamond")));
+        assertEquals(0, new BigDecimal("2").compareTo(books.unitsPer("note", "diamond")));
         assertTrue(books.unitsPer("note", "diamond").compareTo(before) > 0);
-        assertEquals(new BigInteger("100000"), books.supply("note").reserve());
+        assertEquals(new BigInteger("1000"), books.supply("note").reserve());
         assertEquals("准备金偏紧", books.statusLabel());
         books.checkInvariants();
     }
@@ -50,10 +50,10 @@ class CreditInflationTest {
         assertEquals(BigInteger.ZERO, books.backedRoom(books.currency("note")));
 
         books.deposit(player, "diamond", BigInteger.TEN);
-        assertEquals(new BigInteger("1000"), books.backedRoom(books.currency("note")));
+        assertEquals(BigInteger.TEN, books.backedRoom(books.currency("note")));
         BigDecimal peg = books.unitsPer("note", "diamond");
 
-        var result = books.creditBacked(player, "note", new BigInteger("1000"));
+        var result = books.creditBacked(player, "note", BigInteger.TEN);
 
         assertTrue(result.success(), result.message());
         assertEquals(0, peg.compareTo(books.unitsPer("note", "diamond")));
@@ -72,7 +72,7 @@ class CreditInflationTest {
         books.setAlpha("note", BigDecimal.ZERO);
         BigDecimal before = books.unitsPer("note", "diamond");
 
-        books.creditUnbacked(player, "note", new BigInteger("100000"));
+        books.creditUnbacked(player, "note", new BigInteger("1000"));
 
         assertEquals(0, before.compareTo(books.unitsPer("note", "diamond")));
         assertEquals(0, new BigDecimal("0.5").compareTo(books.reserveRatio("note")));
@@ -81,10 +81,10 @@ class CreditInflationTest {
     @Test
     void retiringUnbackedNotesStrengthensThemAgain() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
-        books.creditUnbacked(player, "note", new BigInteger("100000"));
-        books.retire(player, "note", new BigInteger("100000"));
+        books.creditUnbacked(player, "note", new BigInteger("1000"));
+        books.retire(player, "note", new BigInteger("1000"));
 
-        assertEquals(0, new BigDecimal("100").compareTo(books.unitsPer("note", "diamond")));
+        assertEquals(0, BigDecimal.ONE.compareTo(books.unitsPer("note", "diamond")));
         assertEquals(BigInteger.ZERO, books.balance(player, "note"));
         books.checkInvariants();
     }
