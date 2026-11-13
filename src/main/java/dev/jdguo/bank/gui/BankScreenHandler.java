@@ -527,6 +527,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                 List.of(Text.literal(regimeLabel(own)).formatted(Formatting.GRAY),
                         Text.literal("持有 " + CompactFormat.format(books.personalHolding(own.id(), uuid))).formatted(Formatting.WHITE),
                         Text.literal("M1 " + CompactFormat.format(own.circulation())).formatted(Formatting.DARK_GRAY),
+                        Text.literal("利息池 " + CompactFormat.format(own.interestPool())).formatted(Formatting.GOLD),
                         Text.literal(issueHint(own)).formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
         if (own.bankrupt()) {

@@ -387,6 +387,13 @@ public final class BankPhrases {
         return line(Tone.GREEN, "银行券活期存款年利率已设为 " + percent + "%", "Bank-note demand-deposit rate is now " + percent + "% a year");
     }
 
+    public static Spoken personalInterestPaid(BankBooks books, java.util.UUID player, String name, java.math.BigInteger amount) {
+        String n = CompactFormat.format(amount);
+        return line(Tone.GREEN,
+                "存款利息 个人银行券「" + name + "」×" + n + balancesZh(books, player),
+                "Savings interest personal note " + name + " ×" + n + balancesEn(books, player));
+    }
+
     public static Spoken interestPaid(BankBooks books, java.util.UUID player, java.math.BigInteger amount) {
         String n = CompactFormat.format(amount);
         return line(Tone.GREEN,

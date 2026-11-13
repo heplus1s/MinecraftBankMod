@@ -109,6 +109,54 @@ class InterestTest {
     }
 
     @Test
+    void personalBookEntryEarnsWhilePaperAndCommodityReservesDoNot() {
+        BankBooks books = BankBooks.create(BankConfig.defaults());
+        books.setAlpha("note", BigDecimal.ZERO);
+        assertTrue(books.createPersonalNote(saver, "泉", false, BigInteger.ONE).success());
+        books.setPersonalReserve(saver, "diamond", new BigInteger("1000"));
+        assertTrue(books.issuePersonalNote(saver, new BigInteger("800")).success());
+        books.setFeeFraction(new BigDecimal("0.50"));
+        books.creditUnbacked(payer, "note", new BigInteger("1000"));
+        assertTrue(books.buyPersonalNote(payer, "泉", new BigInteger("200")).success());
+        var series = books.personalNote(saver);
+        assertEquals(new BigInteger("100"), series.interestPool());
+        assertEquals(new BigInteger("1000"), books.personalReserve(saver, "diamond"));
+        assertEquals(new BigInteger("1000"), books.supply("diamond").reserve());
+        assertTrue(books.issuePersonalPaper(payer, series.id(), new BigInteger("200")).result().success());
+        books.setInterestFraction(BigDecimal.ONE);
+        books.accrueInterest(0);
+        BankBooks.InterestDay day = books.accrueInterest(1);
+
+        assertEquals(new BigInteger("501"), books.personalHolding(series.id(), saver));
+        assertEquals(BigInteger.ZERO, books.personalHolding(series.id(), payer));
+        assertEquals(new BigInteger("200"), books.personalM0(series));
+        assertEquals(new BigInteger("701"), series.circulation());
+        assertEquals(new BigInteger("99"), series.interestPool());
+        assertEquals(new BigInteger("1000"), books.personalReserve(saver, "diamond"));
+        assertEquals(1, day.credits().size());
+        assertEquals(series.id(), day.credits().get(0).personalNote());
+        books.checkInvariants();
+    }
+
+    @Test
+    void oldPersonalNoteGainsAnEmptyInterestPoolWithoutLosingHoldings() {
+        BankBooks books = BankBooks.create(BankConfig.defaults());
+        assertTrue(books.createPersonalNote(saver, "泉", false, BigInteger.ONE).success());
+        books.setPersonalReserve(saver, "diamond", BigInteger.TEN);
+        assertTrue(books.issuePersonalNote(saver, BigInteger.TEN).success());
+        JsonObject root = JsonParser.parseString(books.toJson()).getAsJsonObject();
+        root.getAsJsonArray("personalNotes").get(0).getAsJsonObject().remove("interestPool");
+        root.getAsJsonArray("personalNotes").get(0).getAsJsonObject().remove("interestDay");
+
+        BankBooks loaded = BankBooks.fromJson(root.toString(), BankConfig.defaults());
+        var series = loaded.personalNote(saver);
+        assertEquals(BigInteger.TEN, loaded.personalHolding(series.id(), saver));
+        assertEquals(BigInteger.ZERO, series.interestPool());
+        assertEquals(-1L, series.interestDay());
+        loaded.checkInvariants();
+    }
+
+    @Test
     void oldLedgerKeepsBalancesAndStartsWithAnEmptyPool() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         books.deposit(saver, "diamond", BigInteger.TEN);

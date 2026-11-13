@@ -24,6 +24,10 @@ public final class PersonalNote {
     private BigInteger released = BigInteger.ZERO;
     private boolean bankrupt;
     private long closedAtEpochMs;
+    /** Fee income of this series, outside circulation. Interest is paid only from here. */
+    private BigInteger interestPool = BigInteger.ZERO;
+    /** Last Minecraft day this series was settled. -1 until the first tick anchors it. */
+    private long interestDay = -1L;
 
     /** Floating note. {@code copperPar} chooses whether par is copper or diamonds. */
     public PersonalNote(UUID id, UUID issuer, String name, boolean copperPar, BigInteger par) {
@@ -56,6 +60,8 @@ public final class PersonalNote {
     public BigInteger released() { return released; }
     public boolean bankrupt() { return bankrupt; }
     public long closedAtEpochMs() { return closedAtEpochMs; }
+    public BigInteger interestPool() { return interestPool; }
+    public long interestDay() { return interestDay; }
 
     public void addDrawn(BigInteger amount) {
         if (amount != null && amount.signum() > 0) {
@@ -85,6 +91,15 @@ public final class PersonalNote {
     public void setBuys(BigInteger buys) { this.buys = buys; }
     public void setSells(BigInteger sells) { this.sells = sells; }
     public void setLocked(BigInteger locked) { this.locked = locked; }
+    public void setInterestDay(long interestDay) { this.interestDay = interestDay; }
+
+    public void addInterestPool(BigInteger delta) {
+        BigInteger next = interestPool.add(delta);
+        if (next.signum() < 0) {
+            throw new IllegalStateException("personal interest pool underflow");
+        }
+        this.interestPool = next;
+    }
 
     public void addBuy(BigInteger amount) { this.buys = this.buys.add(amount); }
     public void addSell(BigInteger amount) { this.sells = this.sells.add(amount); }

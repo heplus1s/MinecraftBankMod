@@ -75,6 +75,8 @@ public final class BankBooks {
     private final Map<String, BigInteger> interestPool = new LinkedHashMap<>();
     /** Sub-note remainder carried until it becomes a whole bank note. */
     private final Map<UUID, BigDecimal> interestDust = new LinkedHashMap<>();
+    /** Per personal-note series, then per holder: the fractional note carried forward. */
+    private final Map<UUID, Map<UUID, BigDecimal>> personalInterestDust = new LinkedHashMap<>();
     /** World day last settled. -1 until the first tick anchors it, so old worlds do not pay retroactively. */
     private long lastInterestDay = -1L;
     private BigDecimal clampMin;
@@ -781,18 +783,38 @@ public final class BankBooks {
     public InterestDay accrueInterest(long worldDay) {
         if (lastInterestDay < 0) {
             lastInterestDay = worldDay;
+            anchorPersonalInterest(worldDay);
             return new InterestDay(true, List.of());
         }
         if (worldDay <= lastInterestDay) {
             return new InterestDay(false, List.of());
         }
+        for (PersonalNote note : personalNotes.values()) {
+            if (note.interestDay() < 0) {
+                note.setInterestDay(lastInterestDay);
+            }
+        }
         List<InterestCredit> credits = new ArrayList<>();
         long days = worldDay - lastInterestDay;
         for (long i = 0; i < days; i++) {
             credits.addAll(settleOneDay());
+            for (PersonalNote note : personalNotes.values()) {
+                credits.addAll(settlePersonalDay(note));
+            }
         }
         lastInterestDay = worldDay;
+        for (PersonalNote note : personalNotes.values()) {
+            note.setInterestDay(worldDay);
+        }
         return new InterestDay(true, credits);
+    }
+
+    private void anchorPersonalInterest(long worldDay) {
+        for (PersonalNote note : personalNotes.values()) {
+            if (note.interestDay() < 0) {
+                note.setInterestDay(worldDay);
+            }
+        }
     }
 
     private List<InterestCredit> settleOneDay() {
@@ -837,11 +859,86 @@ public final class BankBooks {
             }
             creditBalance(entry.getKey(), note.id(), share);
             supply(note.id()).addLiability(share);
-            paid.add(new InterestCredit(entry.getKey(), share));
+            paid.add(new InterestCredit(entry.getKey(), share, null));
             spent = spent.add(share);
         }
         addPool(note.id(), spent.negate());
         return paid;
+    }
+
+    private List<InterestCredit> settlePersonalDay(PersonalNote series) {
+        if (series.bankrupt() || interestFraction.signum() <= 0) {
+            return List.of();
+        }
+        Map<UUID, BigInteger> holdings = personalHoldings.get(series.id());
+        if (holdings == null || holdings.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, BigDecimal> dust = personalInterestDust.computeIfAbsent(series.id(), id -> new LinkedHashMap<>());
+        Map<UUID, BigInteger> due = new LinkedHashMap<>();
+        BigInteger total = BigInteger.ZERO;
+        for (UUID player : new ArrayList<>(holdings.keySet())) {
+            BigInteger balance = personalHolding(series.id(), player);
+            BigDecimal carried = dust.getOrDefault(player, BigDecimal.ZERO);
+            BigDecimal raw = new BigDecimal(balance).multiply(interestFraction, FxMath.MC)
+                    .divide(new BigDecimal("365"), FxMath.MC)
+                    .add(carried, FxMath.MC);
+            BigInteger whole = raw.setScale(0, RoundingMode.FLOOR).toBigInteger();
+            if (whole.signum() < 0) {
+                whole = BigInteger.ZERO;
+            }
+            BigDecimal remain = raw.subtract(new BigDecimal(whole), FxMath.MC);
+            if (remain.signum() == 0) {
+                dust.remove(player);
+            } else {
+                dust.put(player, remain);
+            }
+            if (whole.signum() > 0) {
+                due.put(player, whole);
+                total = total.add(whole);
+            }
+        }
+        BigInteger pool = series.interestPool();
+        if (total.signum() <= 0 || pool.signum() <= 0) {
+            return List.of();
+        }
+        List<InterestCredit> paid = new ArrayList<>();
+        BigInteger spent = BigInteger.ZERO;
+        boolean full = pool.compareTo(total) >= 0;
+        for (Map.Entry<UUID, BigInteger> entry : due.entrySet()) {
+            BigInteger share = full ? entry.getValue() : entry.getValue().multiply(pool).divide(total);
+            if (share.signum() <= 0) {
+                continue;
+            }
+            addHolding(series.id(), entry.getKey(), share);
+            series.setCirculation(series.circulation().add(share));
+            paid.add(new InterestCredit(entry.getKey(), share, series.id()));
+            spent = spent.add(share);
+        }
+        series.addInterestPool(spent.negate());
+        return paid;
+    }
+
+    /**
+     * Moves a fee, in this series' own notes, out of a book-entry holding into its interest pool.
+     * Circulation falls with the holding. Issuance reserves and the issuer's commodity reserve stay put.
+     */
+    private void retainTradeFee(PersonalNote note, UUID holder, BigInteger traded) {
+        if (note == null || note.bankrupt() || traded == null || traded.signum() <= 0 || feeFraction.signum() <= 0) {
+            return;
+        }
+        BigInteger fee = new BigDecimal(traded).multiply(feeFraction, FxMath.MC).setScale(0, RoundingMode.FLOOR).toBigInteger();
+        if (fee.signum() <= 0) {
+            return;
+        }
+        BigInteger take = fee.min(personalHolding(note.id(), holder));
+        if (take.signum() <= 0) {
+            return;
+        }
+        addHolding(note.id(), holder, take.negate());
+        BigInteger next = note.circulation().subtract(take);
+        note.setCirculation(next.signum() < 0 ? BigInteger.ZERO : next);
+        note.addInterestPool(take);
     }
 
     private void addPool(String currency, BigInteger delta) {
@@ -1250,6 +1347,7 @@ public final class BankBooks {
         } else {
             note.addSell(amount);
         }
+        retainTradeFee(note, note.issuer(), amount);
         return NoteTrade.ok(note, central, copper);
     }
 
@@ -1314,6 +1412,8 @@ public final class BankBooks {
         // The next trade reads those flows; it does not reuse this fill.
         receive.addBuy(receiveAmount);
         pay.addSell(quote.payNotes());
+        retainTradeFee(receive, player, receiveAmount);
+        retainTradeFee(pay, counterparty, quote.payNotes());
         return SwapTrade.ok(pay, receive, quote.payNotes(), receiveAmount, quote.central(), quote.copper());
     }
 
@@ -1345,6 +1445,7 @@ public final class BankBooks {
         }
         addHolding(note.id(), player, priced.retired().negate());
         applyRedemption(player, note, priced.retired(), priced);
+        retainTradeFee(note, player, priced.retired());
         return priced;
     }
 
@@ -1383,6 +1484,7 @@ public final class BankBooks {
         }
         addPaper(NoteSeries.key(null, noteId, face), burn.negate());
         applyRedemption(player, note, priced.retired(), priced);
+        retainTradeFee(note, player, priced.retired());
         return new Redemption(true, priced.code(), note, priced.retired(), priced.diamonds(), priced.copper(),
                 priced.central(), priced.discounted(), copies.add(burn));
     }
@@ -1930,6 +2032,15 @@ public final class BankBooks {
         JsonObject dust = new JsonObject();
         interestDust.forEach((id, amount) -> dust.addProperty(id.toString(), amount.toPlainString()));
         root.add("interestDust", dust);
+        JsonObject personalDust = new JsonObject();
+        personalInterestDust.forEach((noteId, row) -> {
+            JsonObject holders = new JsonObject();
+            row.forEach((player, fraction) -> holders.addProperty(player.toString(), fraction.toPlainString()));
+            if (holders.size() > 0) {
+                personalDust.add(noteId.toString(), holders);
+            }
+        });
+        root.add("personalInterestDust", personalDust);
         root.addProperty("frozen", frozen);
         root.add("clampMin", clampMin == null ? JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(clampMin.toPlainString()));
         root.add("clampMax", clampMax == null ? JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(clampMax.toPlainString()));
@@ -2021,6 +2132,8 @@ public final class BankBooks {
             o.addProperty("bankrupt", note.bankrupt());
             o.addProperty("closedAt", note.closedAtEpochMs());
             o.addProperty("released", note.released().toString());
+            o.addProperty("interestPool", note.interestPool().toString());
+            o.addProperty("interestDay", note.interestDay());
             noteJson.add(o);
         }
         root.add("personalNotes", noteJson);
@@ -2125,6 +2238,17 @@ public final class BankBooks {
             root.getAsJsonObject("interestDust").entrySet()
                     .forEach(e -> books.interestDust.put(UUID.fromString(e.getKey()), new BigDecimal(e.getValue().getAsString())));
         }
+        if (root.has("personalInterestDust")) {
+            for (Map.Entry<String, JsonElement> entry : root.getAsJsonObject("personalInterestDust").entrySet()) {
+                UUID noteId = UUID.fromString(entry.getKey());
+                Map<UUID, BigDecimal> row = new LinkedHashMap<>();
+                entry.getValue().getAsJsonObject().entrySet()
+                        .forEach(e -> row.put(UUID.fromString(e.getKey()), new BigDecimal(e.getValue().getAsString())));
+                if (!row.isEmpty()) {
+                    books.personalInterestDust.put(noteId, row);
+                }
+            }
+        }
         books.frozen = root.has("frozen") && root.get("frozen").getAsBoolean();
         books.clampMin = optionalDecimal(root, "clampMin");
         books.clampMax = optionalDecimal(root, "clampMax");
@@ -2216,6 +2340,12 @@ public final class BankBooks {
                 note.setBuys(new BigInteger(o.get("buys").getAsString()));
                 note.setSells(new BigInteger(o.get("sells").getAsString()));
                 note.setLocked(new BigInteger(o.get("locked").getAsString()));
+                if (o.has("interestPool")) {
+                    note.addInterestPool(new BigInteger(o.get("interestPool").getAsString()));
+                }
+                if (o.has("interestDay")) {
+                    note.setInterestDay(o.get("interestDay").getAsLong());
+                }
                 if (o.has("bankrupt") || o.has("drawn")) {
                     note.restoreClosure(o.has("bankrupt") && o.get("bankrupt").getAsBoolean(),
                             o.has("closedAt") ? o.get("closedAt").getAsLong() : 0L,
@@ -2436,7 +2566,7 @@ public final class BankBooks {
     }
 
     /** One player's credited demand-deposit interest for the days just settled. */
-    public record InterestCredit(UUID player, BigInteger amount) {}
+    public record InterestCredit(UUID player, BigInteger amount, UUID personalNote) {}
 
     /** Whether the day clock moved, and the credits that were actually paid from the pool. */
     public record InterestDay(boolean moved, List<InterestCredit> credits) {}

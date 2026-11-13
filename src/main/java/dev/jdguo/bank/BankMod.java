@@ -97,8 +97,11 @@ public final class BankMod implements ModInitializer {
                 for (BankBooks.InterestCredit credit : interest.credits()) {
                     ServerPlayerEntity paid = server.getPlayerManager().getPlayer(credit.player());
                     if (paid != null && credit.amount().signum() > 0) {
-                        net.minecraft.text.Text text = BankTalk.text(paid, BankPhrases.interestPaid(
-                                BankRuntime.books(), credit.player(), credit.amount()));
+                        dev.jdguo.bank.market.PersonalNote series = credit.personalNote() == null
+                                ? null : BankRuntime.books().personalNoteById(credit.personalNote());
+                        net.minecraft.text.Text text = BankTalk.text(paid, series == null
+                                ? BankPhrases.interestPaid(BankRuntime.books(), credit.player(), credit.amount())
+                                : BankPhrases.personalInterestPaid(BankRuntime.books(), credit.player(), series.name(), credit.amount()));
                         paid.sendMessage(text, false);
                     }
                 }

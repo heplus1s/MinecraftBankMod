@@ -87,7 +87,7 @@
 | `diamond` | 实物 | 钻石 | 1,000 | 计价货币 |
 | `note` | 纸币 | 原版纸，同面额可叠放；汇票仍是成书 | 1,000 | 银行券，开局 1 张兑 1 钻 |
 
-默认手续费是 2%。银行券活期存款的默认年利率也是 2%，按 365 个游戏日计息，利息只从手续费形成的利息池里付。每种货币的差额权重 α 默认是 1000‰。汇率默认不设上下限，这样银行券贬值时，数字可以变得很大。如果要限制，可以用：
+默认手续费是 2%。银行券活期存款的默认年利率也是 2%，按 365 个游戏日计息，利息只从手续费形成的利息池里付。个人银行券各自有利息池，只结给存在银行里的账面持有。每种货币的差额权重 α 默认是 1000‰。汇率默认不设上下限，这样银行券贬值时，数字可以变得很大。如果要限制，可以用：
 
 ```
 /bank clamp max 999999
@@ -333,7 +333,7 @@ There are three default currencies, written in `config/bank.json`. They are copi
 | `diamond` | commodity | diamond | 1,000 | the unit of account |
 | `note` | paper | Vanilla paper that stacks by face value; bills stay written books | 1,000 | bank note. At the start, 1 bank note buys 1 diamond |
 
-The default fee is 2%. Demand deposits of bank notes also earn a default 2% a year over 365 Minecraft days, paid only from the fee interest pool. The difference weight α for each currency defaults to 1000‰. Rates have no min/max limit by default, so the numbers can get very large when bank notes depreciate. If you want limits:
+The default fee is 2%. Demand deposits of bank notes also earn a default 2% a year over 365 Minecraft days, paid only from the fee interest pool. Each personal note has its own pool and pays only book-entry holdings of that note. The difference weight α for each currency defaults to 1000‰. Rates have no min/max limit by default, so the numbers can get very large when bank notes depreciate. If you want limits:
 
 ```
 /bank clamp max 999999
