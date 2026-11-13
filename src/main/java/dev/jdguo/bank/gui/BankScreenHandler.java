@@ -1,0 +1,709 @@
+package dev.jdguo.bank.gui;
+
+import dev.jdguo.bank.currency.CurrencyDef;
+import dev.jdguo.bank.currency.CurrencyKind;
+import dev.jdguo.bank.instruments.CheckItems;
+import dev.jdguo.bank.instruments.PresentedCheck;
+import dev.jdguo.bank.ledger.BankBooks;
+import dev.jdguo.bank.ledger.CompactFormat;
+import dev.jdguo.bank.ledger.Supply;
+import dev.jdguo.bank.ledger.TxResult;
+import dev.jdguo.bank.persistence.BankRuntime;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.inventory.SimpleInventory;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
+import net.minecraft.registry.Registries;
+import net.minecraft.screen.GenericContainerScreenHandler;
+import net.minecraft.screen.ScreenHandlerType;
+import net.minecraft.screen.slot.SlotActionType;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
+import net.minecraft.util.Identifier;
+
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Server-side subclass of the vanilla 9×6 chest. The client only sees
+ * {@link ScreenHandlerType#GENERIC_9X6}. Button items never leave the server inventory.
+ */
+public final class BankScreenHandler extends GenericContainerScreenHandler {
+    public enum Page { OVERVIEW, DEPOSIT, WITHDRAW, EXCHANGE, CHECKS, ADMIN }
+
+    private final SimpleInventory inventory;
+    private final ServerPlayerEntity owner;
+    private final String outletName;
+    private final boolean remoteAdmin;
+    private Page page = Page.OVERVIEW;
+    private int payIndex;
+    private int receiveIndex = 1;
+    private int checkIndex;
+    private int adminIndex;
+    private boolean payeeSelf;
+    private int paintTick = -100;
+
+    public BankScreenHandler(int syncId, PlayerInventory playerInventory, SimpleInventory inventory,
+                             String outletName, boolean remoteAdmin) {
+        super(ScreenHandlerType.GENERIC_9X6, syncId, playerInventory, inventory, 6);
+        this.inventory = inventory;
+        this.outletName = outletName;
+        this.remoteAdmin = remoteAdmin;
+        this.owner = (ServerPlayerEntity) playerInventory.player;
+        List<CurrencyDef> currencies = new ArrayList<>(BankRuntime.books().currencies());
+        if (currencies.size() > 1) {
+            receiveIndex = 1;
+        }
+        for (int i = 0; i < currencies.size(); i++) {
+            if (currencies.get(i).issuable()) {
+                adminIndex = i;
+                checkIndex = i;
+                break;
+            }
+        }
+        if (remoteAdmin) {
+            this.page = Page.ADMIN;
+        }
+        paint();
+    }
+
+    public void tick() {
+        int now = owner.getServer().getTicks();
+        if (now - paintTick >= 20) {
+            paint();
+        }
+    }
+
+    @Override
+    public boolean canUse(PlayerEntity player) {
+        if (remoteAdmin && player.hasPermissionLevel(2)) {
+            return true;
+        }
+        var outlet = BankRuntime.books().outlet(outletName);
+        if (outlet == null) {
+            return false;
+        }
+        String world = player.getWorld().getRegistryKey().getValue().toString();
+        double limit = Math.max(outlet.radius(), 6.0) + 1.5;
+        return outlet.distanceSquared(world, player.getX(), player.getY(), player.getZ()) <= limit * limit;
+    }
+
+    @Override
+    public void onSlotClick(int slotIndex, int button, SlotActionType action, PlayerEntity player) {
+        if (!(player instanceof ServerPlayerEntity serverPlayer)) {
+            return;
+        }
+        if (action == SlotActionType.QUICK_CRAFT) {
+            return;
+        }
+        if (slotIndex < 0) {
+            if (GuiItems.isMarker(getCursorStack())) {
+                setCursorStack(ItemStack.EMPTY);
+            } else {
+                super.onSlotClick(slotIndex, button, action, player);
+            }
+            scrub(serverPlayer);
+            return;
+        }
+        if (slotIndex >= this.slots.size()) {
+            return;
+        }
+        int deposit = depositSlot();
+        if (slotIndex < 54 && slotIndex != deposit) {
+            String clicked = GuiItems.action(inventory.getStack(slotIndex));
+            if ("nav:close".equals(clicked)
+                    && (action == SlotActionType.PICKUP || action == SlotActionType.QUICK_MOVE || action == SlotActionType.THROW)) {
+                serverPlayer.closeHandledScreen();
+                return;
+            }
+            if (action == SlotActionType.PICKUP || action == SlotActionType.QUICK_MOVE || action == SlotActionType.THROW) {
+                activate(serverPlayer, clicked);
+            }
+            paint();
+            sendContentUpdates();
+            scrub(serverPlayer);
+            return;
+        }
+        if (slotIndex == deposit) {
+            if (action == SlotActionType.THROW || action == SlotActionType.CLONE || action == SlotActionType.PICKUP_ALL) {
+                return;
+            }
+            super.onSlotClick(slotIndex, button, action, player);
+            settle(serverPlayer);
+            paint();
+            sendContentUpdates();
+            scrub(serverPlayer);
+            return;
+        }
+        ItemStack held = this.slots.get(slotIndex).getStack();
+        if (GuiItems.isMarker(held) || GuiItems.isMarker(getCursorStack())) {
+            if (GuiItems.isMarker(held)) {
+                this.slots.get(slotIndex).setStack(ItemStack.EMPTY);
+            }
+            if (GuiItems.isMarker(getCursorStack())) {
+                setCursorStack(ItemStack.EMPTY);
+            }
+            return;
+        }
+        if (action == SlotActionType.QUICK_MOVE) {
+            moveIntoDeposit(slotIndex);
+            settle(serverPlayer);
+            paint();
+            sendContentUpdates();
+            return;
+        }
+        super.onSlotClick(slotIndex, button, action, player);
+        scrub(serverPlayer);
+    }
+
+    @Override
+    public ItemStack quickMove(PlayerEntity player, int slot) {
+        return ItemStack.EMPTY;
+    }
+
+    @Override
+    public void onClosed(PlayerEntity player) {
+        returnDeposit(player);
+        if (player instanceof ServerPlayerEntity serverPlayer) {
+            scrub(serverPlayer);
+        }
+        if (GuiItems.isMarker(getCursorStack())) {
+            setCursorStack(ItemStack.EMPTY);
+        }
+        super.onClosed(player);
+    }
+
+    private void moveIntoDeposit(int fromSlot) {
+        int deposit = depositSlot();
+        if (deposit < 0 || !inventory.getStack(deposit).isEmpty()) {
+            return;
+        }
+        ItemStack stack = this.slots.get(fromSlot).getStack();
+        if (stack.isEmpty() || GuiItems.isMarker(stack) || !canDeposit(stack)) {
+            return;
+        }
+        inventory.setStack(deposit, stack.copy());
+        this.slots.get(fromSlot).setStack(ItemStack.EMPTY);
+    }
+
+    private boolean canDeposit(ItemStack stack) {
+        if (CheckItems.read(stack) != null) {
+            return page == Page.CHECKS || page == Page.DEPOSIT;
+        }
+        CurrencyDef def = itemCurrency(stack);
+        return def != null && def.kind() == CurrencyKind.COMMODITY && page == Page.DEPOSIT;
+    }
+
+    private void settle(ServerPlayerEntity player) {
+        int deposit = depositSlot();
+        if (deposit < 0) {
+            return;
+        }
+        ItemStack stack = inventory.getStack(deposit);
+        if (stack.isEmpty() || GuiItems.isMarker(stack)) {
+            if (GuiItems.isMarker(stack)) {
+                inventory.setStack(deposit, ItemStack.EMPTY);
+            }
+            return;
+        }
+        PresentedCheck check = CheckItems.read(stack);
+        if (check != null) {
+            TxResult result = BankRuntime.books().redeemCheck(player.getUuid(), check);
+            boolean confiscate = result.success()
+                    || "already_redeemed".equals(result.code())
+                    || "tampered".equals(result.code());
+            if (confiscate) {
+                inventory.setStack(deposit, ItemStack.EMPTY);
+            }
+            if (result.success()) {
+                BankRuntime.save();
+            }
+            tell(player, result);
+            return;
+        }
+        if (page != Page.DEPOSIT) {
+            return;
+        }
+        CurrencyDef def = itemCurrency(stack);
+        if (def == null || def.kind() != CurrencyKind.COMMODITY) {
+            tell(player, TxResult.fail("not_commodity", "这里只收铜锭、钻石，或银行汇票"));
+            return;
+        }
+        TxResult result = BankRuntime.books().deposit(player.getUuid(), def.id(), BigInteger.valueOf(stack.getCount()));
+        if (result.success()) {
+            inventory.setStack(deposit, ItemStack.EMPTY);
+            BankRuntime.save();
+        }
+        tell(player, result);
+    }
+
+    private void activate(ServerPlayerEntity player, String action) {
+        if (action == null || action.isBlank() || "noop".equals(action)) {
+            return;
+        }
+        if (action.startsWith("nav:")) {
+            switch (action.substring(4)) {
+                case "overview" -> changePage(player, Page.OVERVIEW);
+                case "deposit" -> changePage(player, Page.DEPOSIT);
+                case "withdraw" -> changePage(player, Page.WITHDRAW);
+                case "exchange" -> changePage(player, Page.EXCHANGE);
+                case "checks" -> changePage(player, Page.CHECKS);
+                case "admin" -> {
+                    if (player.hasPermissionLevel(2)) {
+                        changePage(player, Page.ADMIN);
+                    } else {
+                        tell(player, TxResult.fail("denied", "只有管理员能打开信贷柜台"));
+                    }
+                }
+                case "close" -> player.closeHandledScreen();
+                default -> {
+                }
+            }
+            return;
+        }
+        BankBooks books = BankRuntime.books();
+        List<CurrencyDef> currencies = new ArrayList<>(books.currencies());
+        if (currencies.isEmpty()) {
+            return;
+        }
+        switch (action) {
+            case "ex:pay" -> payIndex = nextIndex(currencies, payIndex, receiveIndex);
+            case "ex:recv" -> receiveIndex = nextIndex(currencies, receiveIndex, payIndex);
+            case "ex:swap" -> {
+                int tmp = payIndex;
+                payIndex = receiveIndex;
+                receiveIndex = tmp;
+            }
+            case "ck:cur" -> checkIndex = (checkIndex + 1) % currencies.size();
+            case "ck:payee" -> payeeSelf = !payeeSelf;
+            case "ad:cur" -> adminIndex = nextIssuable(currencies, adminIndex);
+            case "ad:freeze" -> {
+                if (!player.hasPermissionLevel(2)) {
+                    return;
+                }
+                books.setFrozen(!books.frozen());
+                BankRuntime.save();
+                tell(player, TxResult.ok(BigInteger.ZERO, books.frozen() ? "已停止纸币兑现" : "纸币兑现已恢复"));
+            }
+            case "ad:backed" -> {
+                if (!player.hasPermissionLevel(2)) {
+                    return;
+                }
+                CurrencyDef note = currencies.get(Math.floorMod(adminIndex, currencies.size()));
+                BigInteger room = books.backedRoom(note);
+                TxResult result = room.signum() <= 0
+                        ? TxResult.fail("over_cap", "没有剩余的准备金额度")
+                        : books.creditBacked(player.getUuid(), note.id(), room);
+                if (result.success()) {
+                    BankRuntime.save();
+                }
+                tell(player, result);
+            }
+            default -> {
+                if (action.startsWith("wd:")) {
+                    String[] parts = action.split(":");
+                    boolean max = "max".equals(parts[2]);
+                    BigInteger amount = max ? books.balance(player.getUuid(), parts[1]) : new BigInteger(parts[2]);
+                    TxResult result = books.withdraw(player.getUuid(), parts[1], amount, max);
+                    if (result.success()) {
+                        giveItem(player, books.currency(parts[1]), result.amount());
+                        BankRuntime.save();
+                    }
+                    tell(player, result);
+                } else if (action.startsWith("ex:buy:")) {
+                    CurrencyDef pay = currencies.get(Math.floorMod(payIndex, currencies.size()));
+                    CurrencyDef recv = currencies.get(Math.floorMod(receiveIndex, currencies.size()));
+                    BigInteger qty = new BigInteger(action.substring("ex:buy:".length()));
+                    TxResult result = books.exchange(player.getUuid(), pay.id(), recv.id(), qty);
+                    if (result.success()) {
+                        BankRuntime.save();
+                    }
+                    tell(player, result);
+                } else if (action.startsWith("ck:issue:")) {
+                    CurrencyDef cur = currencies.get(Math.floorMod(checkIndex, currencies.size()));
+                    BigInteger amount = new BigInteger(action.substring("ck:issue:".length()));
+                    var payee = payeeSelf ? player.getUuid() : null;
+                    TxResult result = books.issueCheck(player.getUuid(), cur.id(), amount, player.getName().getString(), payee, true);
+                    if (result.success()) {
+                        player.getInventory().offerOrDrop(CheckItems.create(books, books.check(result.instrumentId())));
+                        BankRuntime.save();
+                    }
+                    tell(player, result);
+                } else if (action.startsWith("ad:unbacked:") || action.startsWith("ad:retire:")) {
+                    if (!player.hasPermissionLevel(2)) {
+                        tell(player, TxResult.fail("denied", "只有管理员能发行信贷"));
+                        return;
+                    }
+                    CurrencyDef note = currencies.get(Math.floorMod(adminIndex, currencies.size()));
+                    boolean retire = action.startsWith("ad:retire:");
+                    BigInteger amount = new BigInteger(action.substring(action.lastIndexOf(':') + 1));
+                    TxResult result = retire
+                            ? books.retire(player.getUuid(), note.id(), amount)
+                            : books.creditUnbacked(player.getUuid(), note.id(), amount);
+                    if (result.success()) {
+                        BankRuntime.save();
+                    }
+                    tell(player, result);
+                }
+            }
+        }
+    }
+
+    private void changePage(ServerPlayerEntity player, Page next) {
+        returnDeposit(player);
+        this.page = next;
+    }
+
+    private void paint() {
+        ItemStack kept = ItemStack.EMPTY;
+        int deposit = depositSlot();
+        if (deposit >= 0) {
+            kept = inventory.getStack(deposit).copy();
+        }
+        ItemStack glass = marker(Items.BLACK_STAINED_GLASS_PANE, Text.literal(" "), List.of(), "noop", 1);
+        for (int i = 0; i < 54; i++) {
+            inventory.setStack(i, glass.copy());
+        }
+        paintNav();
+        switch (page) {
+            case OVERVIEW -> paintOverview();
+            case DEPOSIT -> paintDeposit();
+            case WITHDRAW -> paintWithdraw();
+            case EXCHANGE -> paintExchange();
+            case CHECKS -> paintChecks();
+            case ADMIN -> paintAdmin();
+        }
+        if (depositSlot() >= 0) {
+            inventory.setStack(depositSlot(), GuiItems.isMarker(kept) ? ItemStack.EMPTY : kept);
+        }
+        if (owner.getServer() != null) {
+            paintTick = owner.getServer().getTicks();
+        }
+    }
+
+    private void paintNav() {
+        nav(45, Items.RECOVERY_COMPASS, "总览", "nav:overview");
+        nav(46, Items.HOPPER, "存入", "nav:deposit");
+        nav(47, Items.CHEST, "取出", "nav:withdraw");
+        nav(48, Items.EMERALD, "兑换", "nav:exchange");
+        nav(49, Items.WRITABLE_BOOK, "汇票", "nav:checks");
+        boolean op = owner.hasPermissionLevel(2);
+        if (op) {
+            nav(52, Items.NETHER_STAR, "信贷", "nav:admin");
+        }
+        nav(53, Items.BARRIER, "关闭", "nav:close");
+    }
+
+    private void paintOverview() {
+        BankBooks books = BankRuntime.books();
+        inventory.setStack(4, marker(Items.GOLD_BLOCK,
+                Text.literal("中央银行").formatted(Formatting.AQUA, Formatting.BOLD),
+                List.of(Text.literal(books.statusLabel()).formatted(Formatting.YELLOW),
+                        Text.literal("手续费 " + percent(books.feeFraction())).formatted(Formatting.GRAY)),
+                "noop", 1));
+        int slot = 10;
+        var uuid = owner.getUuid();
+        for (CurrencyDef def : books.currencies()) {
+            if (slot > 16) {
+                break;
+            }
+            BigInteger balance = books.balance(uuid, def.id());
+            inventory.setStack(slot, marker(icon(def),
+                    Text.literal(def.name() + "  " + CompactFormat.format(balance)).formatted(color(def)),
+                    List.of(Text.literal(balance.toString()).formatted(Formatting.DARK_GRAY),
+                            Text.literal(def.nameEn()).formatted(Formatting.GRAY)),
+                    "noop", 1));
+            slot += 2;
+        }
+        int rateSlot = 19;
+        for (CurrencyDef def : books.currencies()) {
+            if (def.id().equals(books.numeraire()) || rateSlot > 25) {
+                continue;
+            }
+            BigDecimal rate = books.unitsPer(def.id(), books.numeraire());
+            CurrencyDef base = books.currency(books.numeraire());
+            inventory.setStack(rateSlot, marker(Items.PAPER,
+                    Text.literal("1 " + base.name() + " = " + CompactFormat.formatRate(rate) + " " + def.name()).formatted(Formatting.WHITE),
+                    List.of(Text.literal("手续费另计 " + percent(books.feeFraction())).formatted(Formatting.GRAY)),
+                    "noop", 1));
+            rateSlot += 2;
+        }
+        CurrencyDef note = books.primaryVirtual();
+        BigDecimal tight = note == null ? null : books.tightness(note.id());
+        inventory.setStack(31, marker(concrete(tight),
+                Text.literal("兑现覆盖 " + CompactFormat.formatRatio(tight)).formatted(Formatting.WHITE),
+                List.of(Text.literal(books.statusLabel()).formatted(Formatting.YELLOW),
+                        Text.literal(books.frozen() ? "纸币兑现：关闭" : "纸币兑现：开放").formatted(Formatting.GRAY)),
+                "noop", 1));
+        inventory.setStack(40, marker(Items.CLOCK,
+                Text.literal("费率 " + percent(books.feeFraction())).formatted(Formatting.GOLD),
+                List.of(), "noop", 1));
+    }
+
+    private void paintDeposit() {
+        inventory.setStack(4, marker(Items.OAK_SIGN,
+                Text.literal("把铜锭或钻石放进中间空格").formatted(Formatting.GOLD),
+                List.of(Text.literal("汇票请到「汇票」页兑现").formatted(Formatting.GRAY)),
+                "noop", 1));
+        inventory.setStack(13, marker(Items.SPECTRAL_ARROW,
+                Text.literal("↓ 存入").formatted(Formatting.YELLOW),
+                List.of(), "noop", 1));
+        inventory.setStack(22, ItemStack.EMPTY);
+    }
+
+    private void paintWithdraw() {
+        BankBooks books = BankRuntime.books();
+        inventory.setStack(4, marker(Items.CHEST,
+                Text.literal("从金库取出现物").formatted(Formatting.GOLD),
+                List.of(Text.literal("单次最多 " + BankBooks.MAX_PHYSICAL + " 个").formatted(Formatting.GRAY)),
+                "noop", 1));
+        int row = 0;
+        for (CurrencyDef def : books.currencies()) {
+            if (def.kind() != CurrencyKind.COMMODITY) {
+                continue;
+            }
+            int base = 10 + row * 9;
+            if (base > 36) {
+                break;
+            }
+            BigInteger free = books.supply(def.id()).freeReserve();
+            placeAmount(base, icon(def), "取出 " + def.name(), "wd:" + def.id(), free);
+            row++;
+        }
+        CurrencyDef note = books.primaryVirtual();
+        if (note != null) {
+            inventory.setStack(40, marker(Items.PAPER,
+                    Text.literal(note.name() + " 没有实物").formatted(Formatting.YELLOW),
+                    List.of(Text.literal("请开汇票，或兑换成硬通货").formatted(Formatting.GRAY)),
+                    "noop", 1));
+        }
+    }
+
+    private void paintExchange() {
+        BankBooks books = BankRuntime.books();
+        List<CurrencyDef> currencies = new ArrayList<>(books.currencies());
+        CurrencyDef pay = currencies.get(Math.floorMod(payIndex, currencies.size()));
+        CurrencyDef recv = currencies.get(Math.floorMod(receiveIndex, currencies.size()));
+        inventory.setStack(2, marker(icon(pay),
+                Text.literal("支付 " + pay.name()).formatted(color(pay)),
+                List.of(Text.literal("点击切换").formatted(Formatting.GRAY)),
+                "ex:pay", 1));
+        inventory.setStack(4, marker(Items.SPECTRAL_ARROW,
+                Text.literal("对调").formatted(Formatting.WHITE),
+                List.of(), "ex:swap", 1));
+        inventory.setStack(6, marker(icon(recv),
+                Text.literal("获得 " + recv.name()).formatted(color(recv)),
+                List.of(Text.literal("点击切换").formatted(Formatting.GRAY)),
+                "ex:recv", 1));
+        BigInteger[] amounts = {BigInteger.ONE, BigInteger.TEN, BigInteger.valueOf(64),
+                BigInteger.valueOf(100), BigInteger.valueOf(1000), BigInteger.valueOf(10000)};
+        net.minecraft.item.Item[] icons = {Items.LIME_DYE, Items.LIME_DYE, Items.EMERALD, Items.EMERALD, Items.EMERALD_BLOCK, Items.EMERALD_BLOCK};
+        for (int i = 0; i < amounts.length; i++) {
+            BigInteger cost = books.cost(pay.id(), recv.id(), amounts[i]);
+            String price = cost == null ? "无法报价" : "花费 " + CompactFormat.format(cost) + " " + pay.name();
+            inventory.setStack(19 + i, marker(icons[i],
+                    Text.literal("兑换 " + recv.name() + " ×" + amounts[i]).formatted(Formatting.GREEN),
+                    List.of(Text.literal(price).formatted(Formatting.GRAY),
+                            Text.literal("含手续费 " + percent(books.feeFraction())).formatted(Formatting.DARK_GRAY)),
+                    "ex:buy:" + amounts[i], amounts[i].intValue()));
+        }
+    }
+
+    private void paintChecks() {
+        BankBooks books = BankRuntime.books();
+        List<CurrencyDef> currencies = new ArrayList<>(books.currencies());
+        CurrencyDef cur = currencies.get(Math.floorMod(checkIndex, currencies.size()));
+        inventory.setStack(2, marker(icon(cur),
+                Text.literal("币种 " + cur.name()).formatted(color(cur)),
+                List.of(Text.literal("点击切换").formatted(Formatting.GRAY),
+                        Text.literal("余额 " + CompactFormat.format(books.balance(owner.getUuid(), cur.id()))).formatted(Formatting.WHITE)),
+                "ck:cur", 1));
+        inventory.setStack(4, marker(payeeSelf ? Items.NAME_TAG : Items.PAPER,
+                Text.literal(payeeSelf ? "仅本人兑现" : "持票人兑现").formatted(payeeSelf ? Formatting.LIGHT_PURPLE : Formatting.AQUA),
+                List.of(Text.literal("点击切换抬头").formatted(Formatting.GRAY)),
+                "ck:payee", 1));
+        BigInteger[] amounts = {BigInteger.ONE, BigInteger.TEN, BigInteger.valueOf(64),
+                BigInteger.valueOf(100), BigInteger.valueOf(1000), BigInteger.valueOf(10000)};
+        for (int i = 0; i < amounts.length; i++) {
+            inventory.setStack(10 + i, marker(Items.WRITTEN_BOOK,
+                    Text.literal("开票 " + cur.name() + " ×" + CompactFormat.format(amounts[i])).formatted(Formatting.YELLOW),
+                    List.of(Text.literal("从余额划出，生成成书").formatted(Formatting.GRAY)),
+                    "ck:issue:" + amounts[i], 1));
+        }
+        inventory.setStack(22, marker(Items.SPECTRAL_ARROW,
+                Text.literal("↓ 放入汇票兑现").formatted(Formatting.GOLD),
+                List.of(Text.literal("复制件会被拒付").formatted(Formatting.RED)),
+                "noop", 1));
+        inventory.setStack(31, ItemStack.EMPTY);
+    }
+
+    private void paintAdmin() {
+        BankBooks books = BankRuntime.books();
+        List<CurrencyDef> currencies = new ArrayList<>(books.currencies());
+        CurrencyDef note = currencies.get(Math.floorMod(adminIndex, currencies.size()));
+        Supply supply = books.supply(note.id());
+        inventory.setStack(4, marker(Items.BOOK,
+                Text.literal(note.name() + "  " + books.statusLabel()).formatted(color(note)),
+                List.of(
+                        Text.literal("准备金 " + CompactFormat.format(supply.reserve())).formatted(Formatting.GRAY),
+                        Text.literal("负债 " + CompactFormat.format(supply.liability())).formatted(Formatting.GRAY),
+                        Text.literal("记账准备率 " + CompactFormat.formatRatio(books.reserveRatio(note.id()))).formatted(Formatting.WHITE),
+                        Text.literal("兑现覆盖 " + CompactFormat.formatRatio(books.tightness(note.id()))).formatted(Formatting.YELLOW),
+                        Text.literal("点击切换币种").formatted(Formatting.DARK_GRAY)),
+                "ad:cur", 1));
+        inventory.setStack(10, marker(Items.GOLD_NUGGET, Text.literal("无准备 +1,000").formatted(Formatting.RED),
+                List.of(Text.literal("负债上升，准备金不动").formatted(Formatting.GRAY)), "ad:unbacked:1000", 1));
+        inventory.setStack(11, marker(Items.GOLD_INGOT, Text.literal("无准备 +100万").formatted(Formatting.RED),
+                List.of(), "ad:unbacked:1000000", 1));
+        inventory.setStack(12, marker(Items.GOLD_BLOCK, Text.literal("无准备 +1亿").formatted(Formatting.DARK_RED),
+                List.of(Text.literal("用来演示纸币贬值").formatted(Formatting.GRAY)), "ad:unbacked:100000000", 1));
+        inventory.setStack(14, marker(Items.DIAMOND, Text.literal("按准备金满额发行").formatted(Formatting.AQUA),
+                List.of(Text.literal("剩余额度 " + CompactFormat.format(books.backedRoom(note))).formatted(Formatting.GRAY)),
+                "ad:backed", 1));
+        inventory.setStack(16, marker(Items.FLINT, Text.literal("注销 1,000").formatted(Formatting.DARK_GREEN),
+                List.of(Text.literal("从你的余额烧掉").formatted(Formatting.GRAY)), "ad:retire:1000", 1));
+        inventory.setStack(28, marker(books.frozen() ? Items.RED_DYE : Items.LIME_DYE,
+                Text.literal(books.frozen() ? "兑现已关闭" : "兑现开放").formatted(books.frozen() ? Formatting.RED : Formatting.GREEN),
+                List.of(Text.literal("点击切换。只拦住纸币换硬通货").formatted(Formatting.GRAY)),
+                "ad:freeze", 1));
+        inventory.setStack(30, marker(Items.CLOCK,
+                Text.literal("费率 " + percent(books.feeFraction()) + "  α " + books.alphaOf(note.id()).toPlainString()).formatted(Formatting.GOLD),
+                List.of(Text.literal("用 /bank fee 与 /bank alpha 调整").formatted(Formatting.GRAY)),
+                "noop", 1));
+    }
+
+    private void placeAmount(int base, net.minecraft.item.Item item, String label, String actionPrefix, BigInteger free) {
+        int[] amounts = {1, 10, 64};
+        for (int i = 0; i < amounts.length; i++) {
+            inventory.setStack(base + i, marker(item,
+                    Text.literal(label + " ×" + amounts[i]).formatted(Formatting.GOLD),
+                    List.of(Text.literal("金库可取 " + CompactFormat.format(free)).formatted(Formatting.GRAY)),
+                    actionPrefix + ":" + amounts[i], amounts[i]));
+        }
+        inventory.setStack(base + 3, marker(item,
+                Text.literal(label + " 尽可能多").formatted(Formatting.YELLOW),
+                List.of(Text.literal("不超过金库，且单次最多 " + BankBooks.MAX_PHYSICAL).formatted(Formatting.GRAY)),
+                actionPrefix + ":max", 1));
+    }
+
+    private void nav(int slot, net.minecraft.item.Item item, String name, String action) {
+        boolean here = action.equals("nav:" + page.name().toLowerCase());
+        inventory.setStack(slot, marker(item,
+                Text.literal(name).formatted(here ? Formatting.AQUA : Formatting.WHITE),
+                List.of(), action, 1));
+    }
+
+    private ItemStack marker(net.minecraft.item.Item item, Text name, List<Text> lore, String action, int count) {
+        return GuiItems.marker(item, name, lore, action, count);
+    }
+
+    private int depositSlot() {
+        return switch (page) {
+            case DEPOSIT -> 22;
+            case CHECKS -> 31;
+            default -> -1;
+        };
+    }
+
+    private void returnDeposit(PlayerEntity player) {
+        int slot = depositSlot();
+        if (slot < 0) {
+            return;
+        }
+        ItemStack stack = inventory.getStack(slot);
+        inventory.setStack(slot, ItemStack.EMPTY);
+        if (stack.isEmpty() || GuiItems.isMarker(stack)) {
+            return;
+        }
+        if (player instanceof ServerPlayerEntity serverPlayer) {
+            serverPlayer.getInventory().offerOrDrop(stack);
+        }
+    }
+
+    private void scrub(ServerPlayerEntity player) {
+        var inv = player.getInventory();
+        for (int i = 0; i < inv.size(); i++) {
+            if (GuiItems.isMarker(inv.getStack(i))) {
+                inv.setStack(i, ItemStack.EMPTY);
+            }
+        }
+        if (GuiItems.isMarker(getCursorStack())) {
+            setCursorStack(ItemStack.EMPTY);
+        }
+    }
+
+    private static void giveItem(ServerPlayerEntity player, CurrencyDef def, BigInteger amount) {
+        if (def == null) {
+            return;
+        }
+        var item = Registries.ITEM.get(new Identifier(def.itemId()));
+        int left = amount.intValue();
+        while (left > 0) {
+            int count = Math.min(item.getMaxCount(), left);
+            player.getInventory().offerOrDrop(new ItemStack(item, count));
+            left -= count;
+        }
+    }
+
+    private static CurrencyDef itemCurrency(ItemStack stack) {
+        return BankRuntime.books().byItem(Registries.ITEM.getId(stack.getItem()).toString());
+    }
+
+    private static net.minecraft.item.Item icon(CurrencyDef def) {
+        var item = Registries.ITEM.get(new Identifier(def.itemId()));
+        return item == Items.AIR ? Items.PAPER : item;
+    }
+
+    private static Formatting color(CurrencyDef def) {
+        Formatting formatting = Formatting.byName(def.color());
+        return formatting == null ? Formatting.WHITE : formatting;
+    }
+
+    private static net.minecraft.item.Item concrete(BigDecimal tight) {
+        if (tight == null || tight.compareTo(new BigDecimal("0.8")) >= 0) {
+            return Items.LIME_CONCRETE;
+        }
+        if (tight.compareTo(new BigDecimal("0.25")) >= 0) {
+            return Items.YELLOW_CONCRETE;
+        }
+        if (tight.compareTo(new BigDecimal("0.05")) >= 0) {
+            return Items.ORANGE_CONCRETE;
+        }
+        return Items.RED_CONCRETE;
+    }
+
+    private static String percent(BigDecimal fee) {
+        return fee.multiply(new BigDecimal("100")).stripTrailingZeros().toPlainString() + "%";
+    }
+
+    private static int nextIndex(List<CurrencyDef> currencies, int current, int other) {
+        if (currencies.size() < 2) {
+            return current;
+        }
+        int next = current;
+        do {
+            next = (next + 1) % currencies.size();
+        } while (next == other && currencies.size() > 1);
+        return next;
+    }
+
+    private static int nextIssuable(List<CurrencyDef> currencies, int current) {
+        for (int step = 1; step <= currencies.size(); step++) {
+            int next = (current + step) % currencies.size();
+            if (currencies.get(next).issuable()) {
+                return next;
+            }
+        }
+        return (current + 1) % currencies.size();
+    }
+
+    private static void tell(ServerPlayerEntity player, TxResult result) {
+        Text text = Text.literal("[银行] " + result.message()).formatted(result.success() ? Formatting.GREEN : Formatting.RED);
+        player.sendMessage(text, false);
+        player.sendMessage(text, true);
+    }
+}

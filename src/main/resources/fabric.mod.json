@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "bankmod",
+  "version": "${version}",
+  "name": "Central Bank",
+  "description": "Server-only multi-currency bank for vanilla Minecraft 1.20.1 clients. Ledger, dynamic FX, checks, and credit live on the server.",
+  "authors": ["jd guo"],
+  "contact": {},
+  "license": "MIT",
+  "environment": "server",
+  "entrypoints": {
+    "server": ["dev.jdguo.bank.BankMod"]
+  },
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "minecraft": "~1.20.1",
+    "java": ">=17",
+    "fabric-api": "*"
+  }
+}
