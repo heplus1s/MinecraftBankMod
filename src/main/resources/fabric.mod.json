@@ -3,13 +3,13 @@
   "id": "bankmod",
   "version": "${version}",
   "name": "Central Bank",
-  "description": "Server-only multi-currency bank for vanilla Minecraft 1.20.1 clients. Ledger, dynamic FX, checks, and credit live on the server.",
+  "description": "Server-side multi-currency bank for vanilla Minecraft 1.20.1 clients. Ledger, dynamic FX, checks, and credit live on the server, including singleplayer.",
   "authors": ["heplus1s"],
   "contact": {},
   "license": "MIT",
-  "environment": "server",
+  "environment": "*",
   "entrypoints": {
-    "server": ["dev.jdguo.bank.BankMod"]
+    "main": ["dev.jdguo.bank.BankMod"]
   },
   "depends": {
     "fabricloader": ">=0.15.0",

@@ -11,7 +11,7 @@ import dev.jdguo.bank.market.MarketHooks;
 import dev.jdguo.bank.outlet.OutletPoint;
 import dev.jdguo.bank.persistence.BankRuntime;
 import dev.jdguo.bank.persistence.BankWorldState;
-import net.fabricmc.api.DedicatedServerModInitializer;
+import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -28,14 +28,17 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * Dedicated-server bank. Vanilla clients join with no mod and no resource pack.
+ * Bank for a dedicated server and for the integrated server in a Fabric client.
+ * Fabric's {@code server} entrypoint does not run in singleplayer, so this uses
+ * {@code main} and only hooks server lifecycle events. A vanilla client joining
+ * a dedicated server still needs no mod and no resource pack.
  * A later market can implement {@link MarketHooks}; this build has no order book.
  */
-public final class BankMod implements DedicatedServerModInitializer {
+public final class BankMod implements ModInitializer {
     private final DisplayService displays = new DisplayService();
 
     @Override
-    public void onInitializeServer() {
+    public void onInitialize() {
         loadConfig();
         BankCommands.register(displays);
 

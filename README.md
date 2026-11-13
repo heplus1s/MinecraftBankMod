@@ -2,18 +2,21 @@
 
 [English version below.](#central-bank)
 
-这是一个 Minecraft 1.20.1 的 Fabric 模组，只装在服务器上。玩家用原版客户端就能来银行存钱、取钱、换汇、开汇票，不用再装模组或资源包。
+这是一个 Minecraft 1.20.1 的 Fabric 模组。连到专用服务器时，玩家用原版客户端就能来银行存钱、取钱、换汇、开汇票，不用再装模组或资源包。想自己单人试，把模组装进 Fabric 客户端，打开世界即可。
 
 钱记在模组自己的账本里，不用记分板，数字再大也不会溢出。
 
 ## 安装
 
-服务器需要 Fabric Loader、Fabric API，以及 Java 17 或更高版本。
+单人测试：用 Fabric 1.20.1 的客户端，把 jar 和 Fabric API 一起放进客户端的 `mods/`，然后打开一个世界。银行跑在这个世界自带的集成服务器上。
+
+专用服务器还是原来的装法。服务器需要 Fabric Loader、Fabric API，以及 Java 17 或更高版本。
 
 1. 在项目目录执行 `./gradlew build`
 2. 把 `build/libs/bankmod-1.0.0.jar` 放到服务器的 `mods/`，并确保同目录里有 Fabric API
 3. 启动一次服务器，会自动生成 `config/bank.json`
-4. 客户端什么都不用装。也不要把这个模组装进客户端。
+
+连到专用服务器的原版客户端不用装这个模组，也不用资源包。
 
 ## 先设一个网点
 
@@ -188,18 +191,21 @@ V = R + (L - R) × α / 1000
 
 [中文在上方。](#中央银行)
 
-This is a Fabric mod for Minecraft 1.20.1. It only goes on the server. Players can deposit, withdraw, exchange currencies, and issue bills of exchange with a vanilla client. No client mod or resource pack is needed.
+This is a Fabric mod for Minecraft 1.20.1. On a dedicated server, players can deposit, withdraw, exchange currencies, and issue bills of exchange with a vanilla client. No client mod or resource pack is needed. To try it alone, install the mod on a Fabric client and open a world.
 
 Balances are stored in the mod's own ledger, not on the scoreboard, so the numbers can get arbitrarily large without overflowing.
 
 ## Installation
 
-The server needs Fabric Loader, Fabric API, and Java 17 or newer.
+Singleplayer: use a Fabric 1.20.1 client, put the jar in the client's `mods/` folder together with Fabric API, then open a world. The bank runs on the integrated server that comes with that world.
+
+A dedicated server is installed as before. The server needs Fabric Loader, Fabric API, and Java 17 or newer.
 
 1. Run `./gradlew build` in the project directory
 2. Put `build/libs/bankmod-1.0.0.jar` in the server's `mods/` folder, and make sure Fabric API is there too
 3. Start the server once. It will create `config/bank.json`
-4. Clients don't need anything installed. Don't put this mod on the client either.
+
+A vanilla client connecting to a dedicated server still should not install this mod, and does not need a resource pack.
 
 ## Set up an outlet first
 
