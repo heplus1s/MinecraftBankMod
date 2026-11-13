@@ -462,6 +462,16 @@ public final class BankPhrases {
                         + ", " + backingEn + " locked " + CompactFormat.format(note.locked()) + ".");
     }
 
+    public static Spoken noteBankruptAsk() {
+        return line(Tone.RED,
+                "尚未破产。请再点右上角「确认宣告破产」。点左上角「返回」则什么都不会改变。",
+                "Not bankrupt yet. Click Confirm bankruptcy at the top right. Back at the top left changes nothing.");
+    }
+
+    public static Spoken noteBankruptCancelled() {
+        return line(Tone.GREEN, "已取消宣告破产，账目没有变化。", "Bankruptcy was cancelled. Nothing changed.");
+    }
+
     public static Spoken noteBankrupt(BankBooks books, PersonalNote note) {
         return noteBankrupt(note, books.issuerDebt(note.issuer(), note.reserveCurrency()));
     }

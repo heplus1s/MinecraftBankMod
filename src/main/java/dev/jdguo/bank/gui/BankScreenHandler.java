@@ -61,6 +61,8 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
     private int swapPayIndex;
     private int payoutIndex;
     private String createRegime = "float";
+    /** First click only opens this view. Bankruptcy runs from the confirm button. */
+    private boolean bankruptConfirm;
     private boolean payeeSelf;
     private static final int REDEEM_SLOT = 22;
     private int paintTick = -100;
@@ -448,6 +450,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
 
     private void changePage(ServerPlayerEntity player, Page next) {
         returnDeposit(player);
+        this.bankruptConfirm = false;
         this.page = next;
     }
 
@@ -518,6 +521,12 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
             paintCreate();
             return;
         }
+        if (own.bankrupt()) {
+            bankruptConfirm = false;
+        } else if (bankruptConfirm) {
+            paintBankruptConfirm(own);
+            return;
+        }
         inventory.setStack(10, marker(Items.PAPER,
                 Text.literal("「" + own.name() + "」 " + CompactFormat.formatRate(books.personalDiamondPrice(own)) + " 钻")
                         .formatted(Formatting.YELLOW),
@@ -556,9 +565,28 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         }
         inventory.setStack(8, marker(Items.BARRIER,
                 Text.literal("宣告破产").formatted(Formatting.DARK_RED),
-                List.of(Text.literal("Voids the note. History stays.").formatted(Formatting.GRAY),
-                        Text.literal("离开发行按钮，避免误点").formatted(Formatting.DARK_RED)),
+                List.of(Text.literal("Opens a confirmation. Nothing is voided yet.").formatted(Formatting.GRAY),
+                        Text.literal("先进入确认，不会立刻破产").formatted(Formatting.DARK_RED)),
                 "pn:bankrupt", 1));
+    }
+
+    /** Confirm stays in the top-right corner. Cancel stays in the top-left. Issue buttons are hidden. */
+    private void paintBankruptConfirm(PersonalNote own) {
+        inventory.setStack(4, marker(Items.BARRIER,
+                Text.literal("确认宣告破产").formatted(Formatting.DARK_RED, Formatting.BOLD),
+                List.of(Text.literal("「" + own.name() + "」将作废，不能再交易或发行").formatted(Formatting.RED),
+                        Text.literal("This does nothing until you confirm.").formatted(Formatting.GRAY)),
+                "noop", 1));
+        inventory.setStack(0, marker(Items.ARROW,
+                Text.literal("返回").formatted(Formatting.GREEN),
+                List.of(Text.literal("取消，账目不变").formatted(Formatting.GRAY),
+                        Text.literal("Cancel. Nothing changes.").formatted(Formatting.DARK_GRAY)),
+                "pn:bankrupt:no", 1));
+        inventory.setStack(8, marker(Items.TNT,
+                Text.literal("确认宣告破产").formatted(Formatting.DARK_RED),
+                List.of(Text.literal("第二次确认，才会宣告破产").formatted(Formatting.RED),
+                        Text.literal("Second click. This voids the note.").formatted(Formatting.DARK_GRAY)),
+                "pn:bankrupt:yes", 1));
     }
 
     private void paintMarket() {
@@ -664,6 +692,20 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         BankBooks books = BankRuntime.books();
         UUID uuid = player.getUuid();
         if ("pn:bankrupt".equals(action)) {
+            bankruptConfirm = true;
+            tell(player, BankPhrases.noteBankruptAsk());
+            return;
+        }
+        if ("pn:bankrupt:no".equals(action)) {
+            bankruptConfirm = false;
+            tell(player, BankPhrases.noteBankruptCancelled());
+            return;
+        }
+        if ("pn:bankrupt:yes".equals(action)) {
+            if (!bankruptConfirm) {
+                return;
+            }
+            bankruptConfirm = false;
             NoteTrade result = books.declareBankruptcy(uuid, null, player.hasPermissionLevel(2));
             if (!result.success()) {
                 tell(player, BankPhrases.noteRejected(result.code()));
