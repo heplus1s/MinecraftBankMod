@@ -137,11 +137,14 @@ V = R + (L - R) × α / 1000
 
 ## 个人银行券
 
-这和存款、个人准备金、央行的银行券都不是一回事。每个人只能有一张。名字最多三个汉字或英文字母，不能和别人重名。
+这和存款、个人准备金、央行的银行券都不是一回事。每个人只能有一张。名字最多三个汉字或英文字母，不能和别人重名。创建时选定汇率制度，之后不能改。浮动按市价，钉住不跟买卖走，定额只兑面额上的那种实物。
 
 ```
 /bank note create diamond <name> <par>
 /bank note create copper <name> <par>
+/bank note create float diamond|copper <name> <par>
+/bank note create peg diamond|copper|note <name> <rate>
+/bank note create hard diamond|copper <name> <face>
 /bank note issue <amount>
 /bank note rate
 /bank note rate <name>
@@ -377,11 +380,14 @@ Personal reserves are a separate ledger reserved for later personal currency iss
 
 ## Personal notes
 
-These are not savings, not the personal reserve, and not the central bank note. Each player can have one. The name is at most three Chinese characters or English letters, and it can't match someone else's.
+These are not savings, not the personal reserve, and not the central bank note. Each player can have one. The name is at most three Chinese characters or English letters, and it can't match someone else's. The exchange-rate regime is chosen at creation and is not switched later. Floating follows the market, a peg ignores trades, and hard convertibility pays only the face commodity.
 
 ```
 /bank note create diamond <name> <par>
 /bank note create copper <name> <par>
+/bank note create float diamond|copper <name> <par>
+/bank note create peg diamond|copper|note <name> <rate>
+/bank note create hard diamond|copper <name> <face>
 /bank note issue <amount>
 /bank note rate
 /bank note rate <name>

@@ -16,6 +16,7 @@ import dev.jdguo.bank.instruments.PresentedNote;
 import dev.jdguo.bank.ledger.Amounts;
 import dev.jdguo.bank.ledger.BankBooks;
 import dev.jdguo.bank.ledger.TxResult;
+import dev.jdguo.bank.market.NoteRegime;
 import dev.jdguo.bank.market.NoteTrade;
 import dev.jdguo.bank.market.PersonalNote;
 import dev.jdguo.bank.market.Redemption;
@@ -123,9 +124,26 @@ public final class BankCommands {
                         .then(literal("note")
                                 .then(literal("create")
                                         .then(literal("diamond").then(argument("name", StringArgumentType.string())
-                                                .then(argument("par", StringArgumentType.word()).executes(ctx -> createNote(ctx.getSource(), false, StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "par"))))))
+                                                .then(argument("par", StringArgumentType.word()).executes(ctx -> createNote(ctx.getSource(), NoteRegime.FLOAT, "diamond", StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "par"))))))
                                         .then(literal("copper").then(argument("name", StringArgumentType.string())
-                                                .then(argument("par", StringArgumentType.word()).executes(ctx -> createNote(ctx.getSource(), true, StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "par")))))))
+                                                .then(argument("par", StringArgumentType.word()).executes(ctx -> createNote(ctx.getSource(), NoteRegime.FLOAT, "copper", StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "par"))))))
+                                        .then(literal("float")
+                                                .then(literal("diamond").then(argument("name", StringArgumentType.string())
+                                                        .then(argument("par", StringArgumentType.word()).executes(ctx -> createNote(ctx.getSource(), NoteRegime.FLOAT, "diamond", StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "par"))))))
+                                                .then(literal("copper").then(argument("name", StringArgumentType.string())
+                                                        .then(argument("par", StringArgumentType.word()).executes(ctx -> createNote(ctx.getSource(), NoteRegime.FLOAT, "copper", StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "par")))))))
+                                        .then(literal("peg")
+                                                .then(literal("diamond").then(argument("name", StringArgumentType.string())
+                                                        .then(argument("rate", StringArgumentType.word()).executes(ctx -> createNote(ctx.getSource(), NoteRegime.PEG, "diamond", StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "rate"))))))
+                                                .then(literal("copper").then(argument("name", StringArgumentType.string())
+                                                        .then(argument("rate", StringArgumentType.word()).executes(ctx -> createNote(ctx.getSource(), NoteRegime.PEG, "copper", StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "rate"))))))
+                                                .then(literal("note").then(argument("name", StringArgumentType.string())
+                                                        .then(argument("rate", StringArgumentType.word()).executes(ctx -> createNote(ctx.getSource(), NoteRegime.PEG, "note", StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "rate")))))))
+                                        .then(literal("hard")
+                                                .then(literal("diamond").then(argument("name", StringArgumentType.string())
+                                                        .then(argument("face", StringArgumentType.word()).executes(ctx -> createNote(ctx.getSource(), NoteRegime.HARD, "diamond", StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "face"))))))
+                                                .then(literal("copper").then(argument("name", StringArgumentType.string())
+                                                        .then(argument("face", StringArgumentType.word()).executes(ctx -> createNote(ctx.getSource(), NoteRegime.HARD, "copper", StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "face"))))))))
                                 .then(literal("issue").then(argument("amount", StringArgumentType.word()).executes(ctx -> issueNote(ctx.getSource(), StringArgumentType.getString(ctx, "amount")))))
                                 .then(literal("withdraw")
                                         .then(argument("amount", StringArgumentType.word()).executes(ctx -> withdrawPersonal(ctx.getSource(), null, StringArgumentType.getString(ctx, "amount"))))
@@ -452,14 +470,14 @@ public final class BankCommands {
         return ok(source, BankPhrases.personalSet(profile.getName(), books(), currency, amount));
     }
 
-    private static int createNote(ServerCommandSource source, boolean copperPar, String name, String rawPar) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+    private static int createNote(ServerCommandSource source, NoteRegime regime, String anchor, String name, String rawPar) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         BigInteger par;
         try {
             par = Amounts.parse(rawPar);
         } catch (RuntimeException error) {
             return fail(source, BankPhrases.amountProblem(error.getMessage()));
         }
-        NoteTrade result = books().createPersonalNote(source.getPlayerOrThrow().getUuid(), name, copperPar, par);
+        NoteTrade result = books().createPersonalNote(source.getPlayerOrThrow().getUuid(), name, regime, anchor, par);
         if (!result.success()) {
             return fail(source, BankPhrases.noteRejected(result.code()));
         }
@@ -642,8 +660,15 @@ public final class BankCommands {
         }
         Redemption result = books().redeemPersonalPaper(
                 player.getUuid(), presented.personalNote(), presented.face(), BigInteger.valueOf(hand.getCount()), currency);
-        if (result.success() || "note_spent".equals(result.code()) || "note_tampered".equals(result.code())) {
+        if ("note_spent".equals(result.code()) || "note_tampered".equals(result.code())) {
             player.getInventory().setStack(player.getInventory().selectedSlot, ItemStack.EMPTY);
+        } else if (result.success()) {
+            int left = hand.getCount() - result.sheetsTaken().intValue();
+            if (left <= 0) {
+                player.getInventory().setStack(player.getInventory().selectedSlot, ItemStack.EMPTY);
+            } else {
+                hand.setCount(left);
+            }
         }
         if (!result.success()) {
             return fail(source, "note_spent".equals(result.code()) || "note_tampered".equals(result.code())

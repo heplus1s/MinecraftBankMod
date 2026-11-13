@@ -10,25 +10,37 @@ public final class PersonalNote {
     private final UUID id;
     private final UUID issuer;
     private final String name;
-    private final boolean copperPar;
+    private final NoteRegime regime;
+    /** Reserve and payout currency: diamond, copper, or note. */
+    private final String anchor;
     private final BigInteger par;
     private BigInteger circulation = BigInteger.ZERO;
     private BigInteger buys = BigInteger.ZERO;
     private BigInteger sells = BigInteger.ZERO;
     private BigInteger locked = BigInteger.ZERO;
 
+    /** Floating note. {@code copperPar} chooses whether par is copper or diamonds. */
     public PersonalNote(UUID id, UUID issuer, String name, boolean copperPar, BigInteger par) {
+        this(id, issuer, name, NoteRegime.FLOAT, copperPar ? "copper" : "diamond", par);
+    }
+
+    public PersonalNote(UUID id, UUID issuer, String name, NoteRegime regime, String anchor, BigInteger par) {
         this.id = id;
         this.issuer = issuer;
         this.name = name;
-        this.copperPar = copperPar;
+        this.regime = regime == null ? NoteRegime.FLOAT : regime;
+        this.anchor = anchor == null || anchor.isBlank() ? "diamond" : anchor;
         this.par = par;
     }
 
     public UUID id() { return id; }
     public UUID issuer() { return issuer; }
     public String name() { return name; }
-    public boolean copperPar() { return copperPar; }
+    public NoteRegime regime() { return regime; }
+    public String anchor() { return anchor; }
+    /** Reserve currency the lock is posted in. */
+    public String reserveCurrency() { return anchor; }
+    public boolean copperPar() { return "copper".equals(anchor); }
     public BigInteger par() { return par; }
     public BigInteger circulation() { return circulation; }
     public BigInteger buys() { return buys; }

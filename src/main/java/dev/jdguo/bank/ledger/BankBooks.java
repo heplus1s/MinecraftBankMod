@@ -19,6 +19,7 @@ import dev.jdguo.bank.instruments.NoteSeries;
 import dev.jdguo.bank.instruments.PaperTake;
 import dev.jdguo.bank.instruments.PresentedCheck;
 import dev.jdguo.bank.instruments.PresentedNote;
+import dev.jdguo.bank.market.NoteRegime;
 import dev.jdguo.bank.market.NoteTrade;
 import dev.jdguo.bank.market.PersonalMarket;
 import dev.jdguo.bank.market.PersonalNote;
@@ -893,15 +894,37 @@ public final class BankBooks {
     }
 
     public BigDecimal personalDiamondPrice(PersonalNote note) {
-        return PersonalMarket.diamondPrice(note, copperPerDiamond(), effectiveBacking(note));
+        if (note.regime() == NoteRegime.FLOAT) {
+            return PersonalMarket.diamondPrice(note, copperPerDiamond(), effectiveBacking(note));
+        }
+        return fixedDiamondQuote(note);
+    }
+
+    /** Peg and hard quotes ignore buy/sell flow and do not fall when reserves are short. */
+    private BigDecimal fixedDiamondQuote(PersonalNote note) {
+        return switch (note.reserveCurrency()) {
+            case "copper" -> new BigDecimal(note.par()).divide(new BigDecimal(copperPerDiamond()), FxMath.MC);
+            case "note" -> {
+                BigDecimal notesPerDiamond = unitsPer("note", "diamond");
+                if (notesPerDiamond == null || notesPerDiamond.signum() <= 0) {
+                    yield BigDecimal.ZERO;
+                }
+                yield new BigDecimal(note.par()).divide(notesPerDiamond, FxMath.MC);
+            }
+            default -> new BigDecimal(note.par());
+        };
     }
 
     public BigInteger effectiveBacking(PersonalNote note) {
-        String backing = note.copperPar() ? "copper" : "diamond";
-        return personalReserve(note.issuer(), backing).min(note.locked());
+        return personalReserve(note.issuer(), note.reserveCurrency()).min(note.locked());
     }
 
     public NoteTrade createPersonalNote(UUID issuer, String name, boolean copperPar, BigInteger par) {
+        return createPersonalNote(issuer, name, NoteRegime.FLOAT, copperPar ? "copper" : "diamond", par);
+    }
+
+    /** Regime is fixed at creation. There is no later switch. */
+    public NoteTrade createPersonalNote(UUID issuer, String name, NoteRegime regime, String anchor, BigInteger par) {
         if (!PersonalMarket.validName(name)) {
             return NoteTrade.fail("name");
         }
@@ -914,9 +937,22 @@ public final class BankBooks {
         if (par == null || par.signum() <= 0) {
             return NoteTrade.fail("par");
         }
-        PersonalNote note = new PersonalNote(UUID.randomUUID(), issuer, name, copperPar, par);
+        if (!validAnchor(regime, anchor)) {
+            return NoteTrade.fail("anchor");
+        }
+        PersonalNote note = new PersonalNote(UUID.randomUUID(), issuer, name, regime, anchor, par);
         personalNotes.put(note.id(), note);
         return NoteTrade.ok(note, BigInteger.ZERO, BigInteger.ZERO);
+    }
+
+    private static boolean validAnchor(NoteRegime regime, String anchor) {
+        if (regime == null || anchor == null) {
+            return false;
+        }
+        return switch (regime) {
+            case FLOAT, HARD -> "diamond".equals(anchor) || "copper".equals(anchor);
+            case PEG -> "diamond".equals(anchor) || "copper".equals(anchor) || "note".equals(anchor);
+        };
     }
 
     public NoteTrade issuePersonalNote(UUID issuer, BigInteger amount) {
@@ -929,7 +965,7 @@ public final class BankBooks {
         }
         BigInteger next = note.circulation().add(amount);
         BigInteger required = requiredLock(note, next);
-        String backing = note.copperPar() ? "copper" : "diamond";
+        String backing = note.reserveCurrency();
         if (personalReserve(issuer, backing).compareTo(required) < 0) {
             return NoteTrade.fail("reserve");
         }
@@ -1085,8 +1121,8 @@ public final class BankBooks {
         if (!priced.success()) {
             return priced;
         }
-        addHolding(note.id(), player, amount.negate());
-        applyRedemption(player, note, amount, priced);
+        addHolding(note.id(), player, priced.retired().negate());
+        applyRedemption(player, note, priced.retired(), priced);
         return priced;
     }
 
@@ -1115,12 +1151,21 @@ public final class BankBooks {
         if (!priced.success()) {
             return priced;
         }
-        addPaper(NoteSeries.key(null, noteId, face), acceptSheets.negate());
-        applyRedemption(player, note, amount, priced);
-        return priced;
+        BigInteger copies = sheets.subtract(acceptSheets);
+        BigInteger burn = priced.retired().divide(face);
+        if (face.compareTo(BigInteger.ONE) > 0 && priced.retired().compareTo(amount) < 0) {
+            return Redemption.fail("suspended");
+        }
+        addPaper(NoteSeries.key(null, noteId, face), burn.negate());
+        applyRedemption(player, note, priced.retired(), priced);
+        return new Redemption(true, priced.code(), note, priced.retired(), priced.diamonds(), priced.copper(),
+                priced.central(), priced.discounted(), copies.add(burn));
     }
 
     private Redemption priceRedemption(PersonalNote note, BigInteger amount, String payout) {
+        if (note.regime() != NoteRegime.FLOAT) {
+            return priceFixedRedemption(note, amount, payout);
+        }
         BigDecimal price = personalDiamondPrice(note);
         BigInteger rate = copperPerDiamond();
         BigDecimal diamondValue = price.multiply(new BigDecimal(amount), FxMath.MC);
@@ -1182,11 +1227,51 @@ public final class BankBooks {
         if (diamonds.signum() == 0 && copper.signum() == 0 && central.signum() == 0) {
             return Redemption.fail("reserve");
         }
-        return new Redemption(true, discounted ? "discounted" : "ok", note, amount, diamonds, copper, central, discounted);
+        return new Redemption(true, discounted ? "discounted" : "ok", note, amount, diamonds, copper, central, discounted, BigInteger.ZERO);
+    }
+
+    /** Peg and hard redemption pay the official rate and never reprice. A short reserve caps the count. */
+    private Redemption priceFixedRedemption(PersonalNote note, BigInteger amount, String payout) {
+        String anchor = note.reserveCurrency();
+        if (!anchor.equals(payout)) {
+            return Redemption.fail("payout");
+        }
+        BigInteger available = effectiveBacking(note);
+        if (available.signum() <= 0 || note.par().signum() <= 0) {
+            return Redemption.fail("suspended");
+        }
+        BigInteger affordable = available.divide(note.par());
+        if (affordable.signum() <= 0) {
+            return Redemption.fail("suspended");
+        }
+        BigInteger retire = amount.min(affordable);
+        BigInteger pay = retire.multiply(note.par());
+        BigInteger diamonds = "diamond".equals(anchor) ? pay : BigInteger.ZERO;
+        BigInteger copper = "copper".equals(anchor) ? pay : BigInteger.ZERO;
+        BigInteger central = "note".equals(anchor) ? pay : BigInteger.ZERO;
+        boolean capped = retire.compareTo(amount) < 0;
+        return new Redemption(true, capped ? "capped" : "ok", note, retire, diamonds, copper, central, false, BigInteger.ZERO);
     }
 
     private void applyRedemption(UUID player, PersonalNote note, BigInteger amount, Redemption priced) {
-        String parCurrency = note.copperPar() ? "copper" : "diamond";
+        if (note.regime() != NoteRegime.FLOAT) {
+            String currency = note.reserveCurrency();
+            BigInteger consumed = amount.multiply(note.par());
+            note.setCirculation(note.circulation().subtract(amount));
+            BigInteger nextReserve = personalReserve(note.issuer(), currency).subtract(consumed);
+            if (nextReserve.signum() < 0) {
+                nextReserve = BigInteger.ZERO;
+            }
+            setPersonalReserve(note.issuer(), currency, nextReserve);
+            BigInteger relock = requiredLock(note, note.circulation());
+            if (relock.compareTo(nextReserve) > 0) {
+                relock = nextReserve;
+            }
+            note.setLocked(relock);
+            payRedemption(player, priced);
+            return;
+        }
+        String parCurrency = note.reserveCurrency();
         BigInteger available = effectiveBacking(note);
         BigInteger consumed = priced.discounted()
                 ? available
@@ -1265,6 +1350,12 @@ public final class BankBooks {
     }
 
     private BigInteger requiredLock(PersonalNote note, BigInteger circulation) {
+        if (circulation.signum() <= 0) {
+            return BigInteger.ZERO;
+        }
+        if (note.regime() != NoteRegime.FLOAT) {
+            return note.par().multiply(circulation);
+        }
         BigDecimal raw = new BigDecimal(note.par().multiply(circulation)).multiply(personalNoteCoverage, FxMath.MC);
         BigInteger required = raw.setScale(0, RoundingMode.CEILING).toBigInteger();
         return required.signum() < 0 ? BigInteger.ZERO : required;
@@ -1518,6 +1609,8 @@ public final class BankBooks {
             o.addProperty("id", note.id().toString());
             o.addProperty("issuer", note.issuer().toString());
             o.addProperty("name", note.name());
+            o.addProperty("regime", note.regime().name());
+            o.addProperty("anchor", note.anchor());
             o.addProperty("copperPar", note.copperPar());
             o.addProperty("par", note.par().toString());
             o.addProperty("circulation", note.circulation().toString());
@@ -1673,12 +1766,20 @@ public final class BankBooks {
         if (root.has("personalNotes")) {
             for (JsonElement element : root.getAsJsonArray("personalNotes")) {
                 JsonObject o = element.getAsJsonObject();
-                PersonalNote note = new PersonalNote(
-                        UUID.fromString(o.get("id").getAsString()),
-                        UUID.fromString(o.get("issuer").getAsString()),
-                        o.get("name").getAsString(),
-                        o.get("copperPar").getAsBoolean(),
-                        new BigInteger(o.get("par").getAsString()));
+                PersonalNote note = o.has("regime")
+                        ? new PersonalNote(
+                                UUID.fromString(o.get("id").getAsString()),
+                                UUID.fromString(o.get("issuer").getAsString()),
+                                o.get("name").getAsString(),
+                                NoteRegime.valueOf(o.get("regime").getAsString()),
+                                o.get("anchor").getAsString(),
+                                new BigInteger(o.get("par").getAsString()))
+                        : new PersonalNote(
+                                UUID.fromString(o.get("id").getAsString()),
+                                UUID.fromString(o.get("issuer").getAsString()),
+                                o.get("name").getAsString(),
+                                o.get("copperPar").getAsBoolean(),
+                                new BigInteger(o.get("par").getAsString()));
                 note.setCirculation(new BigInteger(o.get("circulation").getAsString()));
                 note.setBuys(new BigInteger(o.get("buys").getAsString()));
                 note.setSells(new BigInteger(o.get("sells").getAsString()));
