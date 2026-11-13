@@ -16,6 +16,7 @@ import java.util.Map;
 public final class BankConfig {
     private final String numeraire;
     private final BigDecimal feeFraction;
+    private final BigDecimal interestFraction;
     private final BigDecimal clampMin;
     private final BigDecimal clampMax;
     private final double outletRadius;
@@ -26,11 +27,13 @@ public final class BankConfig {
     private final boolean joinMessage;
     private final List<CurrencyDef> currencies;
 
-    public BankConfig(String numeraire, BigDecimal feeFraction, BigDecimal clampMin, BigDecimal clampMax,
+    public BankConfig(String numeraire, BigDecimal feeFraction, BigDecimal interestFraction,
+                      BigDecimal clampMin, BigDecimal clampMax,
                       double outletRadius, boolean sidebar, boolean bossbar, boolean tab, boolean hologram,
                       boolean joinMessage, List<CurrencyDef> currencies) {
         this.numeraire = numeraire;
         this.feeFraction = feeFraction;
+        this.interestFraction = interestFraction == null ? new BigDecimal("0.02") : interestFraction;
         this.clampMin = clampMin;
         this.clampMax = clampMax;
         this.outletRadius = outletRadius;
@@ -60,7 +63,7 @@ public final class BankConfig {
                 "银行券", "bank note", "yellow",
                 new BigInteger("1000"), new BigInteger("1000"), alpha,
                 true, "diamond", BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE));
-        return new BankConfig("diamond", new BigDecimal("0.02"), null, null, 4.0,
+        return new BankConfig("diamond", new BigDecimal("0.02"), new BigDecimal("0.02"), null, null, 4.0,
                 true, true, true, true, true, list);
     }
 
@@ -116,6 +119,9 @@ public final class BankConfig {
         if (feeFraction.signum() < 0 || feeFraction.compareTo(BigDecimal.ONE) > 0) {
             throw new IllegalArgumentException("Fee must be between 0% and 100%");
         }
+        if (interestFraction.signum() < 0 || interestFraction.compareTo(BigDecimal.ONE) > 0) {
+            throw new IllegalArgumentException("Interest must be between 0% and 100%");
+        }
         if (outletRadius < 1 || outletRadius > 64) {
             throw new IllegalArgumentException("Outlet radius must be between 1 and 64");
         }
@@ -123,6 +129,7 @@ public final class BankConfig {
 
     public String numeraire() { return numeraire; }
     public BigDecimal feeFraction() { return feeFraction; }
+    public BigDecimal interestFraction() { return interestFraction; }
     public BigDecimal clampMin() { return clampMin; }
     public BigDecimal clampMax() { return clampMax; }
     public double outletRadius() { return outletRadius; }

@@ -69,6 +69,14 @@ public final class BankBooks {
 
     private String numeraire;
     private BigDecimal feeFraction;
+    /** Annual demand-deposit rate on central-note savings. 0.02 is 2% over 365 game days. */
+    private BigDecimal interestFraction = new BigDecimal("0.02");
+    /** Retained fee income. Not issuance reserves and not the savings vault. */
+    private final Map<String, BigInteger> interestPool = new LinkedHashMap<>();
+    /** Sub-note remainder carried until it becomes a whole bank note. */
+    private final Map<UUID, BigDecimal> interestDust = new LinkedHashMap<>();
+    /** World day last settled. -1 until the first tick anchors it, so old worlds do not pay retroactively. */
+    private long lastInterestDay = -1L;
     private BigDecimal clampMin;
     private BigDecimal clampMax;
     private boolean frozen;
@@ -91,6 +99,7 @@ public final class BankBooks {
         BankBooks books = new BankBooks(new LinkedHashMap<>(config.asMap()));
         books.numeraire = config.numeraire();
         books.feeFraction = config.feeFraction();
+        books.interestFraction = config.interestFraction();
         books.clampMin = config.clampMin();
         books.clampMax = config.clampMax();
         books.globalSidebar = config.sidebar();
@@ -349,8 +358,13 @@ public final class BankBooks {
             return TxResult.fail("frozen", "Note redemption is halted");
         }
         BigInteger cost = cost(payId, receiveId, receiveQty);
-        if (cost == null) {
+        BigInteger principal = FxMath.cost(receiveQty, abundance(payId), abundance(receiveId), BigDecimal.ZERO, clampMin, clampMax);
+        if (cost == null || principal == null) {
             return TxResult.fail("no_market", "That currency has collapsed. No quote.");
+        }
+        BigInteger fee = cost.subtract(principal);
+        if (fee.signum() < 0) {
+            fee = BigInteger.ZERO;
         }
         if (balance(player, payId).compareTo(cost) < 0) {
             return TxResult.fail("insufficient_funds", "Not enough balance. Need " + label(pay) + " " + CompactFormat.format(cost));
@@ -363,7 +377,7 @@ public final class BankBooks {
             copperChange = receiveQty.subtract(deliver).multiply(copperPerDiamond());
             BigInteger copperStock = supply("copper").freeReserve();
             if (pay.kind() == CurrencyKind.COMMODITY && "copper".equals(payId)) {
-                copperStock = copperStock.add(cost);
+                copperStock = copperStock.add(principal);
             }
             if (copperChange.compareTo(copperStock) > 0) {
                 BigInteger affordable = copperStock.divide(copperPerDiamond());
@@ -379,7 +393,7 @@ public final class BankBooks {
                 return TxResult.fail("insufficient_reserves", "Issuance reserves can still pay " + CompactFormat.format(headroom) + " " + label(recv));
             }
         }
-        takePaymentIntoIssuance(player, pay, cost);
+        takePayment(player, pay, cost, fee);
         if (deliver.signum() > 0) {
             payIssuanceIntoSavings(player, receiveId, deliver);
         }
@@ -745,6 +759,102 @@ public final class BankBooks {
     public BigDecimal alphaOf(String id) { return alphas.getOrDefault(id, new BigDecimal("1000")); }
 
     public void setFeeFraction(BigDecimal feeFraction) { this.feeFraction = feeFraction; }
+    public BigDecimal interestFraction() { return interestFraction; }
+
+    public void setInterestFraction(BigDecimal interestFraction) {
+        if (interestFraction == null || interestFraction.signum() < 0 || interestFraction.compareTo(BigDecimal.ONE) > 0) {
+            throw new IllegalArgumentException("interest");
+        }
+        this.interestFraction = interestFraction;
+    }
+
+    public BigInteger interestPool(String currency) {
+        return interestPool.getOrDefault(currency, BigInteger.ZERO);
+    }
+
+    public long lastInterestDay() { return lastInterestDay; }
+
+    /**
+     * Credits one demand-deposit day for each Minecraft day crossed.
+     * The first call only records the day, so a newly loaded world does not pay for the past.
+     */
+    public InterestDay accrueInterest(long worldDay) {
+        if (lastInterestDay < 0) {
+            lastInterestDay = worldDay;
+            return new InterestDay(true, List.of());
+        }
+        if (worldDay <= lastInterestDay) {
+            return new InterestDay(false, List.of());
+        }
+        List<InterestCredit> credits = new ArrayList<>();
+        long days = worldDay - lastInterestDay;
+        for (long i = 0; i < days; i++) {
+            credits.addAll(settleOneDay());
+        }
+        lastInterestDay = worldDay;
+        return new InterestDay(true, credits);
+    }
+
+    private List<InterestCredit> settleOneDay() {
+        CurrencyDef note = primaryVirtual();
+        if (note == null || interestFraction.signum() <= 0) {
+            return List.of();
+        }
+        Map<UUID, BigInteger> due = new LinkedHashMap<>();
+        BigInteger total = BigInteger.ZERO;
+        for (UUID player : new ArrayList<>(accounts.keySet())) {
+            BigInteger balance = balance(player, note.id());
+            BigDecimal carried = interestDust.getOrDefault(player, BigDecimal.ZERO);
+            BigDecimal raw = new BigDecimal(balance).multiply(interestFraction, FxMath.MC)
+                    .divide(new BigDecimal("365"), FxMath.MC)
+                    .add(carried, FxMath.MC);
+            BigInteger whole = raw.setScale(0, RoundingMode.FLOOR).toBigInteger();
+            if (whole.signum() < 0) {
+                whole = BigInteger.ZERO;
+            }
+            BigDecimal remain = raw.subtract(new BigDecimal(whole), FxMath.MC);
+            if (remain.signum() == 0) {
+                interestDust.remove(player);
+            } else {
+                interestDust.put(player, remain);
+            }
+            if (whole.signum() > 0) {
+                due.put(player, whole);
+                total = total.add(whole);
+            }
+        }
+        BigInteger pool = interestPool(note.id());
+        if (total.signum() <= 0 || pool.signum() <= 0) {
+            return List.of();
+        }
+        List<InterestCredit> paid = new ArrayList<>();
+        BigInteger spent = BigInteger.ZERO;
+        boolean full = pool.compareTo(total) >= 0;
+        for (Map.Entry<UUID, BigInteger> entry : due.entrySet()) {
+            BigInteger share = full ? entry.getValue() : entry.getValue().multiply(pool).divide(total);
+            if (share.signum() <= 0) {
+                continue;
+            }
+            creditBalance(entry.getKey(), note.id(), share);
+            supply(note.id()).addLiability(share);
+            paid.add(new InterestCredit(entry.getKey(), share));
+            spent = spent.add(share);
+        }
+        addPool(note.id(), spent.negate());
+        return paid;
+    }
+
+    private void addPool(String currency, BigInteger delta) {
+        BigInteger next = interestPool.getOrDefault(currency, BigInteger.ZERO).add(delta);
+        if (next.signum() < 0) {
+            throw new IllegalStateException("interest pool underflow");
+        }
+        if (next.signum() == 0) {
+            interestPool.remove(currency);
+        } else {
+            interestPool.put(currency, next);
+        }
+    }
     public void setAlpha(String id, BigDecimal permille) { this.alphas.put(id, permille); }
     public void setClampMin(BigDecimal clampMin) { this.clampMin = clampMin; }
     public void setClampMax(BigDecimal clampMax) { this.clampMax = clampMax; }
@@ -1456,14 +1566,23 @@ public final class BankBooks {
         self.addLiability(delta);
     }
 
-    /** Commodity savings leave the deposit vault and join issuance reserves. Notes leave public M1. */
-    private void takePaymentIntoIssuance(UUID player, CurrencyDef pay, BigInteger cost) {
-        debitBalance(player, pay.id(), cost);
+    /**
+     * The payer gives up {@code gross}. Only the pre-fee principal enters issuance reserves or is
+     * extinguished as convertibility. The fee is retained in the interest pool.
+     */
+    private void takePayment(UUID player, CurrencyDef pay, BigInteger gross, BigInteger fee) {
+        debitBalance(player, pay.id(), gross);
+        BigInteger principal = gross.subtract(fee);
         if (pay.kind() == CurrencyKind.COMMODITY) {
-            addSavings(pay.id(), cost.negate());
-            supply(pay.id()).addReserve(cost);
+            addSavings(pay.id(), gross.negate());
+            if (principal.signum() > 0) {
+                supply(pay.id()).addReserve(principal);
+            }
         } else {
-            supply(pay.id()).addLiability(cost.negate());
+            supply(pay.id()).addLiability(gross.negate());
+        }
+        if (fee.signum() > 0) {
+            addPool(pay.id(), fee);
         }
     }
 
@@ -1631,6 +1750,7 @@ public final class BankBooks {
     public void applyPolicy(BankConfig config) {
         config.validate();
         this.feeFraction = config.feeFraction();
+        this.interestFraction = config.interestFraction();
         this.clampMin = config.clampMin();
         this.clampMax = config.clampMax();
         for (CurrencyDef def : config.currencies()) {
@@ -1755,6 +1875,11 @@ public final class BankBooks {
                 throw new AssertionError(def.id() + " M1 " + supply.liability() + " != " + publicM1(def.id()));
             }
         }
+        for (BigInteger pooled : interestPool.values()) {
+            if (pooled.signum() < 0) {
+                throw new AssertionError("negative interest pool");
+            }
+        }
         for (Map<String, BigInteger> bals : accounts.values()) {
             for (BigInteger bal : bals.values()) {
                 if (bal.signum() < 0) {
@@ -1797,6 +1922,14 @@ public final class BankBooks {
         root.addProperty("version", SNAPSHOT_VERSION);
         root.addProperty("numeraire", numeraire);
         root.addProperty("fee", feeFraction.toPlainString());
+        root.addProperty("interestRate", interestFraction.toPlainString());
+        root.addProperty("lastInterestDay", lastInterestDay);
+        JsonObject pool = new JsonObject();
+        interestPool.forEach((id, amount) -> pool.addProperty(id, amount.toString()));
+        root.add("interestPool", pool);
+        JsonObject dust = new JsonObject();
+        interestDust.forEach((id, amount) -> dust.addProperty(id.toString(), amount.toPlainString()));
+        root.add("interestDust", dust);
         root.addProperty("frozen", frozen);
         root.add("clampMin", clampMin == null ? JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(clampMin.toPlainString()));
         root.add("clampMax", clampMax == null ? JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(clampMax.toPlainString()));
@@ -1980,6 +2113,18 @@ public final class BankBooks {
         BankBooks books = new BankBooks(defs);
         books.numeraire = root.has("numeraire") ? root.get("numeraire").getAsString() : fallback.numeraire();
         books.feeFraction = new BigDecimal(root.get("fee").getAsString());
+        books.interestFraction = root.has("interestRate")
+                ? new BigDecimal(root.get("interestRate").getAsString())
+                : fallback.interestFraction();
+        books.lastInterestDay = root.has("lastInterestDay") ? root.get("lastInterestDay").getAsLong() : -1L;
+        if (root.has("interestPool")) {
+            root.getAsJsonObject("interestPool").entrySet()
+                    .forEach(e -> books.interestPool.put(e.getKey(), new BigInteger(e.getValue().getAsString())));
+        }
+        if (root.has("interestDust")) {
+            root.getAsJsonObject("interestDust").entrySet()
+                    .forEach(e -> books.interestDust.put(UUID.fromString(e.getKey()), new BigDecimal(e.getValue().getAsString())));
+        }
         books.frozen = root.has("frozen") && root.get("frozen").getAsBoolean();
         books.clampMin = optionalDecimal(root, "clampMin");
         books.clampMax = optionalDecimal(root, "clampMax");
@@ -2289,4 +2434,10 @@ public final class BankBooks {
         private boolean bossbar = true;
         private boolean tab = true;
     }
+
+    /** One player's credited demand-deposit interest for the days just settled. */
+    public record InterestCredit(UUID player, BigInteger amount) {}
+
+    /** Whether the day clock moved, and the credits that were actually paid from the pool. */
+    public record InterestDay(boolean moved, List<InterestCredit> credits) {}
 }

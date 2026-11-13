@@ -80,7 +80,8 @@ class BankLedgerTest {
         assertEquals(expected, result.amount());
         assertEquals(new BigInteger("5000").subtract(expected), books.balance(player, "copper"));
         assertEquals(qty, books.balance(player, "diamond"));
-        assertEquals(new BigInteger("1000000").add(expected), books.supply("copper").reserve());
+        assertEquals(new BigInteger("1001000"), books.supply("copper").reserve());
+        assertEquals(new BigInteger("20"), books.interestPool("copper"));
         assertEquals(new BigInteger("999"), books.supply("diamond").reserve());
         assertEquals(books.balance(player, "copper"), books.supply("copper").depositVault());
         assertEquals(qty, books.supply("diamond").depositVault());
@@ -164,14 +165,16 @@ class BankLedgerTest {
         TxResult bought = books.exchange(player, "diamond", "note", BigInteger.valueOf(4));
         assertTrue(bought.success(), bought.code());
         assertEquals(BigInteger.valueOf(4), books.centralM1());
-        assertEquals(issuanceBefore.add(bought.amount()), books.supply("diamond").reserve());
+        BigInteger afterBuy = books.supply("diamond").reserve();
+        assertEquals(issuanceBefore.add(bought.amount()).subtract(books.interestPool("diamond")), afterBuy);
+        assertTrue(books.interestPool("diamond").signum() > 0);
         assertEquals(books.balance(player, "diamond"), books.supply("diamond").depositVault());
 
         BigInteger issued = books.centralM1();
         TxResult sold = books.exchange(player, "note", "diamond", BigInteger.ONE);
         assertTrue(sold.success(), sold.code());
         assertEquals(issued.subtract(sold.amount()), books.centralM1());
-        assertEquals(issuanceBefore.add(bought.amount()).subtract(BigInteger.ONE), books.supply("diamond").reserve());
+        assertEquals(afterBuy.subtract(BigInteger.ONE), books.supply("diamond").reserve());
         books.checkInvariants();
     }
 

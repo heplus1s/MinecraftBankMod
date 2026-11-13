@@ -7,7 +7,10 @@ import dev.jdguo.bank.display.DisplayService;
 import dev.jdguo.bank.gui.BankScreenHandler;
 import dev.jdguo.bank.gui.BankMenus;
 import dev.jdguo.bank.gui.GuiItems;
+import dev.jdguo.bank.ledger.BankBooks;
 import dev.jdguo.bank.market.IssuerLevy;
+import dev.jdguo.bank.text.BankPhrases;
+import dev.jdguo.bank.text.BankTalk;
 import dev.jdguo.bank.market.MarketHooks;
 import dev.jdguo.bank.outlet.OutletPoint;
 import dev.jdguo.bank.persistence.BankRuntime;
@@ -87,6 +90,19 @@ public final class BankMod implements ModInitializer {
             }
             displays.tick(server);
             IssuerLevy.tick(server);
+            long day = server.getOverworld().getTime() / 24000L;
+            BankBooks.InterestDay interest = BankRuntime.books().accrueInterest(day);
+            if (interest.moved()) {
+                BankRuntime.save();
+                for (BankBooks.InterestCredit credit : interest.credits()) {
+                    ServerPlayerEntity paid = server.getPlayerManager().getPlayer(credit.player());
+                    if (paid != null && credit.amount().signum() > 0) {
+                        net.minecraft.text.Text text = BankTalk.text(paid, BankPhrases.interestPaid(
+                                BankRuntime.books(), credit.player(), credit.amount()));
+                        paid.sendMessage(text, false);
+                    }
+                }
+            }
             for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
                 if (player.currentScreenHandler instanceof BankScreenHandler handler) {
                     handler.tick();

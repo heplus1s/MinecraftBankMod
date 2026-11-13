@@ -835,7 +835,9 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                 List.of(Text.literal("Central bank").formatted(Formatting.GRAY),
                         Text.literal(books.statusLabel()).formatted(Formatting.YELLOW),
                         Text.literal("汇率 " + BankPhrases.copperPerDiamond(books) + " 铜/钻").formatted(Formatting.WHITE),
-                        Text.literal("手续费 " + percent(books.feeFraction())).formatted(Formatting.GRAY)),
+                        Text.literal("手续费 " + percent(books.feeFraction())).formatted(Formatting.GRAY),
+                        Text.literal("存款年利率 " + percent(books.interestFraction())).formatted(Formatting.GOLD),
+                        Text.literal("利息池 " + CompactFormat.format(books.interestPool("note"))).formatted(Formatting.WHITE)),
                 "noop", 1));
         int slot = 10;
         for (CurrencyDef def : books.currencies()) {
@@ -884,8 +886,10 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                         Text.literal(books.frozen() ? "Redemption suspended" : "Redemption available").formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
         inventory.setStack(40, marker(Items.CLOCK,
-                Text.literal("费率 " + percent(books.feeFraction())).formatted(Formatting.GOLD),
-                List.of(), "noop", 1));
+                Text.literal("年利率 " + percent(books.interestFraction())).formatted(Formatting.GOLD),
+                List.of(Text.literal("利息池 银行券 " + CompactFormat.format(books.interestPool("note"))).formatted(Formatting.WHITE),
+                        Text.literal("Interest pool is fee income, not reserves").formatted(Formatting.DARK_GRAY)),
+                "noop", 1));
         paintCentralIssuance(books);
     }
 

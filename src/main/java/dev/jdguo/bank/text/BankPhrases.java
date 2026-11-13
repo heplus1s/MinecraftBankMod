@@ -383,6 +383,17 @@ public final class BankPhrases {
         return line(Tone.GREEN, "手续费已设为 " + percent + "%", "Fee is now " + percent + "%");
     }
 
+    public static Spoken interestSet(double percent) {
+        return line(Tone.GREEN, "银行券活期存款年利率已设为 " + percent + "%", "Bank-note demand-deposit rate is now " + percent + "% a year");
+    }
+
+    public static Spoken interestPaid(BankBooks books, java.util.UUID player, java.math.BigInteger amount) {
+        String n = CompactFormat.format(amount);
+        return line(Tone.GREEN,
+                "存款利息 银行券 ×" + n + balancesZh(books, player),
+                "Savings interest bank note ×" + n + balancesEn(books, player));
+    }
+
     public static Spoken imported(int count) {
         return line(Tone.GREEN, "已导入 " + count + " 条记分板余额（每人每种货币只导入一次）", "Imported " + count + " scoreboard balances (once per player per currency)");
     }
