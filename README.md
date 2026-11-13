@@ -30,7 +30,7 @@
 
 如果没看准方块，会用你脚下那一格。网点名字只能是 ASCII，1 到 32 个字符：开头是字母或数字，后面只能是字母、数字、下划线或连字符。已经存下来的旧名字，包括中文，还能用 move、remove、tp、radius、lift、hologram 指到。
 
-设好以后，方块上会停一辆写着「中央银行 · 名字」的箱子矿车，原版客户端也能看见。右键方块或这辆矿车都会打开箱子界面，矿车会跟着存档留下；`/bank outlet remove` 和 `move` 会把它拆掉或挪走。如果这格本来就是箱子，右键方块会改由银行处理。站在网点附近（默认 4 格）也可以输入 `/bank`。全息字牌会浮在柜台上方，服务器重启后还在。
+设好以后，方块上会立起一座原版方块拼成的柜台，写着「中央银行 · 名字」，原版客户端不用资源包也能看见。右键方块或柜台都会打开银行。柜台跟着存档留下；`/bank outlet remove` 和 `move` 会把它拆掉或挪走。已经建好的网点在服务器升级后会换成这座柜台。如果这格本来就是箱子，右键方块会改由银行处理。站在网点附近（默认 4 格）也可以输入 `/bank`。全息字牌会浮在柜台上方，服务器重启后还在。
 
 一个世界可以设多个网点。账是全服共用的，不是每个柜台一本。
 
@@ -292,7 +292,7 @@ Look at the block you want as the counter (within about 6 blocks) and run:
 
 If you aren't looking at a block, it uses the one under your feet. Outlet names have to be ASCII, 1 to 32 characters: start with a letter or digit, then only letters, digits, underscore, or hyphen. Names already saved, including old non-ASCII ones, can still be used with move, remove, tp, radius, lift, and hologram.
 
-After that, a chest minecart labeled "中央银行 · name" sits on the block. Vanilla clients can see it. Right-clicking the block or the cart opens the chest menu, and the cart is saved with the world. `/bank outlet remove` and `move` delete it or place it again. If the block is already a chest, right-clicking the block is handled by the bank instead. Players standing near the outlet (4 blocks by default) can also type `/bank`. A hologram floats above the counter and comes back after a restart.
+After that, a counter made of vanilla blocks stands on the block, labeled "中央银行 · name". Vanilla clients see it with no resource pack. Right-clicking the block or the counter opens the bank, and the counter is saved with the world. `/bank outlet remove` and `move` delete it or place it again. Outlets saved earlier become this counter after the server upgrades. If the block is already a chest, right-clicking the block is handled by the bank instead. Players standing near the outlet (4 blocks by default) can also type `/bank`. A hologram floats above the counter and comes back after a restart.
 
 A world can have more than one outlet. The ledger is shared across the server, not one book per counter.
 
@@ -300,7 +300,7 @@ A world can have more than one outlet. The ledger is shared across the server, n
 | --- | --- | --- |
 | `/bank outlet set <name>` | operators | Turn the block you're looking at into an outlet |
 | `/bank outlet move <name>` | operators | Move the outlet to the block you're looking at |
-| `/bank outlet remove <name>` | operators | Remove the outlet, its minecart, and its hologram |
+| `/bank outlet remove <name>` | operators | Remove the outlet, its counter, and its hologram |
 | `/bank outlet radius <name> <1-32>` | operators | How close you have to be to use `/bank` |
 | `/bank outlet lift <name> <0.5-16>` | operators | How high the hologram sits above the block, default 2.4 |
 | `/bank outlet hologram <name> on\|off` | operators | Whether this outlet shows a hologram |

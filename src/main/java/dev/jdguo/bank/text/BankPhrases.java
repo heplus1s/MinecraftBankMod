@@ -285,8 +285,8 @@ public final class BankPhrases {
 
     public static Spoken outletSet(String name, int x, int y, int z) {
         return line(Tone.GREEN,
-                "网点 " + name + " → " + x + " " + y + " " + z + "。那里停着一辆写着名字的箱子矿车，右键方块或矿车开柜台",
-                "Outlet " + name + " -> " + x + " " + y + " " + z + ". A named chest minecart marks the counter. Right-click the block or the cart to open it.");
+                "网点 " + name + " → " + x + " " + y + " " + z + "。那里立着写有名字的柜台，右键方块或柜台即可办理",
+                "Outlet " + name + " -> " + x + " " + y + " " + z + ". A named counter stands there. Right-click the block or the counter to open it.");
     }
 
     public static Spoken outletRemoved(String name) {

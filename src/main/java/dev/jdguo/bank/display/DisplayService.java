@@ -7,12 +7,16 @@ import dev.jdguo.bank.outlet.OutletPoint;
 import dev.jdguo.bank.persistence.BankRuntime;
 import dev.jdguo.bank.text.BankPhrases;
 import dev.jdguo.bank.text.BankTalk;
+import net.minecraft.block.Block;
+import net.minecraft.block.Blocks;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
-import net.minecraft.entity.vehicle.ChestMinecartEntity;
 import net.minecraft.entity.boss.BossBar;
 import net.minecraft.entity.boss.ServerBossBar;
 import net.minecraft.entity.decoration.DisplayEntity;
+import net.minecraft.entity.decoration.InteractionEntity;
+import net.minecraft.nbt.NbtCompound;
+import net.minecraft.registry.Registries;
 import net.minecraft.network.packet.s2c.play.PlayerListHeaderS2CPacket;
 import net.minecraft.network.packet.s2c.play.ScoreboardObjectiveUpdateS2CPacket;
 import net.minecraft.scoreboard.AbstractTeam;
@@ -114,9 +118,7 @@ public final class DisplayService {
 
     public void discardMarker(MinecraftServer server, OutletPoint outlet) {
         Entity entity = findMarker(server, outlet, true);
-        if (entity != null) {
-            entity.discard();
-        }
+        dropEntity(entity);
         outlet.setMarkerId(null);
     }
 
@@ -134,8 +136,9 @@ public final class DisplayService {
     }
 
     /**
-     * A named chest minecart, the same kind of marker the datapack used.
-     * Vanilla clients can see it. Right-click is handled as the bank counter.
+     * A vanilla block-display counter. Clients see oak, quartz, a bookshelf, and a lectern
+     * with no resource pack. The invisible interaction is what a right-click hits.
+     * An older chest-minecart marker is replaced the next time its chunk is loaded.
      */
     private void pinMarker(MinecraftServer server, OutletPoint outlet, boolean loadChunk) {
         ServerWorld world = world(server, outlet.world());
@@ -151,33 +154,80 @@ public final class DisplayService {
         double y = outlet.y() + 1.0;
         double z = outlet.z() + 0.5;
         Entity found = outlet.markerId() == null ? null : world.getEntity(outlet.markerId());
-        ChestMinecartEntity cart = found instanceof ChestMinecartEntity existing && existing.isAlive()
+        InteractionEntity counter = found instanceof InteractionEntity existing && existing.isAlive()
                 && existing.getCommandTags().contains(MARKER_TAG) ? existing : null;
         boolean spawned = false;
-        if (cart == null) {
-            if (found != null) {
-                found.discard();
-            }
-            cart = new ChestMinecartEntity(EntityType.CHEST_MINECART, world);
-            cart.addCommandTag(MARKER_TAG);
-            cart.setInvulnerable(true);
-            cart.setNoGravity(true);
-            cart.setSilent(true);
-            cart.setCustomNameVisible(true);
-            world.spawnEntity(cart);
-            outlet.setMarkerId(cart.getUuid());
+        if (counter == null) {
+            dropEntity(found);
+            counter = new InteractionEntity(EntityType.INTERACTION, world);
+            counter.addCommandTag(MARKER_TAG);
+            counter.setInvulnerable(true);
+            counter.setSilent(true);
+            counter.setCustomNameVisible(true);
+            world.spawnEntity(counter);
+            NbtCompound size = new NbtCompound();
+            counter.writeNbt(size);
+            size.putFloat("width", 1.7f);
+            size.putFloat("height", 1.35f);
+            size.putBoolean("response", true);
+            counter.readNbt(size);
+            outlet.setMarkerId(counter.getUuid());
             spawned = true;
         }
-        cart.setCustomName(Text.literal("中央银行 · " + outlet.name()).formatted(Formatting.AQUA));
-        cart.setCustomNameVisible(true);
-        cart.setInvulnerable(true);
-        cart.setNoGravity(true);
-        cart.setVelocity(Vec3d.ZERO);
-        cart.refreshPositionAndAngles(x, y, z, cart.getYaw(), 0.0f);
-        cart.clear();
+        counter.setCustomName(Text.literal("中央银行 · " + outlet.name()).formatted(Formatting.AQUA));
+        counter.setCustomNameVisible(true);
+        counter.setInvulnerable(true);
+        counter.setVelocity(Vec3d.ZERO);
+        counter.refreshPositionAndAngles(x, y, z, counter.getYaw(), 0.0f);
+        if (counter.getPassengerList().isEmpty()) {
+            attachCounter(counter);
+        }
         if (spawned) {
             BankRuntime.save();
         }
+    }
+
+    /** Desk, pale top, brass edge, bookshelf back, and a lectern. Offsets are from the counter's feet. */
+    private void attachCounter(InteractionEntity counter) {
+        counterPart(counter, Blocks.DARK_OAK_PLANKS, -0.75f, 0.0f, -0.38f, 1.5f, 0.92f, 0.76f);
+        counterPart(counter, Blocks.SMOOTH_QUARTZ, -0.80f, 0.92f, -0.42f, 1.6f, 0.10f, 0.84f);
+        counterPart(counter, Blocks.GOLD_BLOCK, -0.80f, 1.00f, -0.46f, 1.6f, 0.04f, 0.05f);
+        counterPart(counter, Blocks.BOOKSHELF, -0.60f, 0.0f, 0.28f, 1.2f, 1.55f, 0.28f);
+        counterPart(counter, Blocks.LECTERN, -0.28f, 1.02f, -0.16f, 0.55f, 0.55f, 0.55f);
+    }
+
+    private void counterPart(InteractionEntity counter, Block block, float tx, float ty, float tz, float sx, float sy, float sz) {
+        DisplayEntity.BlockDisplayEntity display = new DisplayEntity.BlockDisplayEntity(EntityType.BLOCK_DISPLAY, counter.getWorld());
+        display.setSilent(true);
+        display.setInvulnerable(true);
+        display.addCommandTag(MARKER_TAG);
+        counter.getWorld().spawnEntity(display);
+        NbtCompound nbt = new NbtCompound();
+        display.writeNbt(nbt);
+        NbtCompound state = new NbtCompound();
+        state.putString("Name", Registries.BLOCK.getId(block).toString());
+        nbt.put("block_state", state);
+        NbtCompound transformation = new NbtCompound();
+        transformation.put("translation", vec(tx, ty, tz));
+        transformation.put("scale", vec(sx, sy, sz));
+        transformation.put("left_rotation", vec(0, 0, 0, 1));
+        transformation.put("right_rotation", vec(0, 0, 0, 1));
+        nbt.put("transformation", transformation);
+        display.readNbt(nbt);
+        display.refreshPositionAndAngles(counter.getX(), counter.getY(), counter.getZ(), 0.0f, 0.0f);
+        if (!display.startRiding(counter, true)) {
+            display.discard();
+        }
+    }
+
+    private static void dropEntity(Entity entity) {
+        if (entity == null) {
+            return;
+        }
+        for (Entity passenger : java.util.List.copyOf(entity.getPassengerList())) {
+            passenger.discard();
+        }
+        entity.discard();
     }
 
     private Entity findMarker(MinecraftServer server, OutletPoint outlet, boolean loadChunk) {
