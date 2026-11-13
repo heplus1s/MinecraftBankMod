@@ -36,6 +36,30 @@ public final class CompactFormat {
         return plain(scaled) + SUFFIX[group];
     }
 
+    /** Shown M0, M1, M2, and the same aggregates for a personal note. The ledger stays exact. */
+    public static String formatAggregate(BigInteger value) {
+        return formatAggregate(value == null ? BigDecimal.ZERO : new BigDecimal(value));
+    }
+
+    public static String formatAggregate(BigDecimal value) {
+        if (value == null) {
+            return "0";
+        }
+        BigDecimal scaled = value.setScale(6, RoundingMode.HALF_UP).stripTrailingZeros();
+        if (scaled.scale() < 0) {
+            scaled = scaled.setScale(0);
+        }
+        boolean negative = scaled.signum() < 0;
+        if (negative) {
+            scaled = scaled.negate();
+        }
+        String text = scaled.toPlainString();
+        int dot = text.indexOf('.');
+        String whole = dot < 0 ? text : text.substring(0, dot);
+        String fraction = dot < 0 ? "" : text.substring(dot);
+        return (negative ? "-" : "") + withCommas(new BigInteger(whole)) + fraction;
+    }
+
     public static String formatRate(BigDecimal value) {
         if (value == null) {
             return "无法报价";

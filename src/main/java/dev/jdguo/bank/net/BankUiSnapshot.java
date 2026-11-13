@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import dev.jdguo.bank.currency.CurrencyDef;
 import dev.jdguo.bank.ledger.BankBooks;
+import dev.jdguo.bank.ledger.CompactFormat;
 import dev.jdguo.bank.market.PersonalNote;
 
 import java.util.UUID;
@@ -17,9 +18,9 @@ public final class BankUiSnapshot {
         o.addProperty("page", page == null ? "savings" : page);
         o.addProperty("admin", admin);
         o.addProperty("confirm", confirm);
-        o.addProperty("m0", books.centralM0().toString());
-        o.addProperty("m1", books.centralM1().toString());
-        o.addProperty("m2", books.centralM2().toPlainString());
+        o.addProperty("m0", CompactFormat.formatAggregate(books.centralM0()));
+        o.addProperty("m1", CompactFormat.formatAggregate(books.centralM1()));
+        o.addProperty("m2", CompactFormat.formatAggregate(books.centralM2()));
         o.addProperty("status", books.statusLabel());
         o.addProperty("copper", books.balance(player, "copper").toString());
         o.addProperty("diamond", books.balance(player, "diamond").toString());

@@ -224,18 +224,18 @@ public final class BankPhrases {
                     ? "  发行准备金 " + CompactFormat.format(supply.reserve())
                             + "  储蓄保管 " + CompactFormat.format(supply.depositVault())
                             + "  储蓄总池 " + CompactFormat.format(books.savingsPool(def.id()))
-                    : "  M0 " + CompactFormat.format(books.centralM0())
-                            + "  M1 " + CompactFormat.format(books.centralM1())
-                            + "  M2 " + CompactFormat.formatRate(books.centralM2())
+                    : "  M0 " + CompactFormat.formatAggregate(books.centralM0())
+                            + "  M1 " + CompactFormat.formatAggregate(books.centralM1())
+                            + "  M2 " + CompactFormat.formatAggregate(books.centralM2())
                             + "  储蓄总池 " + CompactFormat.format(books.savingsPool(def.id()))
                             + "  尚可发行 " + CompactFormat.format(books.backedRoom(def));
             String bookEn = def.kind() == dev.jdguo.bank.currency.CurrencyKind.COMMODITY
                     ? "  issuance " + CompactFormat.format(supply.reserve())
                             + "  vault " + CompactFormat.format(supply.depositVault())
                             + "  savings pool " + CompactFormat.format(books.savingsPool(def.id()))
-                    : "  M0 " + CompactFormat.format(books.centralM0())
-                            + "  M1 " + CompactFormat.format(books.centralM1())
-                            + "  M2 " + CompactFormat.formatRate(books.centralM2())
+                    : "  M0 " + CompactFormat.formatAggregate(books.centralM0())
+                            + "  M1 " + CompactFormat.formatAggregate(books.centralM1())
+                            + "  M2 " + CompactFormat.formatAggregate(books.centralM2())
                             + "  savings pool " + CompactFormat.format(books.savingsPool(def.id()))
                             + "  issuable " + CompactFormat.format(books.backedRoom(def));
             lines.add(line(Tone.GRAY,
@@ -450,9 +450,9 @@ public final class BankPhrases {
     public static Spoken noteUnbacked(BankBooks books, PersonalNote note, BigInteger amount) {
         return line(Tone.RED,
                 "虚发「" + note.name() + "」×" + CompactFormat.format(amount)
-                        + "。没有锁定准备金。流通 M1 " + CompactFormat.format(note.circulation()) + "。",
+                        + "。没有锁定准备金。流通 M1 " + CompactFormat.formatAggregate(note.circulation()) + "。",
                 "Issued \"" + note.name() + "\" ×" + CompactFormat.format(amount)
-                        + " with no reserve. M1 " + CompactFormat.format(note.circulation()) + ".");
+                        + " with no reserve. M1 " + CompactFormat.formatAggregate(note.circulation()) + ".");
     }
 
     public static Spoken noteIssued(BankBooks books, PersonalNote note, BigInteger amount) {
@@ -460,10 +460,10 @@ public final class BankPhrases {
         String backingEn = anchorEn(note.reserveCurrency());
         return line(Tone.GREEN,
                 "已发行「" + note.name() + "」×" + CompactFormat.format(amount)
-                        + "。流通 M1 " + CompactFormat.format(note.circulation())
+                        + "。流通 M1 " + CompactFormat.formatAggregate(note.circulation())
                         + "，锁定" + backing + " " + CompactFormat.format(note.locked()) + "。",
                 "Issued \"" + note.name() + "\" ×" + CompactFormat.format(amount)
-                        + ". M1 " + CompactFormat.format(note.circulation())
+                        + ". M1 " + CompactFormat.formatAggregate(note.circulation())
                         + ", " + backingEn + " locked " + CompactFormat.format(note.locked()) + ".");
     }
 
@@ -549,12 +549,12 @@ public final class BankPhrases {
         };
         return line(Tone.AQUA,
                 "「" + note.name() + "」" + kind + price + " 钻（约 " + price + " 银行券）。M1 "
-                        + CompactFormat.format(books.personalM1(note)) + "，纸币 "
-                        + CompactFormat.format(books.personalM0(note)) + "，尚可发行 "
+                        + CompactFormat.formatAggregate(books.personalM1(note)) + "，纸币 "
+                        + CompactFormat.formatAggregate(books.personalM0(note)) + "，尚可发行 "
                         + CompactFormat.format(issuable) + "。",
                 "\"" + note.name() + "\" is " + kindEn + price + " diamond each (about " + price
-                        + " central bank notes). M1 " + CompactFormat.format(books.personalM1(note))
-                        + ", paper " + CompactFormat.format(books.personalM0(note))
+                        + " central bank notes). M1 " + CompactFormat.formatAggregate(books.personalM1(note))
+                        + ", paper " + CompactFormat.formatAggregate(books.personalM0(note))
                         + ", still issuable " + CompactFormat.format(issuable) + ".");
     }
 

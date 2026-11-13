@@ -5,7 +5,11 @@ import dev.jdguo.bank.currency.BankConfig;
 import dev.jdguo.bank.ledger.BankBooks;
 import org.junit.jupiter.api.Test;
 
+import dev.jdguo.bank.ledger.CompactFormat;
+
+import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.math.RoundingMode;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -24,6 +28,11 @@ class BankUiSnapshotTest {
 
         assertEquals("4", o.get("m1").getAsString());
         assertEquals("0", o.get("m0").getAsString());
+        BigDecimal exactM2 = books.centralM2();
+        assertEquals(CompactFormat.formatAggregate(exactM2), o.get("m2").getAsString());
+        assertEquals(0, exactM2.setScale(6, RoundingMode.HALF_UP)
+                .compareTo(new BigDecimal(o.get("m2").getAsString().replace(",", ""))));
+        assertEquals(exactM2, books.centralM2());
         assertEquals("10", o.get("vaultDiamond").getAsString());
         assertEquals("1000", o.get("issuanceDiamond").getAsString());
         assertFalse(o.get("savings").getAsString().equals(o.get("issuanceDiamond").getAsString()));

@@ -551,7 +551,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                         .formatted(Formatting.YELLOW),
                 List.of(Text.literal(regimeLabel(own)).formatted(Formatting.GRAY),
                         Text.literal("持有 " + CompactFormat.format(books.personalHolding(own.id(), uuid))).formatted(Formatting.WHITE),
-                        Text.literal("M1 " + CompactFormat.format(own.circulation())).formatted(Formatting.DARK_GRAY),
+                        Text.literal("M1 " + CompactFormat.formatAggregate(own.circulation())).formatted(Formatting.DARK_GRAY),
                         Text.literal("利息池 " + CompactFormat.format(own.interestPool())).formatted(Formatting.GOLD),
                         Text.literal("年利率 " + percent(books.personalInterestFraction())).formatted(Formatting.GOLD),
                         Text.literal(issueHint(own)).formatted(Formatting.DARK_GRAY)),
@@ -955,9 +955,9 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                 lore.add(Text.literal("手续费留存 " + CompactFormat.format(books.interestPool(def.id()))).formatted(Formatting.GRAY));
                 lore.add(Text.literal("Issuance reserves stay out of the savings pool").formatted(Formatting.DARK_GRAY));
             } else {
-                lore.add(Text.literal("M0 " + CompactFormat.format(books.centralM0())).formatted(Formatting.WHITE));
-                lore.add(Text.literal("M1 " + CompactFormat.format(books.centralM1())).formatted(Formatting.WHITE));
-                lore.add(Text.literal("M2 " + CompactFormat.formatRate(books.centralM2())).formatted(Formatting.WHITE));
+                lore.add(Text.literal("M0 " + CompactFormat.formatAggregate(books.centralM0())).formatted(Formatting.WHITE));
+                lore.add(Text.literal("M1 " + CompactFormat.formatAggregate(books.centralM1())).formatted(Formatting.WHITE));
+                lore.add(Text.literal("M2 " + CompactFormat.formatAggregate(books.centralM2())).formatted(Formatting.WHITE));
                 lore.add(Text.literal("储蓄总池 " + CompactFormat.format(books.savingsPool(def.id()))).formatted(Formatting.WHITE));
                 lore.add(Text.literal("尚可发行 " + CompactFormat.format(books.backedRoom(def))).formatted(Formatting.YELLOW));
                 lore.add(Text.literal("Issuable amount is not part of M2").formatted(Formatting.DARK_GRAY));
