@@ -145,6 +145,8 @@ public final class BankCommands {
                                                 .then(literal("copper").then(argument("name", StringArgumentType.string())
                                                         .then(argument("face", StringArgumentType.word()).executes(ctx -> createNote(ctx.getSource(), NoteRegime.HARD, "copper", StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "face"))))))))
                                 .then(literal("issue").then(argument("amount", StringArgumentType.word()).executes(ctx -> issueNote(ctx.getSource(), StringArgumentType.getString(ctx, "amount")))))
+                                .then(literal("bankrupt").executes(ctx -> bankruptNote(ctx.getSource(), null))
+                                        .then(argument("name", StringArgumentType.string()).executes(ctx -> bankruptNote(ctx.getSource(), StringArgumentType.getString(ctx, "name")))))
                                 .then(literal("withdraw")
                                         .then(argument("amount", StringArgumentType.word()).executes(ctx -> withdrawPersonal(ctx.getSource(), null, StringArgumentType.getString(ctx, "amount"))))
                                         .then(argument("name", StringArgumentType.string())
@@ -594,6 +596,16 @@ public final class BankCommands {
             player.getInventory().offerOrDrop(new ItemStack(item, count));
             left -= count;
         }
+    }
+
+    private static int bankruptNote(ServerCommandSource source, String name) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        boolean operator = source.hasPermissionLevel(2);
+        NoteTrade result = books().declareBankruptcy(source.getPlayerOrThrow().getUuid(), name, operator);
+        if (!result.success()) {
+            return fail(source, BankPhrases.noteRejected(result.code()));
+        }
+        BankRuntime.save();
+        return ok(source, BankPhrases.noteBankrupt(result.note()));
     }
 
     private static int issueNote(ServerCommandSource source, String raw) throws com.mojang.brigadier.exceptions.CommandSyntaxException {

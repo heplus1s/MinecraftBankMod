@@ -18,6 +18,10 @@ public final class PersonalNote {
     private BigInteger buys = BigInteger.ZERO;
     private BigInteger sells = BigInteger.ZERO;
     private BigInteger locked = BigInteger.ZERO;
+    /** Lock released when the note was declared bankrupt. Zero while the note is still live. */
+    private BigInteger released = BigInteger.ZERO;
+    private boolean bankrupt;
+    private long closedAtEpochMs;
 
     /** Floating note. {@code copperPar} chooses whether par is copper or diamonds. */
     public PersonalNote(UUID id, UUID issuer, String name, boolean copperPar, BigInteger par) {
@@ -46,6 +50,26 @@ public final class PersonalNote {
     public BigInteger buys() { return buys; }
     public BigInteger sells() { return sells; }
     public BigInteger locked() { return locked; }
+    public BigInteger released() { return released; }
+    public boolean bankrupt() { return bankrupt; }
+    public long closedAtEpochMs() { return closedAtEpochMs; }
+
+    /** Voids the note. Circulation, trades, and the released lock stay on the record. */
+    public void declareBankrupt(long when) {
+        if (bankrupt) {
+            return;
+        }
+        this.released = locked;
+        this.locked = BigInteger.ZERO;
+        this.bankrupt = true;
+        this.closedAtEpochMs = when;
+    }
+
+    public void restoreClosure(boolean bankrupt, long closedAtEpochMs, BigInteger released) {
+        this.bankrupt = bankrupt;
+        this.closedAtEpochMs = closedAtEpochMs;
+        this.released = released == null ? BigInteger.ZERO : released;
+    }
 
     public void setCirculation(BigInteger circulation) { this.circulation = circulation; }
     public void setBuys(BigInteger buys) { this.buys = buys; }

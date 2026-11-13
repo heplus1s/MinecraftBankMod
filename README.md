@@ -146,6 +146,8 @@ V = R + (L - R) × α / 1000
 /bank note create peg diamond|copper|note <name> <rate>
 /bank note create hard diamond|copper <name> <face>
 /bank note issue <amount>
+/bank note bankrupt
+/bank note bankrupt <name>
 /bank note rate
 /bank note rate <name>
 /bank note buy <name> <amount>
@@ -389,6 +391,8 @@ These are not savings, not the personal reserve, and not the central bank note. 
 /bank note create peg diamond|copper|note <name> <rate>
 /bank note create hard diamond|copper <name> <face>
 /bank note issue <amount>
+/bank note bankrupt
+/bank note bankrupt <name>
 /bank note rate
 /bank note rate <name>
 /bank note buy <name> <amount>

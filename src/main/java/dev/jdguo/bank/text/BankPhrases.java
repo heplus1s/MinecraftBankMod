@@ -124,6 +124,7 @@ public final class BankPhrases {
             case "bad_amount" -> line(Tone.RED, "金额无效。", "That amount isn't valid.");
             case "not_commodity" -> line(Tone.RED, "这里只收铜锭、钻石，或纸质银行券。", "This slot only takes copper ingots, diamonds, or bank-note paper.");
             case "not_note" -> line(Tone.RED, "手上要拿着纸质银行券。", "Hold bank-note paper in your main hand.");
+            case "bankrupt" -> line(Tone.RED, "这张个人银行券已经破产，纸还在，但不能入账。", "This personal note is bankrupt. The paper stays, but it cannot be deposited.");
             case "note_spent" -> line(Tone.RED, "这些银行券已经入过账，或是复制件，不能再存。", "These bank notes were already deposited, or they are copies.");
             case "note_tampered" -> line(Tone.RED, "这张纸和账对不上。", "This paper doesn't match the books.");
             case "too_many_items" -> line(Tone.RED, "一次取太多了。大额请开汇票。", "That's too many items at once. Issue a bill for a large amount.");
@@ -402,7 +403,22 @@ public final class BankPhrases {
                         + ", " + backingEn + " locked " + CompactFormat.format(note.locked()) + ".");
     }
 
+    public static Spoken noteBankrupt(PersonalNote note) {
+        String unit = anchorZh(note.reserveCurrency());
+        String unitEn = anchorEn(note.reserveCurrency());
+        return line(Tone.RED,
+                "「" + note.name() + "」宣告破产。锁定的" + unit + " ×" + CompactFormat.format(note.released())
+                        + " 已解开。持有和纸券还在账上，但不能再交易、通兑或发行。",
+                "\"" + note.name() + "\" is bankrupt. Locked " + unitEn + " ×" + CompactFormat.format(note.released())
+                        + " was released. Holdings and paper stay on the books as void records.");
+    }
+
     public static Spoken noteRate(BankBooks books, PersonalNote note) {
+        if (note.bankrupt()) {
+            return line(Tone.RED,
+                    "「" + note.name() + "」已经破产，不再报价。账上的持有已作废。",
+                    "\"" + note.name() + "\" is bankrupt and has no quote. Holdings on the books are void.");
+        }
         BigDecimal diamonds = books.personalDiamondPrice(note);
         BigDecimal m2 = new BigDecimal(note.circulation()).add(PersonalMarket.reserveNotes(note, books.effectiveBacking(note)), dev.jdguo.bank.fx.FxMath.MC);
         String price = CompactFormat.formatRate(diamonds);
@@ -528,6 +544,8 @@ public final class BankPhrases {
             case "payout" -> line(Tone.RED, "这种券不能兑成那种货币。", "That note cannot be redeemed into that currency.");
             case "anchor" -> line(Tone.RED, "这种汇率不能用这种货币。", "That regime cannot use that currency.");
             case "suspended" -> line(Tone.RED, "准备金不够按原价兑付，通兑暂停。", "Reserves cannot honor the official rate, so redemption is suspended.");
+            case "bankrupt" -> line(Tone.RED, "这张个人银行券已经破产，不能再交易或兑付。", "This personal note is bankrupt and cannot be traded or redeemed.");
+            case "closed" -> line(Tone.RED, "这张个人银行券已经破产过了。", "This personal note is already bankrupt.");
             case "none" -> line(Tone.RED, "没有这张个人银行券。", "No personal note by that name.");
             case "market" -> line(Tone.RED, "中央银行券现在报不出价。", "The central note has no quote right now.");
             case "par" -> line(Tone.RED, "金额无效。", "That amount isn't valid.");

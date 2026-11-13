@@ -227,6 +227,9 @@ public final class BankBooks {
         if (note == null) {
             return PaperTake.fail("none", "No personal note");
         }
+        if (note.bankrupt()) {
+            return PaperTake.fail("bankrupt", "Bankrupt notes cannot be withdrawn");
+        }
         if (amount == null || amount.signum() <= 0) {
             return PaperTake.fail("bad_amount", "Invalid amount");
         }
@@ -255,6 +258,8 @@ public final class BankBooks {
             }
         } else if (!personalNotes.containsKey(presented.personalNote())) {
             return TxResult.fail("note_tampered", "Paper doesn't match the books");
+        } else if (personalNotes.get(presented.personalNote()).bankrupt()) {
+            return TxResult.fail("bankrupt", "Bankrupt paper is a void record");
         }
         String key = NoteSeries.key(presented);
         BigInteger out = notePaper.getOrDefault(key, BigInteger.ZERO);
@@ -894,6 +899,9 @@ public final class BankBooks {
     }
 
     public BigDecimal personalDiamondPrice(PersonalNote note) {
+        if (note.bankrupt()) {
+            return BigDecimal.ZERO;
+        }
         if (note.regime() == NoteRegime.FLOAT) {
             return PersonalMarket.diamondPrice(note, copperPerDiamond(), effectiveBacking(note));
         }
@@ -955,10 +963,28 @@ public final class BankBooks {
         };
     }
 
+    public NoteTrade declareBankruptcy(UUID actor, String name, boolean operator) {
+        PersonalNote note = name == null || name.isBlank() ? personalNote(actor) : personalNoteByName(name);
+        if (note == null) {
+            return NoteTrade.fail("none");
+        }
+        if (!operator && !note.issuer().equals(actor)) {
+            return NoteTrade.fail("denied");
+        }
+        if (note.bankrupt()) {
+            return NoteTrade.fail("closed");
+        }
+        note.declareBankrupt(System.currentTimeMillis());
+        return NoteTrade.ok(note, note.released(), BigInteger.ZERO);
+    }
+
     public NoteTrade issuePersonalNote(UUID issuer, BigInteger amount) {
         PersonalNote note = personalNote(issuer);
         if (note == null) {
             return NoteTrade.fail("none");
+        }
+        if (note.bankrupt()) {
+            return NoteTrade.fail("bankrupt");
         }
         if (amount == null || amount.signum() <= 0) {
             return NoteTrade.fail("par");
@@ -987,6 +1013,9 @@ public final class BankBooks {
         PersonalNote note = personalNoteByName(name);
         if (note == null) {
             return NoteTrade.fail("none");
+        }
+        if (note.bankrupt()) {
+            return NoteTrade.fail("bankrupt");
         }
         if (amount == null || amount.signum() <= 0) {
             return NoteTrade.fail("par");
@@ -1049,6 +1078,9 @@ public final class BankBooks {
         if (pay == null || receive == null) {
             return SwapTrade.fail("none");
         }
+        if (pay.bankrupt() || receive.bankrupt()) {
+            return SwapTrade.fail("bankrupt");
+        }
         if (pay.id().equals(receive.id())) {
             return SwapTrade.fail("pair");
         }
@@ -1108,6 +1140,9 @@ public final class BankBooks {
         if (note == null) {
             return Redemption.fail("none");
         }
+        if (note.bankrupt()) {
+            return Redemption.fail("bankrupt");
+        }
         if (amount == null || amount.signum() <= 0) {
             return Redemption.fail("par");
         }
@@ -1131,6 +1166,9 @@ public final class BankBooks {
         PersonalNote note = personalNotes.get(noteId);
         if (note == null || face == null || face.signum() <= 0 || sheets == null || sheets.signum() <= 0) {
             return Redemption.fail("note_tampered");
+        }
+        if (note.bankrupt()) {
+            return Redemption.fail("bankrupt");
         }
         if (!validPayout(payout)) {
             return Redemption.fail("payout");
@@ -1617,6 +1655,9 @@ public final class BankBooks {
             o.addProperty("buys", note.buys().toString());
             o.addProperty("sells", note.sells().toString());
             o.addProperty("locked", note.locked().toString());
+            o.addProperty("bankrupt", note.bankrupt());
+            o.addProperty("closedAt", note.closedAtEpochMs());
+            o.addProperty("released", note.released().toString());
             noteJson.add(o);
         }
         root.add("personalNotes", noteJson);
@@ -1784,6 +1825,11 @@ public final class BankBooks {
                 note.setBuys(new BigInteger(o.get("buys").getAsString()));
                 note.setSells(new BigInteger(o.get("sells").getAsString()));
                 note.setLocked(new BigInteger(o.get("locked").getAsString()));
+                if (o.has("bankrupt") && o.get("bankrupt").getAsBoolean()) {
+                    note.restoreClosure(true,
+                            o.has("closedAt") ? o.get("closedAt").getAsLong() : 0L,
+                            o.has("released") ? new BigInteger(o.get("released").getAsString()) : BigInteger.ZERO);
+                }
                 books.personalNotes.put(note.id(), note);
             }
         }

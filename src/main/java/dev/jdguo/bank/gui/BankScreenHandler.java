@@ -529,6 +529,14 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                         Text.literal("M1 " + CompactFormat.format(own.circulation())).formatted(Formatting.DARK_GRAY),
                         Text.literal(issueHint(own)).formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
+        if (own.bankrupt()) {
+            inventory.setStack(19, marker(Items.BARRIER,
+                    Text.literal("已破产").formatted(Formatting.RED),
+                    List.of(Text.literal("Void. No issue, trade, or redemption").formatted(Formatting.GRAY),
+                            Text.literal("解开的锁定 " + CompactFormat.format(own.released())).formatted(Formatting.DARK_GRAY)),
+                    "noop", 1));
+            return;
+        }
         for (int i = 0; i < NOTE_BUTTONS.length; i++) {
             BigInteger amount = NOTE_BUTTONS[i];
             inventory.setStack(19 + i, marker(Items.GOLD_NUGGET,
@@ -536,6 +544,10 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                     List.of(Text.literal("Issue ×" + amount).formatted(Formatting.GRAY)),
                     "pn:issue:" + amount, amount.intValue()));
         }
+        inventory.setStack(25, marker(Items.BARRIER,
+                Text.literal("宣告破产").formatted(Formatting.DARK_RED),
+                List.of(Text.literal("Voids the note. History stays.").formatted(Formatting.GRAY)),
+                "pn:bankrupt", 1));
     }
 
     private void paintMarket() {
@@ -568,6 +580,13 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         }
         marketIndex = Math.floorMod(marketIndex, notes.size());
         PersonalNote listed = notes.get(marketIndex);
+        if (listed.bankrupt()) {
+            inventory.setStack(28, marker(Items.BARRIER,
+                    Text.literal("「" + listed.name() + "」已作废").formatted(Formatting.RED),
+                    List.of(Text.literal("Void record. Click to switch.").formatted(Formatting.GRAY)),
+                    "pn:cycle", 1));
+            return;
+        }
         inventory.setStack(28, marker(Items.EMERALD,
                 Text.literal((marketMode == 1 ? "换入 「" : "交易 「") + listed.name() + "」").formatted(Formatting.GREEN),
                 List.of(Text.literal("Trade").formatted(Formatting.GRAY),
@@ -633,6 +652,16 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
     private void personalAction(ServerPlayerEntity player, String action) {
         BankBooks books = BankRuntime.books();
         UUID uuid = player.getUuid();
+        if ("pn:bankrupt".equals(action)) {
+            NoteTrade result = books.declareBankruptcy(uuid, null, player.hasPermissionLevel(2));
+            if (!result.success()) {
+                tell(player, BankPhrases.noteRejected(result.code()));
+                return;
+            }
+            BankRuntime.save();
+            tell(player, BankPhrases.noteBankrupt(result.note()));
+            return;
+        }
         if ("pn:cycle".equals(action)) {
             if (!books.personalNotes().isEmpty()) {
                 marketIndex++;
@@ -789,8 +818,9 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                 break;
             }
             inventory.setStack(holdSlot, marker(Items.PAPER,
-                    Text.literal("个人银行券 " + note.name() + "  " + CompactFormat.format(held)).formatted(Formatting.YELLOW),
-                    List.of(Text.literal("Book entry").formatted(Formatting.GRAY),
+                    Text.literal((note.bankrupt() ? "已作废 " : "个人银行券 ") + note.name() + "  " + CompactFormat.format(held))
+                            .formatted(note.bankrupt() ? Formatting.DARK_GRAY : Formatting.YELLOW),
+                    List.of(Text.literal(note.bankrupt() ? "Void record" : "Book entry").formatted(Formatting.GRAY),
                             Text.literal("现价 " + CompactFormat.formatRate(books.personalDiamondPrice(note)) + " 钻").formatted(Formatting.WHITE),
                             Text.literal("Held " + CompactFormat.format(held)).formatted(Formatting.DARK_GRAY)),
                     "noop", 1));
@@ -931,9 +961,14 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         }
         if (base <= 37) {
             PersonalNote own = books.personalNote(owner.getUuid());
-            if (own != null) {
+            if (own != null && !own.bankrupt()) {
                 BigInteger holding = books.personalHolding(own.id(), owner.getUuid());
                 placePaper(base, Items.PAPER, "取出 「" + own.name() + "」", "wd:pn:" + own.id(), holding);
+            } else if (own != null) {
+                inventory.setStack(base, marker(Items.PAPER,
+                        Text.literal("「" + own.name() + "」已作废").formatted(Formatting.DARK_GRAY),
+                        List.of(Text.literal("Void paper is not withdrawn").formatted(Formatting.GRAY)),
+                        "noop", 1));
             }
         }
     }
