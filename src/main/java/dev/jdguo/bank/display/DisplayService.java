@@ -263,7 +263,7 @@ public final class DisplayService {
                 .append(Text.literal(fee(books)).formatted(Formatting.GOLD)));
         CurrencyDef note = books.primaryVirtual();
         if (note != null) {
-            lines.add(Text.literal("覆盖 ").formatted(Formatting.GRAY)
+            lines.add(Text.literal("兑付 ").formatted(Formatting.GRAY)
                     .append(Text.literal(CompactFormat.formatRatio(books.tightness(note.id()))).formatted(Formatting.WHITE)));
         }
         lines.add(Text.literal(books.statusLabel()).formatted(statusColor(books)));
@@ -339,10 +339,10 @@ public final class DisplayService {
         }
         CurrencyDef note = books.primaryVirtual();
         if (note != null) {
-            text.append(Text.literal("兑现覆盖 ").formatted(Formatting.DARK_AQUA))
+            text.append(Text.literal("兑付能力 ").formatted(Formatting.DARK_AQUA))
                     .append(Text.literal(CompactFormat.formatRatio(books.tightness(note.id())) + "\n").formatted(Formatting.WHITE));
             if (note.backing() != null && books.currency(note.backing()) != null) {
-                text.append(Text.literal("金库 " + books.currency(note.backing()).name() + " ").formatted(Formatting.GRAY))
+                text.append(Text.literal("库存 " + books.currency(note.backing()).name() + " ").formatted(Formatting.GRAY))
                         .append(Text.literal(CompactFormat.format(books.supply(note.backing()).freeReserve()) + "\n").formatted(Formatting.WHITE));
             }
         }
@@ -470,13 +470,13 @@ public final class DisplayService {
 
     private static Formatting statusColor(BankBooks books) {
         String label = books.statusLabel();
-        if (label.contains("金圆券") || label.contains("停止")) {
+        if (label.contains("无法") || label.contains("暂停")) {
             return Formatting.RED;
         }
-        if (label.contains("告急")) {
+        if (label.contains("不足")) {
             return Formatting.GOLD;
         }
-        if (label.contains("偏紧")) {
+        if (label.contains("紧张")) {
             return Formatting.YELLOW;
         }
         return Formatting.GREEN;

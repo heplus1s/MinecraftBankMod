@@ -436,7 +436,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         nav(47, Items.CHEST, "取出", "nav:withdraw");
         nav(48, Items.EMERALD, "兑换", "nav:exchange");
         nav(49, Items.WRITABLE_BOOK, "汇票", "nav:checks");
-        nav(50, Items.NAME_TAG, "个券", "nav:market");
+        nav(50, Items.NAME_TAG, "交易", "nav:market");
         nav(52, Items.NETHER_STAR, "个人发行", "nav:issuance");
         if (owner.hasPermissionLevel(2)) {
             nav(51, Items.RECOVERY_COMPASS, "管理", "nav:management");
@@ -591,7 +591,8 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         inventory.setStack(4, marker(Items.GOLD_INGOT,
                 Text.literal("个人储蓄").formatted(Formatting.GOLD, Formatting.BOLD),
                 List.of(Text.literal("Personal savings").formatted(Formatting.GRAY),
-                        Text.literal("这是你的存款，不是金库").formatted(Formatting.DARK_GRAY)),
+                        Text.literal("这是你的存款，不是央行库存").formatted(Formatting.DARK_GRAY),
+                        Text.literal("Your deposits, not central stock").formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
         int slot = 10;
         var uuid = owner.getUuid();
@@ -659,9 +660,10 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         CurrencyDef note = books.primaryVirtual();
         BigDecimal tight = note == null ? null : books.tightness(note.id());
         inventory.setStack(31, marker(concrete(tight),
-                Text.literal("兑现覆盖 " + CompactFormat.formatRatio(tight)).formatted(Formatting.WHITE),
+                Text.literal("兑付能力 " + CompactFormat.formatRatio(tight)).formatted(Formatting.WHITE),
                 List.of(Text.literal(books.statusLabel()).formatted(Formatting.YELLOW),
-                        Text.literal(books.frozen() ? "纸币兑现：关闭" : "纸币兑现：开放").formatted(Formatting.GRAY)),
+                        Text.literal(books.frozen() ? "兑付：暂停" : "兑付：正常").formatted(Formatting.GRAY),
+                        Text.literal(books.frozen() ? "Redemption suspended" : "Redemption available").formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
         inventory.setStack(40, marker(Items.CLOCK,
                 Text.literal("费率 " + percent(books.feeFraction())).formatted(Formatting.GOLD),
@@ -682,16 +684,16 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                         Text.literal("剩余额度 " + CompactFormat.format(books.backedRoom(note))).formatted(Formatting.WHITE)),
                 "ad:cur", 1));
         inventory.setStack(37, marker(Items.GOLD_NUGGET,
-                Text.literal("无准备 +1,000").formatted(Formatting.RED),
-                List.of(Text.literal("Unbacked +1,000").formatted(Formatting.GRAY)),
+                Text.literal("无准备金 +1,000").formatted(Formatting.RED),
+                List.of(Text.literal("Without reserves +1,000").formatted(Formatting.GRAY)),
                 "ad:unbacked:1000", 1));
         inventory.setStack(38, marker(Items.GOLD_INGOT,
-                Text.literal("无准备 +100万").formatted(Formatting.RED),
-                List.of(Text.literal("Unbacked +1,000,000").formatted(Formatting.GRAY)),
+                Text.literal("无准备金 +100万").formatted(Formatting.RED),
+                List.of(Text.literal("Without reserves +1,000,000").formatted(Formatting.GRAY)),
                 "ad:unbacked:1000000", 1));
         inventory.setStack(39, marker(Items.GOLD_BLOCK,
-                Text.literal("无准备 +1亿").formatted(Formatting.DARK_RED),
-                List.of(Text.literal("Unbacked +100,000,000").formatted(Formatting.GRAY)),
+                Text.literal("无准备金 +1亿").formatted(Formatting.DARK_RED),
+                List.of(Text.literal("Without reserves +100,000,000").formatted(Formatting.GRAY)),
                 "ad:unbacked:100000000", 1));
         inventory.setStack(41, marker(Items.DIAMOND,
                 Text.literal("按准备金满额发行").formatted(Formatting.AQUA),
@@ -702,16 +704,17 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                 List.of(Text.literal("Retire 1,000 from your balance").formatted(Formatting.GRAY)),
                 "ad:retire:1000", 1));
         inventory.setStack(43, marker(books.frozen() ? Items.RED_DYE : Items.LIME_DYE,
-                Text.literal(books.frozen() ? "兑现已关闭" : "兑现开放").formatted(books.frozen() ? Formatting.RED : Formatting.GREEN),
-                List.of(Text.literal(books.frozen() ? "Redemption halted" : "Redemption open").formatted(Formatting.GRAY),
-                        Text.literal("点击切换。只拦住纸币换硬通货").formatted(Formatting.DARK_GRAY)),
+                Text.literal(books.frozen() ? "兑付暂停" : "兑付正常").formatted(books.frozen() ? Formatting.RED : Formatting.GREEN),
+                List.of(Text.literal(books.frozen() ? "Redemption suspended" : "Redemption available").formatted(Formatting.GRAY),
+                        Text.literal("点击切换。只暂停银行券兑换铜锭或钻石").formatted(Formatting.DARK_GRAY)),
                 "ad:freeze", 1));
     }
 
     private void paintDeposit() {
         inventory.setStack(4, marker(Items.OAK_SIGN,
                 Text.literal("把铜锭或钻石放进中间空格").formatted(Formatting.GOLD),
-                List.of(Text.literal("汇票请到「汇票」页兑现").formatted(Formatting.GRAY)),
+                List.of(Text.literal("汇票请到「汇票」页兑付").formatted(Formatting.GRAY),
+                        Text.literal("Bills are paid on the Bills page").formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
         inventory.setStack(13, marker(Items.SPECTRAL_ARROW,
                 Text.literal("↓ 存入").formatted(Formatting.YELLOW),
@@ -722,7 +725,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
     private void paintWithdraw() {
         BankBooks books = BankRuntime.books();
         inventory.setStack(4, marker(Items.CHEST,
-                Text.literal("从金库取出现物").formatted(Formatting.GOLD),
+                Text.literal("取出实物").formatted(Formatting.GOLD),
                 List.of(Text.literal("单次最多 " + BankBooks.MAX_PHYSICAL + " 个").formatted(Formatting.GRAY)),
                 "noop", 1));
         int row = 0;
@@ -742,7 +745,8 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         if (note != null) {
             inventory.setStack(40, marker(Items.PAPER,
                     Text.literal(note.name() + " 没有实物").formatted(Formatting.YELLOW),
-                    List.of(Text.literal("请开汇票，或兑换成硬通货").formatted(Formatting.GRAY)),
+                    List.of(Text.literal("请开汇票，或兑换成铜锭、钻石").formatted(Formatting.GRAY),
+                            Text.literal("Issue a bill, or exchange for copper or diamonds").formatted(Formatting.DARK_GRAY)),
                     "noop", 1));
         }
     }
@@ -787,7 +791,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                         Text.literal("余额 " + CompactFormat.format(books.balance(owner.getUuid(), cur.id()))).formatted(Formatting.WHITE)),
                 "ck:cur", 1));
         inventory.setStack(4, marker(payeeSelf ? Items.NAME_TAG : Items.PAPER,
-                Text.literal(payeeSelf ? "仅本人兑现" : "持票人兑现").formatted(payeeSelf ? Formatting.LIGHT_PURPLE : Formatting.AQUA),
+                Text.literal(payeeSelf ? "仅本人兑付" : "持票人兑付").formatted(payeeSelf ? Formatting.LIGHT_PURPLE : Formatting.AQUA),
                 List.of(Text.literal("点击切换抬头").formatted(Formatting.GRAY)),
                 "ck:payee", 1));
         BigInteger[] amounts = {BigInteger.ONE, BigInteger.TEN, BigInteger.valueOf(64),
@@ -799,7 +803,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                     "ck:issue:" + amounts[i], 1));
         }
         inventory.setStack(22, marker(Items.SPECTRAL_ARROW,
-                Text.literal("↓ 放入汇票兑现").formatted(Formatting.GOLD),
+                Text.literal("↓ 放入汇票兑付").formatted(Formatting.GOLD),
                 List.of(Text.literal("复制件会被拒付").formatted(Formatting.RED)),
                 "noop", 1));
         inventory.setStack(31, ItemStack.EMPTY);
@@ -810,12 +814,12 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         for (int i = 0; i < amounts.length; i++) {
             inventory.setStack(base + i, marker(item,
                     Text.literal(label + " ×" + amounts[i]).formatted(Formatting.GOLD),
-                    List.of(Text.literal("金库可取 " + CompactFormat.format(free)).formatted(Formatting.GRAY)),
+                    List.of(Text.literal("可取出 " + CompactFormat.format(free)).formatted(Formatting.GRAY)),
                     actionPrefix + ":" + amounts[i], amounts[i]));
         }
         inventory.setStack(base + 3, marker(item,
                 Text.literal(label + " 尽可能多").formatted(Formatting.YELLOW),
-                List.of(Text.literal("不超过金库，且单次最多 " + BankBooks.MAX_PHYSICAL).formatted(Formatting.GRAY)),
+                List.of(Text.literal("不超过库存，且单次最多 " + BankBooks.MAX_PHYSICAL).formatted(Formatting.GRAY)),
                 actionPrefix + ":max", 1));
     }
 

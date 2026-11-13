@@ -28,7 +28,7 @@ class CreditInflationTest {
         assertEquals(0, new BigDecimal("2").compareTo(books.unitsPer("note", "diamond")));
         assertTrue(books.unitsPer("note", "diamond").compareTo(before) > 0);
         assertEquals(new BigInteger("1000"), books.supply("note").reserve());
-        assertEquals("准备金偏紧", books.statusLabel());
+        assertEquals("准备金紧张", books.statusLabel());
         books.checkInvariants();
     }
 
@@ -40,7 +40,7 @@ class CreditInflationTest {
         BigDecimal rate = books.unitsPer("note", "diamond");
         assertTrue(rate.compareTo(new BigDecimal("1e30")) > 0, rate.toString());
         assertTrue(books.tightness("note").compareTo(new BigDecimal("0.05")) < 0);
-        assertEquals("金圆券 · 挤兑", books.statusLabel());
+        assertEquals("无法兑付", books.statusLabel());
         books.checkInvariants();
     }
 

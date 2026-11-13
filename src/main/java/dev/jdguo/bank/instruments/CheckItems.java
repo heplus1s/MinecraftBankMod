@@ -38,7 +38,7 @@ public final class CheckItems {
                 + "\n出票: " + record.issuerName()
                 + "\n抬头: " + payee
                 + "\n编号: " + record.id()
-                + "\n\n凭此票向网点兑现一次。复制件无效。");
+                + "\n\n凭此票向网点兑付一次。复制件无效。");
         NbtList pages = new NbtList();
         pages.add(NbtString.of(Text.Serializer.toJson(page)));
         nbt.put("pages", pages);

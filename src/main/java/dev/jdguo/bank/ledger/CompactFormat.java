@@ -38,7 +38,7 @@ public final class CompactFormat {
 
     public static String formatRate(BigDecimal value) {
         if (value == null) {
-            return "崩溃";
+            return "无法报价";
         }
         int sign = value.signum();
         if (sign < 0) {

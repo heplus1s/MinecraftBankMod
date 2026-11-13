@@ -106,13 +106,13 @@ public final class BankPhrases {
             case "bad_amount" -> line(Tone.RED, "金额无效。", "That amount isn't valid.");
             case "not_commodity" -> line(Tone.RED, "这里只收铜锭、钻石，或银行汇票。", "This slot only takes copper ingots, diamonds, or a bank bill.");
             case "too_many_items" -> line(Tone.RED, "一次取太多了。大额请开汇票。", "That's too many items at once. Issue a bill for a large amount.");
-            case "frozen" -> line(Tone.RED, "已停止纸币兑现。", "Note redemption is halted.");
-            case "no_market" -> line(Tone.RED, "这种货币已经崩溃，报不出价。", "That currency has collapsed. There is no quote.");
+            case "frozen" -> line(Tone.RED, "已暂停银行券兑付。", "Bank-note redemption is suspended.");
+            case "no_market" -> line(Tone.RED, "这种货币无法报价。", "That currency cannot be quoted.");
             case "not_issuable" -> line(Tone.RED, "这种货币不能这样发行。", "This currency can't be issued that way.");
             case "over_cap" -> line(Tone.RED, "没有剩余的准备金额度。", "No reserve room left.");
             case "invalid_check" -> line(Tone.RED, "认不出这张票据。", "Unrecognized bill.");
             case "tampered" -> line(Tone.RED, "票据和存根对不上。", "The bill doesn't match the stub.");
-            case "already_redeemed" -> line(Tone.RED, "这张票据已经兑现过。", "This bill was already redeemed.");
+            case "already_redeemed" -> line(Tone.RED, "这张汇票已经兑付过。", "This bill has already been paid.");
             case "wrong_payee" -> line(Tone.RED, "这张票据不是开给你的。", "This bill isn't made out to you.");
             case "denied" -> line(Tone.RED, "只有管理员能做这件事。", "Only an operator can do that.");
             default -> line(Tone.RED, "办不到。", "That didn't work.");
@@ -125,8 +125,8 @@ public final class BankPhrases {
 
     public static Spoken redeem(BankBooks books, UUID player, String currency, BigInteger amount, BigInteger copper) {
         return line(Tone.AQUA,
-                "兑现 " + nameZh(books, currency) + " ×" + CompactFormat.format(amount) + " 成功" + changeZh(copper) + balancesZh(books, player),
-                "Redeemed " + shortEn(books, currency) + " ×" + CompactFormat.format(amount) + changeEn(copper) + balancesEn(books, player));
+                "兑付 " + nameZh(books, currency) + " ×" + CompactFormat.format(amount) + " 成功" + changeZh(copper) + balancesZh(books, player),
+                "Paid " + shortEn(books, currency) + " ×" + CompactFormat.format(amount) + changeEn(copper) + balancesEn(books, player));
     }
 
     public static Spoken issue(BankBooks books, String currency, BigInteger amount, String playerName) {
@@ -143,7 +143,7 @@ public final class BankPhrases {
         String zhName = nameZh(books, currency);
         String enName = shortEn(books, currency);
         return switch (mode) {
-            case "unbacked" -> line(Tone.GREEN, "无准备发行 " + zhName + " ×" + n + tail, "Issued unbacked " + enName + " ×" + n + tail);
+            case "unbacked" -> line(Tone.GREEN, "无准备金发行 " + zhName + " ×" + n + tail, "Issued " + enName + " ×" + n + " without reserves" + tail);
             case "backed" -> line(Tone.GREEN, "按准备金发行 " + zhName + " ×" + n + tail, "Issued reserve-backed " + enName + " ×" + n + tail);
             case "retire" -> line(Tone.GREEN, "注销 " + zhName + " ×" + n + tail, "Retired " + enName + " ×" + n + tail);
             default -> line(Tone.GREEN, "已处理 " + zhName + " ×" + n + tail, "Updated " + enName + " ×" + n + tail);
@@ -155,12 +155,12 @@ public final class BankPhrases {
         String rate = copperPerDiamond(books);
         return line(Tone.AQUA,
                 nameZh(books, currency) + "开局准备金设为 " + CompactFormat.format(supply.anchor())
-                        + " ｜金库 " + CompactFormat.format(supply.reserve())
+                        + " ｜库存 " + CompactFormat.format(supply.reserve())
                         + " ｜发行额 " + CompactFormat.format(supply.liability())
                         + " ｜锁定 " + CompactFormat.format(supply.locked())
                         + " ｜汇率 " + rate + " 铜/钻",
                 nameEn(books, currency) + " opening reserve is now " + CompactFormat.format(supply.anchor())
-                        + " | Vault " + CompactFormat.format(supply.reserve())
+                        + " | Stock " + CompactFormat.format(supply.reserve())
                         + " | Issued " + CompactFormat.format(supply.liability())
                         + " | Locked " + CompactFormat.format(supply.locked())
                         + " | Rate " + rate + " copper per diamond");
@@ -182,8 +182,8 @@ public final class BankPhrases {
 
     public static Spoken personalGet(String playerName, BankBooks books, UUID player) {
         return line(Tone.AQUA,
-                playerName + " 的个人准备金：" + personalZh(books, player) + "。这不是存款，也不是金库。",
-                playerName + "'s personal reserves: " + personalEn(books, player) + ". Not a deposit, and not the vault.");
+                playerName + " 的个人准备金：" + personalZh(books, player) + "。这不是存款，也不是央行库存。",
+                playerName + "'s personal reserves: " + personalEn(books, player) + ". Not a deposit, and not central stock.");
     }
 
     public static List<Spoken> supply(BankBooks books) {
@@ -306,19 +306,19 @@ public final class BankPhrases {
     }
 
     public static Spoken clampCleared(boolean min) {
-        return line(Tone.GREEN, (min ? "下限" : "上限") + "已取消", (min ? "Minimum" : "Maximum") + " clamp cleared");
+        return line(Tone.GREEN, (min ? "汇率下限" : "汇率上限") + "已取消", (min ? "Lower" : "Upper") + " rate limit cleared");
     }
 
     public static Spoken clampNotNumber() {
-        return line(Tone.RED, "不是数字。取消夹紧请写 off", "Not a number. Use off to clear the clamp.");
+        return line(Tone.RED, "不是数字。取消限制请写 off", "Not a number. Write off to clear the limit.");
     }
 
     public static Spoken clampPositive() {
-        return line(Tone.RED, "夹紧值必须为正，或写 off", "Clamp must be positive, or off");
+        return line(Tone.RED, "汇率界限必须为正，或写 off", "The rate limit must be positive, or off");
     }
 
     public static Spoken clampSet(boolean min, String value) {
-        return line(Tone.GREEN, (min ? "下限 " : "上限 ") + value, (min ? "Minimum " : "Maximum ") + value);
+        return line(Tone.GREEN, (min ? "汇率下限 " : "汇率上限 ") + value, (min ? "Lower rate limit " : "Upper rate limit ") + value);
     }
 
     public static Spoken missingConfig() {
@@ -326,7 +326,7 @@ public final class BankPhrases {
     }
 
     public static Spoken reloaded() {
-        return line(Tone.GREEN, "已重读手续费、alpha、夹紧和新增货币。旧账户没有被清掉", "Reloaded fees, alpha, clamps, and any new currencies. Existing accounts were kept.");
+        return line(Tone.GREEN, "已重读手续费、alpha、汇率界限和新增货币。旧账户没有被清掉", "Reloaded fees, alpha, rate limits, and any new currencies. Existing accounts were kept.");
     }
 
     public static Spoken configUnreadable(String detail) {
@@ -342,7 +342,7 @@ public final class BankPhrases {
     }
 
     public static Spoken freeze(boolean on) {
-        return line(on ? Tone.RED : Tone.GREEN, on ? "已停止纸币兑现" : "纸币兑现已恢复", on ? "Note redemption halted" : "Note redemption restored");
+        return line(on ? Tone.RED : Tone.GREEN, on ? "已暂停银行券兑付" : "银行券兑付已恢复", on ? "Bank-note redemption is suspended" : "Bank-note redemption has resumed");
     }
 
     public static Spoken feeSet(double percent) {

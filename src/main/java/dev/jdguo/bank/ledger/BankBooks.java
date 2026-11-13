@@ -524,56 +524,56 @@ public final class BankBooks {
     public String statusLabel() {
         CurrencyDef note = primaryVirtual();
         if (note == null) {
-            return frozen ? "停止兑现" : "兑现正常";
+            return frozen ? "暂停兑付" : "兑付正常";
         }
         if (abundance(note.id()) == null) {
-            return "金圆券 · 挤兑";
+            return "无法兑付";
         }
         if (frozen) {
-            return "停止兑现";
+            return "暂停兑付";
         }
         BigDecimal tight = tightness(note.id());
         if (tight == null) {
-            return "兑现正常";
+            return "兑付正常";
         }
         if (tight.compareTo(new BigDecimal("0.05")) < 0) {
-            return "金圆券 · 挤兑";
+            return "无法兑付";
         }
         if (tight.compareTo(new BigDecimal("0.25")) < 0) {
-            return "准备金告急";
+            return "准备金不足";
         }
         if (tight.compareTo(new BigDecimal("0.80")) < 0) {
-            return "准备金偏紧";
+            return "准备金紧张";
         }
-        return "兑现正常";
+        return "兑付正常";
     }
 
     /** English status for {@code /bank supply}. Displays keep {@link #statusLabel()}. */
     public String statusLabelEn() {
         CurrencyDef note = primaryVirtual();
         if (note == null) {
-            return frozen ? "redemption halted" : "redemption open";
+            return frozen ? "redemption suspended" : "redemption available";
         }
         if (abundance(note.id()) == null) {
-            return "bank run";
+            return "unable to redeem";
         }
         if (frozen) {
-            return "redemption halted";
+            return "redemption suspended";
         }
         BigDecimal tight = tightness(note.id());
         if (tight == null) {
-            return "redemption open";
+            return "redemption available";
         }
         if (tight.compareTo(new BigDecimal("0.05")) < 0) {
-            return "bank run";
+            return "unable to redeem";
         }
         if (tight.compareTo(new BigDecimal("0.25")) < 0) {
-            return "reserves critical";
+            return "reserves insufficient";
         }
         if (tight.compareTo(new BigDecimal("0.80")) < 0) {
-            return "reserves tight";
+            return "reserves strained";
         }
-        return "redemption open";
+        return "redemption available";
     }
 
     private static String label(CurrencyDef def) {
