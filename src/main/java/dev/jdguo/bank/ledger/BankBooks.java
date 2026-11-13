@@ -961,6 +961,7 @@ public final class BankBooks {
         if (unitsPer("note", "diamond") == null) {
             return NoteTrade.fail("market");
         }
+        // Mark to the live quote. Nothing here remembers what the seller originally paid.
         BigDecimal diamondEach = personalDiamondPrice(note);
         BigDecimal diamonds = diamondEach.multiply(new BigDecimal(amount), FxMath.MC);
         BigDecimal notesPerDiamond = unitsPer("note", "diamond");
@@ -1054,6 +1055,8 @@ public final class BankBooks {
             debitBalance(player, "copper", quote.copper());
             creditBalance(counterparty, "copper", quote.copper());
         }
+        // Buying pressure lifts the note that was received. Selling pressure leans on the note that was paid.
+        // The next trade reads those flows; it does not reuse this fill.
         receive.addBuy(receiveAmount);
         pay.addSell(quote.payNotes());
         return SwapTrade.ok(pay, receive, quote.payNotes(), receiveAmount, quote.central(), quote.copper());

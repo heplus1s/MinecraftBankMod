@@ -4,12 +4,14 @@ import dev.jdguo.bank.currency.BankConfig;
 import dev.jdguo.bank.instruments.NotePaper;
 import dev.jdguo.bank.instruments.NoteSeries;
 import dev.jdguo.bank.instruments.PresentedNote;
+import dev.jdguo.bank.fx.FxMath;
 import dev.jdguo.bank.ledger.BankBooks;
 import dev.jdguo.bank.ledger.TxResult;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.math.RoundingMode;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -155,6 +157,68 @@ class SecondaryMarketTest {
         assertEquals(BigInteger.ZERO, books.personalHolding(note.id(), buyer));
         assertEquals(BigInteger.TEN, books.balance(buyer, "diamond"));
         books.checkInvariants();
+    }
+
+    @Test
+    void payingWithAtoBuyBLiftsBAndLeansOnAThenASaleUsesTheNewQuote() {
+        BankBooks books = BankBooks.create(BankConfig.defaults());
+        PersonalNote noteA = issue(books, issuerA, "Aa", BigInteger.ONE, BigInteger.TEN, BigInteger.TEN);
+        PersonalNote noteB = issue(books, issuerB, "Bb", BigInteger.ONE, BigInteger.TEN, BigInteger.TEN);
+        BigDecimal purchaseA = books.personalDiamondPrice(noteA);
+        BigDecimal purchaseB = books.personalDiamondPrice(noteB);
+        assertEquals(0, BigDecimal.ONE.compareTo(purchaseA));
+        assertEquals(0, BigDecimal.ONE.compareTo(purchaseB));
+
+        SwapTrade bought = books.swapPersonalNotes(issuerA, "Aa", "Bb", BigInteger.TEN);
+
+        assertTrue(bought.success(), bought.code());
+        assertEquals(BigInteger.TEN, bought.paidNotes());
+        assertEquals(BigInteger.TEN, bought.receivedNotes());
+        BigDecimal afterA = books.personalDiamondPrice(noteA);
+        BigDecimal afterB = books.personalDiamondPrice(noteB);
+        assertTrue(afterB.compareTo(purchaseB) > 0, afterB.toPlainString());
+        assertTrue(afterA.compareTo(purchaseA) < 0, afterA.toPlainString());
+        assertEquals(0, new BigDecimal("1.1").compareTo(afterB));
+        assertEquals(0, new BigDecimal("0.9").compareTo(afterA));
+        assertEquals(BigInteger.TEN, noteA.circulation());
+        assertEquals(BigInteger.TEN, noteB.circulation());
+        assertEquals(BigInteger.TEN, books.personalReserve(issuerA, "diamond"));
+        assertEquals(BigInteger.TEN, books.personalReserve(issuerB, "diamond"));
+
+        books.creditUnbacked(issuerB, "note", new BigInteger("50"));
+        books.deposit(issuerB, "copper", new BigInteger("5000"));
+        BigDecimal live = books.personalDiamondPrice(noteB);
+        assertEquals(0, afterB.compareTo(live));
+        BigInteger[] atLive = cash(books, live, BigInteger.TEN);
+        BigInteger[] atPurchase = cash(books, purchaseB, BigInteger.TEN);
+        assertTrue(atLive[0].compareTo(atPurchase[0]) != 0 || atLive[1].compareTo(atPurchase[1]) != 0);
+
+        NoteTrade sold = books.sellPersonalNote(issuerA, "Bb", BigInteger.TEN);
+
+        assertTrue(sold.success(), sold.code());
+        assertEquals(atLive[0], sold.centralPaid());
+        assertEquals(atLive[1], sold.copperPaid());
+        assertEquals(BigInteger.ZERO, books.personalHolding(noteB.id(), issuerA));
+        assertEquals(BigInteger.TEN, books.personalHolding(noteB.id(), issuerB));
+        assertTrue(books.personalDiamondPrice(noteB).compareTo(live) < 0);
+        books.checkInvariants();
+    }
+
+    /** Central notes and copper for a diamond quote, using the same rounding as a live sale. */
+    private static BigInteger[] cash(BankBooks books, BigDecimal diamondEach, BigInteger amount) {
+        BigDecimal exact = diamondEach.multiply(new BigDecimal(amount), FxMath.MC)
+                .multiply(books.unitsPer("note", "diamond"), FxMath.MC);
+        BigInteger central = exact.setScale(0, RoundingMode.FLOOR).toBigInteger();
+        if (central.signum() < 0) {
+            central = BigInteger.ZERO;
+        }
+        BigInteger copper = exact.subtract(new BigDecimal(central))
+                .multiply(new BigDecimal(books.copperPerDiamond()), FxMath.MC)
+                .setScale(0, RoundingMode.HALF_UP).toBigInteger();
+        if (copper.signum() < 0) {
+            copper = BigInteger.ZERO;
+        }
+        return new BigInteger[] {central, copper};
     }
 
     @Test
