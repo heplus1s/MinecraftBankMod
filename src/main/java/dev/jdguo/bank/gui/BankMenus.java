@@ -1,5 +1,6 @@
 package dev.jdguo.bank.gui;
 
+import dev.jdguo.bank.net.BankUiNetwork;
 import dev.jdguo.bank.outlet.OutletPoint;
 import net.minecraft.inventory.SimpleInventory;
 import net.minecraft.screen.SimpleNamedScreenHandlerFactory;
@@ -20,6 +21,10 @@ public final class BankMenus {
     }
 
     private static void open(ServerPlayerEntity player, String titleName, boolean remoteAdmin) {
+        if (BankUiNetwork.wantsUi(player)) {
+            BankUiNetwork.open(player, titleName, remoteAdmin);
+            return;
+        }
         SimpleInventory inventory = new SimpleInventory(54);
         Text title = Text.literal("中央银行 · " + titleName).formatted(Formatting.AQUA);
         player.openHandledScreen(new SimpleNamedScreenHandlerFactory(

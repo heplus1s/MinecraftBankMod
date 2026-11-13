@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "bankmod-ui",
+  "version": "${version}",
+  "name": "Central Bank UI",
+  "description": "Optional client screen for Central Bank. Vanilla clients and Fabric clients without this jar keep the chest GUI.",
+  "authors": ["heplus1s"],
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["dev.jdguo.bank.ui.BankUiClient"]
+  },
+  "recommends": {
+    "bankmod": "*"
+  },
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "minecraft": "~1.20.1",
+    "java": ">=17",
+    "fabric-api": "*"
+  }
+}

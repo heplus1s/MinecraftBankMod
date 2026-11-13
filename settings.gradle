@@ -10,3 +10,4 @@ pluginManagement {
 }
 
 rootProject.name = 'bankmod'
+include 'ui'

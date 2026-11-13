@@ -9,6 +9,7 @@ import dev.jdguo.bank.gui.BankMenus;
 import dev.jdguo.bank.gui.GuiItems;
 import dev.jdguo.bank.ledger.BankBooks;
 import dev.jdguo.bank.market.IssuerLevy;
+import dev.jdguo.bank.net.BankUiNetwork;
 import dev.jdguo.bank.text.BankPhrases;
 import dev.jdguo.bank.text.BankTalk;
 import dev.jdguo.bank.market.MarketHooks;
@@ -50,6 +51,7 @@ public final class BankMod implements ModInitializer {
     public void onInitialize() {
         loadConfig();
         BankCommands.register(displays);
+        BankUiNetwork.register();
 
         UseBlockCallback.EVENT.register((player, world, hand, hit) -> {
             if (world.isClient() || hand != Hand.MAIN_HAND || !(player instanceof ServerPlayerEntity serverPlayer)) {
