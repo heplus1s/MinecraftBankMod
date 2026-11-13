@@ -1,5 +1,6 @@
 package dev.jdguo.bank.instruments;
 
+import net.minecraft.inventory.Inventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.nbt.NbtCompound;
@@ -8,6 +9,8 @@ import net.minecraft.nbt.NbtString;
 import net.minecraft.server.network.ServerPlayerEntity;
 
 import java.math.BigInteger;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -54,6 +57,30 @@ public final class NotePaper {
     public static boolean tagged(ItemStack stack) {
         return stack != null && !stack.isEmpty() && stack.hasNbt() && stack.getNbt().contains(TAG);
     }
+
+    /** Face value of central paper, and face value of each personal series, in one inventory. */
+    public static Held tally(Inventory inventory) {
+        BigInteger central = BigInteger.ZERO;
+        Map<UUID, BigInteger> personal = new LinkedHashMap<>();
+        if (inventory == null) {
+            return new Held(central, personal);
+        }
+        for (int slot = 0; slot < inventory.size(); slot++) {
+            PresentedNote note = read(inventory.getStack(slot));
+            if (note == null) {
+                continue;
+            }
+            BigInteger value = note.face().multiply(BigInteger.valueOf(inventory.getStack(slot).getCount()));
+            if (note.central()) {
+                central = central.add(value);
+            } else {
+                personal.merge(note.personalNote(), value, BigInteger::add);
+            }
+        }
+        return new Held(central, personal);
+    }
+
+    public record Held(BigInteger central, Map<UUID, BigInteger> personal) {}
 
     public static PresentedNote read(ItemStack stack) {
         if (!tagged(stack)) {
