@@ -80,6 +80,17 @@ public final class BankTerminalScreen extends Screen {
         }
         amount = field(x + 180, y + 36, 120, "1");
         addDrawableChild(amount);
+        if ("deposit".equals(category) || "withdraw".equals(category)) {
+            int bx = x + 180;
+            for (String label : new String[] {"1", "5", "10", "64"}) {
+                String shown = label;
+                addDrawableChild(ButtonWidget.builder(Text.literal(label), b -> quick(shown))
+                        .dimensions(bx, y + 56, 22, 16).build());
+                bx += 24;
+            }
+            addDrawableChild(ButtonWidget.builder(Text.literal("全部"), b -> quick("全部"))
+                    .dimensions(bx, y + 56, 36, 16).build());
+        }
         if ("issuance".equals(category) && !data.has("personal")) {
             nameField = field(x + 180, y + 58, 120, "");
             addDrawableChild(nameField);
@@ -110,7 +121,8 @@ public final class BankTerminalScreen extends Screen {
             case "issuance" -> issuanceVerb();
             default -> "执行";
         };
-        addDrawableChild(ButtonWidget.builder(Text.literal(verb), b -> submit()).dimensions(x + 180, y + 136, 120, 18).build());
+        int verbY = "deposit".equals(category) || "withdraw".equals(category) ? y + 80 : y + 136;
+        addDrawableChild(ButtonWidget.builder(Text.literal(verb), b -> submit()).dimensions(x + 180, verbY, 120, 18).build());
     }
 
     @Override
@@ -338,8 +350,23 @@ public final class BankTerminalScreen extends Screen {
         clearAndInit();
     }
 
+    private void quick(String shown) {
+        if (amount != null) {
+            amount.setText(shown);
+        }
+        submit();
+    }
+
+    private String qtyToken() {
+        String raw = amount == null || amount.getText().isBlank() ? "1" : amount.getText().trim();
+        if ("全部".equals(raw) || "all".equalsIgnoreCase(raw) || "max".equalsIgnoreCase(raw)) {
+            return "all";
+        }
+        return raw;
+    }
+
     private void submit() {
-        String qty = amount == null || amount.getText().isBlank() ? "1" : amount.getText().trim();
+        String qty = qtyToken();
         switch (category) {
             case "deposit" -> BankUiClient.send("deposit-transfer " + anchorId + " " + qty);
             case "withdraw" -> BankUiClient.send("withdraw " + anchorId + " " + qty);

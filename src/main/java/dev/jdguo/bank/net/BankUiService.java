@@ -25,6 +25,8 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Identifier;
 
 import java.math.BigInteger;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 /** Server-side actions for the optional UI. Every amount is checked here, not on the client. */
@@ -112,6 +114,7 @@ public final class BankUiService {
         if (parts.length < 3) {
             return;
         }
+        boolean all = "max".equals(parts[2]) || "all".equals(parts[2]);
         BigInteger amount = amount(player, parts[2], books, parts[1]);
         if (amount == null) {
             return;
@@ -128,7 +131,7 @@ public final class BankUiService {
             tell(player, BankPhrases.withdraw(books, player.getUuid(), "note", take.result().amount()));
             return;
         }
-        TxResult result = books.withdraw(player.getUuid(), parts[1], amount, "max".equals(parts[2]));
+        TxResult result = books.withdraw(player.getUuid(), parts[1], amount, all);
         if (!result.success()) {
             tell(player, BankPhrases.failure(BankPhrases.Kind.WITHDRAW, result.code(), parts[1], null));
             return;
@@ -230,12 +233,22 @@ public final class BankUiService {
         if (def == null) {
             return;
         }
-        BigInteger amount = amount(player, parts[2], null, null);
-        if (amount == null || amount.signum() <= 0) {
+        boolean all = "all".equals(parts[2]) || "max".equals(parts[2]);
+        BigInteger amount = all ? heldCommodityOrNotes(player, def) : amount(player, parts[2], null, null);
+        if (amount == null) {
+            return;
+        }
+        if (amount.signum() <= 0) {
+            tell(player, BankPhrases.failure(BankPhrases.Kind.DEPOSIT, "empty_hand", def.id(), null));
             return;
         }
         if (def.kind() == dev.jdguo.bank.currency.CurrencyKind.COMMODITY) {
             int need = amount.min(BigInteger.valueOf(Integer.MAX_VALUE)).intValue();
+            int have = countCommodity(player, def.itemId());
+            if (have < need) {
+                tell(player, BankPhrases.failure(BankPhrases.Kind.DEPOSIT, "empty_hand", def.id(), null));
+                return;
+            }
             int taken = takeCommodity(player, def.itemId(), need);
             if (taken <= 0) {
                 tell(player, BankPhrases.failure(BankPhrases.Kind.DEPOSIT, "empty_hand", def.id(), null));
@@ -251,28 +264,25 @@ public final class BankUiService {
             tell(player, BankPhrases.deposit(books, player.getUuid(), def.id(), result.amount()));
             return;
         }
-        BigInteger left = amount;
+        List<Pile> piles = centralPiles(player);
+        List<Bite> bites = pickSheets(piles, amount);
+        if (bites == null) {
+            tell(player, BankPhrases.failure(BankPhrases.Kind.DEPOSIT, "empty_hand", "note", null));
+            return;
+        }
         BigInteger deposited = BigInteger.ZERO;
         var inventory = player.getInventory();
-        for (int slot = 0; slot < inventory.size() && left.signum() > 0; slot++) {
-            ItemStack stack = inventory.getStack(slot);
-            if (!NotePaper.tagged(stack)) {
-                continue;
-            }
+        for (Bite bite : bites) {
+            ItemStack stack = inventory.getStack(bite.slot());
             PresentedNote presented = NotePaper.read(stack);
-            if (presented == null || !presented.central()) {
+            if (presented == null) {
                 continue;
             }
-            BigInteger face = presented.face().multiply(BigInteger.valueOf(stack.getCount()));
-            if (face.compareTo(left) > 0) {
-                continue;
-            }
-            TxResult result = books.redeemPaper(player.getUuid(), presented, BigInteger.valueOf(stack.getCount()));
+            TxResult result = books.redeemPaper(player.getUuid(), presented, BigInteger.valueOf(bite.sheets()));
             if (!result.success()) {
                 continue;
             }
-            inventory.setStack(slot, ItemStack.EMPTY);
-            left = left.subtract(result.amount());
+            stack.decrement(bite.sheets());
             deposited = deposited.add(result.amount());
         }
         if (deposited.signum() == 0) {
@@ -280,7 +290,75 @@ public final class BankUiService {
             return;
         }
         BankRuntime.save();
-        tell(player, BankPhrases.depositPaper(books, player.getUuid(), "银行券", "bank note", deposited, left.signum() > 0));
+        tell(player, BankPhrases.depositPaper(books, player.getUuid(), "银行券", "bank note", deposited, deposited.compareTo(amount) < 0));
+    }
+
+    private static BigInteger heldCommodityOrNotes(ServerPlayerEntity player, dev.jdguo.bank.currency.CurrencyDef def) {
+        if (def.kind() == dev.jdguo.bank.currency.CurrencyKind.COMMODITY) {
+            return BigInteger.valueOf(countCommodity(player, def.itemId()));
+        }
+        BigInteger sum = BigInteger.ZERO;
+        for (Pile pile : centralPiles(player)) {
+            sum = sum.add(pile.face().multiply(BigInteger.valueOf(pile.count())));
+        }
+        return sum;
+    }
+
+    private static List<Pile> centralPiles(ServerPlayerEntity player) {
+        List<Pile> piles = new ArrayList<>();
+        var inventory = player.getInventory();
+        for (int slot = 0; slot < inventory.size(); slot++) {
+            ItemStack stack = inventory.getStack(slot);
+            if (!NotePaper.tagged(stack)) {
+                continue;
+            }
+            PresentedNote presented = NotePaper.read(stack);
+            if (presented == null || !presented.central() || presented.face() == null) {
+                continue;
+            }
+            piles.add(new Pile(slot, presented.face(), stack.getCount()));
+        }
+        return piles;
+    }
+
+    /** Whole sheets only. Returns null when the piles cannot make the target exactly. */
+    static List<Bite> pickSheets(List<Pile> piles, BigInteger target) {
+        if (target == null || target.signum() <= 0) {
+            return null;
+        }
+        BigInteger left = target;
+        List<Bite> bites = new ArrayList<>();
+        for (Pile pile : piles) {
+            if (left.signum() == 0) {
+                break;
+            }
+            if (pile.face() == null || pile.face().signum() <= 0 || pile.count() <= 0) {
+                continue;
+            }
+            int sheets = left.divide(pile.face()).min(BigInteger.valueOf(pile.count())).intValue();
+            if (sheets <= 0) {
+                continue;
+            }
+            bites.add(new Bite(pile.slot(), sheets));
+            left = left.subtract(pile.face().multiply(BigInteger.valueOf(sheets)));
+        }
+        return left.signum() == 0 ? bites : null;
+    }
+
+    record Pile(int slot, BigInteger face, int count) {}
+
+    record Bite(int slot, int sheets) {}
+
+    private static int countCommodity(ServerPlayerEntity player, String itemId) {
+        int count = 0;
+        var inventory = player.getInventory();
+        for (int slot = 0; slot < inventory.size(); slot++) {
+            ItemStack stack = inventory.getStack(slot);
+            if (!stack.isEmpty() && itemId.equals(Registries.ITEM.getId(stack.getItem()).toString())) {
+                count += stack.getCount();
+            }
+        }
+        return count;
     }
 
     private static int takeCommodity(ServerPlayerEntity player, String itemId, int need) {
@@ -464,7 +542,7 @@ public final class BankUiService {
 
     private static BigInteger amount(ServerPlayerEntity player, String raw, BankBooks books, String currency) {
         try {
-            if ("max".equals(raw) && books != null) {
+            if (("max".equals(raw) || "all".equals(raw)) && books != null) {
                 return books.balance(player.getUuid(), currency);
             }
             return Amounts.parse(raw);
