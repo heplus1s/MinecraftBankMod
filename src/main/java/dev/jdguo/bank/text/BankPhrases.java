@@ -156,12 +156,12 @@ public final class BankPhrases {
         return line(Tone.AQUA,
                 nameZh(books, currency) + "开局准备金设为 " + CompactFormat.format(supply.anchor())
                         + " ｜金库 " + CompactFormat.format(supply.reserve())
-                        + " ｜负债 " + CompactFormat.format(supply.liability())
+                        + " ｜发行额 " + CompactFormat.format(supply.liability())
                         + " ｜锁定 " + CompactFormat.format(supply.locked())
                         + " ｜汇率 " + rate + " 铜/钻",
                 nameEn(books, currency) + " opening reserve is now " + CompactFormat.format(supply.anchor())
                         + " | Vault " + CompactFormat.format(supply.reserve())
-                        + " | Liabilities " + CompactFormat.format(supply.liability())
+                        + " | Issued " + CompactFormat.format(supply.liability())
                         + " | Locked " + CompactFormat.format(supply.locked())
                         + " | Rate " + rate + " copper per diamond");
     }
@@ -200,13 +200,13 @@ public final class BankPhrases {
             lines.add(line(Tone.GRAY,
                     nameZh(books, def.id())
                             + "  准备 " + CompactFormat.format(supply.reserve())
-                            + "  负债 " + CompactFormat.format(supply.liability())
+                            + "  发行额 " + CompactFormat.format(supply.liability())
                             + "  锁定 " + CompactFormat.format(supply.locked())
                             + "  覆盖 " + CompactFormat.formatRatio(books.tightness(def.id()))
                             + rateZh,
                     nameEn(books, def.id())
                             + "  reserve " + CompactFormat.format(supply.reserve())
-                            + "  liabilities " + CompactFormat.format(supply.liability())
+                            + "  issued " + CompactFormat.format(supply.liability())
                             + "  locked " + CompactFormat.format(supply.locked())
                             + "  cover " + CompactFormat.formatRatio(books.tightness(def.id()))
                             + rateEn));

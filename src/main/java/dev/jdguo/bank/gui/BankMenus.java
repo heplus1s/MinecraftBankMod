@@ -14,9 +14,9 @@ public final class BankMenus {
         open(player, outlet.name(), false);
     }
 
-    /** Operator credit desk. It does not have to be standing at a kiosk. */
+    /** Operator management page, including central issuance. It does not have to be at a kiosk. */
     public static void openAdmin(ServerPlayerEntity player) {
-        open(player, "信贷", true);
+        open(player, "管理", true);
     }
 
     private static void open(ServerPlayerEntity player, String titleName, boolean remoteAdmin) {

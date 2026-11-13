@@ -40,7 +40,7 @@ import java.util.UUID;
  * {@link ScreenHandlerType#GENERIC_9X6}. Button items never leave the server inventory.
  */
 public final class BankScreenHandler extends GenericContainerScreenHandler {
-    public enum Page { SAVINGS, DEPOSIT, WITHDRAW, EXCHANGE, CHECKS, MARKET, MANAGEMENT, ADMIN }
+    public enum Page { SAVINGS, DEPOSIT, WITHDRAW, EXCHANGE, CHECKS, MARKET, ISSUANCE, MANAGEMENT }
 
     private final SimpleInventory inventory;
     private final ServerPlayerEntity owner;
@@ -74,7 +74,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
             }
         }
         if (remoteAdmin) {
-            this.page = Page.ADMIN;
+            this.page = Page.MANAGEMENT;
         }
         paint();
     }
@@ -273,13 +273,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                 case "exchange" -> changePage(player, Page.EXCHANGE);
                 case "checks" -> changePage(player, Page.CHECKS);
                 case "market" -> changePage(player, Page.MARKET);
-                case "admin" -> {
-                    if (player.hasPermissionLevel(2)) {
-                        changePage(player, Page.ADMIN);
-                    } else {
-                        tell(player, BankPhrases.failure(BankPhrases.Kind.GENERIC, "denied", null, null));
-                    }
-                }
+                case "issuance" -> changePage(player, Page.ISSUANCE);
                 case "close" -> player.closeHandledScreen();
                 default -> {
                 }
@@ -418,6 +412,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
             case EXCHANGE -> paintExchange();
             case CHECKS -> paintChecks();
             case MARKET -> paintMarket();
+            case ISSUANCE -> paintIssuance();
             case MANAGEMENT -> {
                 if (owner.hasPermissionLevel(2)) {
                     paintManagement();
@@ -426,7 +421,6 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                     paintSavings();
                 }
             }
-            case ADMIN -> paintAdmin();
         }
         if (depositSlot() >= 0) {
             inventory.setStack(depositSlot(), GuiItems.isMarker(kept) ? ItemStack.EMPTY : kept);
@@ -443,10 +437,9 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         nav(48, Items.EMERALD, "兑换", "nav:exchange");
         nav(49, Items.WRITABLE_BOOK, "汇票", "nav:checks");
         nav(50, Items.NAME_TAG, "个券", "nav:market");
-        boolean op = owner.hasPermissionLevel(2);
-        if (op) {
+        nav(52, Items.NETHER_STAR, "个人发行", "nav:issuance");
+        if (owner.hasPermissionLevel(2)) {
             nav(51, Items.RECOVERY_COMPASS, "管理", "nav:management");
-            nav(52, Items.NETHER_STAR, "信贷", "nav:admin");
         }
         nav(53, Items.BARRIER, "关闭", "nav:close");
     }
@@ -455,18 +448,18 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
             BigInteger.ONE, BigInteger.TEN, BigInteger.valueOf(64), BigInteger.valueOf(100)
     };
 
-    private void paintMarket() {
+    private void paintIssuance() {
         BankBooks books = BankRuntime.books();
         UUID uuid = owner.getUuid();
-        inventory.setStack(4, marker(Items.NAME_TAG,
-                Text.literal("个人交易").formatted(Formatting.YELLOW, Formatting.BOLD),
-                List.of(Text.literal("Personal notes").formatted(Formatting.GRAY),
-                        Text.literal("特殊数量用 /bank note").formatted(Formatting.DARK_GRAY)),
+        inventory.setStack(4, marker(Items.NETHER_STAR,
+                Text.literal("个人发行").formatted(Formatting.YELLOW, Formatting.BOLD),
+                List.of(Text.literal("Personal issuance").formatted(Formatting.GRAY),
+                        Text.literal("个人银行券。特殊数量用 /bank note").formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
         PersonalNote own = books.personalNote(uuid);
+        String suggested = PersonalMarket.shortName(owner.getName().getString());
+        String who = suggested.isBlank() ? "请用指令起名" : "名字 " + suggested;
         if (own == null) {
-            String suggested = PersonalMarket.shortName(owner.getName().getString());
-            String who = suggested.isBlank() ? "请用指令起名" : "名字 " + suggested;
             inventory.setStack(10, marker(Items.DIAMOND,
                     Text.literal("开价 1 钻").formatted(Formatting.AQUA),
                     List.of(Text.literal(who).formatted(Formatting.GRAY),
@@ -482,22 +475,32 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                     List.of(Text.literal(who).formatted(Formatting.GRAY),
                             Text.literal("Par 1000 copper").formatted(Formatting.DARK_GRAY)),
                     "pn:create:c:1000", 1));
-        } else {
-            inventory.setStack(10, marker(Items.PAPER,
-                    Text.literal("「" + own.name() + "」 " + CompactFormat.formatRate(books.personalDiamondPrice(own)) + " 钻")
-                            .formatted(Formatting.YELLOW),
-                    List.of(Text.literal("Personal note").formatted(Formatting.GRAY),
-                            Text.literal("持有 " + CompactFormat.format(books.personalHolding(own.id(), uuid))).formatted(Formatting.WHITE),
-                            Text.literal("M1 " + CompactFormat.format(own.circulation())).formatted(Formatting.DARK_GRAY)),
-                    "noop", 1));
-            for (int i = 0; i < NOTE_BUTTONS.length; i++) {
-                BigInteger amount = NOTE_BUTTONS[i];
-                inventory.setStack(19 + i, marker(Items.GOLD_NUGGET,
-                        Text.literal("发行 ×" + amount).formatted(Formatting.GREEN),
-                        List.of(Text.literal("Issue ×" + amount).formatted(Formatting.GRAY)),
-                        "pn:issue:" + amount, amount.intValue()));
-            }
+            return;
         }
+        inventory.setStack(10, marker(Items.PAPER,
+                Text.literal("「" + own.name() + "」 " + CompactFormat.formatRate(books.personalDiamondPrice(own)) + " 钻")
+                        .formatted(Formatting.YELLOW),
+                List.of(Text.literal("Personal note").formatted(Formatting.GRAY),
+                        Text.literal("持有 " + CompactFormat.format(books.personalHolding(own.id(), uuid))).formatted(Formatting.WHITE),
+                        Text.literal("M1 " + CompactFormat.format(own.circulation())).formatted(Formatting.DARK_GRAY),
+                        Text.literal("准备金够了才能再发行").formatted(Formatting.DARK_GRAY)),
+                "noop", 1));
+        for (int i = 0; i < NOTE_BUTTONS.length; i++) {
+            BigInteger amount = NOTE_BUTTONS[i];
+            inventory.setStack(19 + i, marker(Items.GOLD_NUGGET,
+                    Text.literal("发行 ×" + amount).formatted(Formatting.GREEN),
+                    List.of(Text.literal("Issue ×" + amount).formatted(Formatting.GRAY)),
+                    "pn:issue:" + amount, amount.intValue()));
+        }
+    }
+
+    private void paintMarket() {
+        BankBooks books = BankRuntime.books();
+        inventory.setStack(4, marker(Items.NAME_TAG,
+                Text.literal("个人交易").formatted(Formatting.YELLOW, Formatting.BOLD),
+                List.of(Text.literal("Personal notes").formatted(Formatting.GRAY),
+                        Text.literal("特殊数量用 /bank note buy 或 sell").formatted(Formatting.DARK_GRAY)),
+                "noop", 1));
         List<PersonalNote> notes = new ArrayList<>(books.personalNotes());
         if (notes.isEmpty()) {
             inventory.setStack(28, marker(Items.BARRIER,
@@ -634,7 +637,8 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                     Text.literal(def.name()).formatted(color(def)),
                     List.of(Text.literal(def.nameEn()).formatted(Formatting.GRAY),
                             Text.literal("准备金 " + CompactFormat.format(supply.reserve())).formatted(Formatting.WHITE),
-                            Text.literal("负债 " + CompactFormat.format(supply.liability())).formatted(Formatting.WHITE),
+                            Text.literal("发行额 " + CompactFormat.format(supply.liability())).formatted(Formatting.WHITE),
+                            Text.literal("Issued " + CompactFormat.format(supply.liability())).formatted(Formatting.DARK_GRAY),
                             Text.literal("锁定 " + CompactFormat.format(supply.locked())).formatted(Formatting.YELLOW)),
                     "noop", 1));
             slot += 2;
@@ -662,6 +666,46 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         inventory.setStack(40, marker(Items.CLOCK,
                 Text.literal("费率 " + percent(books.feeFraction())).formatted(Formatting.GOLD),
                 List.of(), "noop", 1));
+        paintCentralIssuance(books);
+    }
+
+    private void paintCentralIssuance(BankBooks books) {
+        List<CurrencyDef> currencies = new ArrayList<>(books.currencies());
+        if (currencies.isEmpty()) {
+            return;
+        }
+        CurrencyDef note = currencies.get(Math.floorMod(adminIndex, currencies.size()));
+        inventory.setStack(36, marker(Items.BOOK,
+                Text.literal("央行发行 " + note.name()).formatted(color(note)),
+                List.of(Text.literal("Central issuance").formatted(Formatting.GRAY),
+                        Text.literal("点击切换币种").formatted(Formatting.DARK_GRAY),
+                        Text.literal("剩余额度 " + CompactFormat.format(books.backedRoom(note))).formatted(Formatting.WHITE)),
+                "ad:cur", 1));
+        inventory.setStack(37, marker(Items.GOLD_NUGGET,
+                Text.literal("无准备 +1,000").formatted(Formatting.RED),
+                List.of(Text.literal("Unbacked +1,000").formatted(Formatting.GRAY)),
+                "ad:unbacked:1000", 1));
+        inventory.setStack(38, marker(Items.GOLD_INGOT,
+                Text.literal("无准备 +100万").formatted(Formatting.RED),
+                List.of(Text.literal("Unbacked +1,000,000").formatted(Formatting.GRAY)),
+                "ad:unbacked:1000000", 1));
+        inventory.setStack(39, marker(Items.GOLD_BLOCK,
+                Text.literal("无准备 +1亿").formatted(Formatting.DARK_RED),
+                List.of(Text.literal("Unbacked +100,000,000").formatted(Formatting.GRAY)),
+                "ad:unbacked:100000000", 1));
+        inventory.setStack(41, marker(Items.DIAMOND,
+                Text.literal("按准备金满额发行").formatted(Formatting.AQUA),
+                List.of(Text.literal("Issue up to the reserve cap").formatted(Formatting.GRAY)),
+                "ad:backed", 1));
+        inventory.setStack(42, marker(Items.FLINT,
+                Text.literal("注销 1,000").formatted(Formatting.DARK_GREEN),
+                List.of(Text.literal("Retire 1,000 from your balance").formatted(Formatting.GRAY)),
+                "ad:retire:1000", 1));
+        inventory.setStack(43, marker(books.frozen() ? Items.RED_DYE : Items.LIME_DYE,
+                Text.literal(books.frozen() ? "兑现已关闭" : "兑现开放").formatted(books.frozen() ? Formatting.RED : Formatting.GREEN),
+                List.of(Text.literal(books.frozen() ? "Redemption halted" : "Redemption open").formatted(Formatting.GRAY),
+                        Text.literal("点击切换。只拦住纸币换硬通货").formatted(Formatting.DARK_GRAY)),
+                "ad:freeze", 1));
     }
 
     private void paintDeposit() {
@@ -759,41 +803,6 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                 List.of(Text.literal("复制件会被拒付").formatted(Formatting.RED)),
                 "noop", 1));
         inventory.setStack(31, ItemStack.EMPTY);
-    }
-
-    private void paintAdmin() {
-        BankBooks books = BankRuntime.books();
-        List<CurrencyDef> currencies = new ArrayList<>(books.currencies());
-        CurrencyDef note = currencies.get(Math.floorMod(adminIndex, currencies.size()));
-        Supply supply = books.supply(note.id());
-        inventory.setStack(4, marker(Items.BOOK,
-                Text.literal(note.name() + "  " + books.statusLabel()).formatted(color(note)),
-                List.of(
-                        Text.literal("准备金 " + CompactFormat.format(supply.reserve())).formatted(Formatting.GRAY),
-                        Text.literal("负债 " + CompactFormat.format(supply.liability())).formatted(Formatting.GRAY),
-                        Text.literal("记账准备率 " + CompactFormat.formatRatio(books.reserveRatio(note.id()))).formatted(Formatting.WHITE),
-                        Text.literal("兑现覆盖 " + CompactFormat.formatRatio(books.tightness(note.id()))).formatted(Formatting.YELLOW),
-                        Text.literal("点击切换币种").formatted(Formatting.DARK_GRAY)),
-                "ad:cur", 1));
-        inventory.setStack(10, marker(Items.GOLD_NUGGET, Text.literal("无准备 +1,000").formatted(Formatting.RED),
-                List.of(Text.literal("负债上升，准备金不动").formatted(Formatting.GRAY)), "ad:unbacked:1000", 1));
-        inventory.setStack(11, marker(Items.GOLD_INGOT, Text.literal("无准备 +100万").formatted(Formatting.RED),
-                List.of(), "ad:unbacked:1000000", 1));
-        inventory.setStack(12, marker(Items.GOLD_BLOCK, Text.literal("无准备 +1亿").formatted(Formatting.DARK_RED),
-                List.of(Text.literal("用来演示纸币贬值").formatted(Formatting.GRAY)), "ad:unbacked:100000000", 1));
-        inventory.setStack(14, marker(Items.DIAMOND, Text.literal("按准备金满额发行").formatted(Formatting.AQUA),
-                List.of(Text.literal("剩余额度 " + CompactFormat.format(books.backedRoom(note))).formatted(Formatting.GRAY)),
-                "ad:backed", 1));
-        inventory.setStack(16, marker(Items.FLINT, Text.literal("注销 1,000").formatted(Formatting.DARK_GREEN),
-                List.of(Text.literal("从你的余额烧掉").formatted(Formatting.GRAY)), "ad:retire:1000", 1));
-        inventory.setStack(28, marker(books.frozen() ? Items.RED_DYE : Items.LIME_DYE,
-                Text.literal(books.frozen() ? "兑现已关闭" : "兑现开放").formatted(books.frozen() ? Formatting.RED : Formatting.GREEN),
-                List.of(Text.literal("点击切换。只拦住纸币换硬通货").formatted(Formatting.GRAY)),
-                "ad:freeze", 1));
-        inventory.setStack(30, marker(Items.CLOCK,
-                Text.literal("费率 " + percent(books.feeFraction()) + "  α " + books.alphaOf(note.id()).toPlainString()).formatted(Formatting.GOLD),
-                List.of(Text.literal("用 /bank fee 与 /bank alpha 调整").formatted(Formatting.GRAY)),
-                "noop", 1));
     }
 
     private void placeAmount(int base, net.minecraft.item.Item item, String label, String actionPrefix, BigInteger free) {
