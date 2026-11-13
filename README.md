@@ -1,5 +1,7 @@
 # 中央银行
 
+[English version below.](#central-bank)
+
 这是一个 Minecraft 1.20.1 的 Fabric 模组，只装在服务器上。玩家用原版客户端就能来银行存钱、取钱、换汇、开汇票，不用再装模组或资源包。
 
 钱记在模组自己的账本里，不用记分板，数字再大也不会溢出。
@@ -179,3 +181,189 @@ V = R + (L - R) × α / 1000
 `./gradlew test` 不会启动游戏。它主要检查存取、兑换、汇票是否只兑一次、滥发后银票会不会贬值、按准备金发行会不会锁钻，以及大数字会不会算爆。
 
 许可是 MIT，版权归 heplus1s。Minecraft 是 Mojang 的商标，本项目与 Mojang 无关。
+
+---
+
+# Central Bank
+
+[中文在上方。](#中央银行)
+
+This is a Fabric mod for Minecraft 1.20.1. It only goes on the server. Players can deposit, withdraw, exchange currencies, and issue bills of exchange with a vanilla client. No client mod or resource pack is needed.
+
+Balances are stored in the mod's own ledger, not on the scoreboard, so the numbers can get arbitrarily large without overflowing.
+
+## Installation
+
+The server needs Fabric Loader, Fabric API, and Java 17 or newer.
+
+1. Run `./gradlew build` in the project directory
+2. Put `build/libs/bankmod-1.0.0.jar` in the server's `mods/` folder, and make sure Fabric API is there too
+3. Start the server once. It will create `config/bank.json`
+4. Clients don't need anything installed. Don't put this mod on the client either.
+
+## Set up an outlet first
+
+You can't just open the bank anywhere in the world. An operator has to mark a counter on a building first.
+
+Look at the block you want as the counter (within about 6 blocks) and run:
+
+```
+/bank outlet set 主楼
+```
+
+If you aren't looking at a block, it uses the one under your feet.
+
+After that, right-clicking the block opens the chest menu. If the block is already a chest, that right-click is handled by the bank instead. Players standing near the outlet (4 blocks by default) can also type `/bank`. A hologram floats above the counter and comes back after a restart.
+
+A world can have more than one outlet. The ledger is shared across the server, not one book per counter.
+
+| Command | Who can use it | What it does |
+| --- | --- | --- |
+| `/bank outlet set <name>` | operators | Turn the block you're looking at into an outlet |
+| `/bank outlet move <name>` | operators | Move the outlet to the block you're looking at |
+| `/bank outlet remove <name>` | operators | Remove the outlet and its hologram |
+| `/bank outlet radius <name> <1-32>` | operators | How close you have to be to use `/bank` |
+| `/bank outlet lift <name> <0.5-16>` | operators | How high the hologram sits above the block, default 2.4 |
+| `/bank outlet hologram <name> on\|off` | operators | Whether this outlet shows a hologram |
+| `/bank outlet tp <name>` | operators | Teleport to the outlet |
+| `/bank outlets` | everyone | List outlets |
+
+## How to use it
+
+The interface is a vanilla large chest. The buttons in the slots are ordinary items and can't be taken. If one ends up in an inventory or on the ground, it gets cleared.
+
+The bottom row switches pages: overview, deposit, withdraw, exchange, and bills. Operators also get a Credit page. Regular players can only open the counter at an outlet. Operators can use `/bank admin` to open the credit page elsewhere.
+
+- **Deposit**: Put copper ingots or diamonds in an empty slot. Your balance, the bank's reserves, and recorded liabilities all go up together.
+- **Withdraw**: You can take 1, 10, 64, or "as many as possible". If the vault doesn't have enough, the request is refused; "as many as possible" gives you whatever is actually in stock. The cap per withdrawal is 4096 items; for more, issue a bill.
+- **Exchange**: First pick what you pay and what you get. The button already shows the price with the fee included.
+- **Bills**: Issue a written book from your balance, payable to bearer or to yourself only. Put the book in the redeem slot and the money goes back to the account.
+- **Credit** (operators): You can issue currency without reserves, issue against reserves, retire it, or temporarily stop redeeming paper for hard currency.
+
+Successful or refused actions get a chat message and a flash on the action bar. Exchange rates are not spammed in chat.
+
+## What you see in the lobby
+
+These displays are on by default. Very large numbers are written as `k`, `M`, or in scientific notation.
+
+- **Sidebar**: One per player, updated about once a second. It shows balances, rates against diamond, the fee, convertibility, and the nearest outlet. On 1.20.1 the end of each sidebar line has a red number. That's just a sort index, not a balance.
+- **Hologram**: Floats above the outlet, faces the player, and shows rates and status.
+- **Boss bar**: The note-to-diamond price. The bar fill shows how much can still be redeemed. It turns yellow when tight, and red on a bank run or when convertibility is frozen.
+- **Player list**: The header and footer show the bank name and the main rates.
+
+```
+/bank display sidebar on|off
+/bank display bossbar on|off
+/bank display tab on|off
+/bank display global sidebar|bossbar|tab|hologram|join on|off
+```
+
+The first three commands only affect you. `global` is the operator master switch; once it's off, turning your own display back on does nothing. Holograms only have the master switch, plus a per-outlet switch.
+
+## Currencies and exchange rates
+
+There are three default currencies, written in `config/bank.json`. They are copied into the world save the first time you enter it, and the save is what counts after that. After editing the config, `/bank reload` can update fees, weights, and limits, and can add new currencies, without wiping accounts.
+
+| id | Kind | Item | Opening reserve / liability | Notes |
+| --- | --- | --- | --- | --- |
+| `copper` | commodity | copper ingot | 1,000,000 | copper |
+| `diamond` | commodity | diamond | 1,000 | the unit of account |
+| `note` | paper | Uses written books as bills; ordinary paper can't be deposited | 100,000 | 银票 (notes). At the start, 100 notes buy 1 diamond |
+
+The default fee is 2%. The difference weight α for each currency defaults to 1000‰. Rates have no min/max clamp by default, so the numbers can get very large when paper money depreciates. If you want limits:
+
+```
+/bank clamp max 999999
+/bank clamp min off
+/bank fee 2
+/bank alpha note 1000
+```
+
+If you set α to 0, notes stay at par and printing more doesn't change the rate. The reserve ratio still falls, and you still can't redeem once the vault is empty.
+
+Compared with the old bank datapack, the sign of the difference term is flipped: when liabilities are printed without adding reserves, the currency gets weaker, not stronger. Opening books record the seed reserves as liabilities as well, so the books start square. One diamond is still worth 1000 copper at the start, same as the rate you would have seen before. Calculations use high-precision decimals; payments are rounded up to a whole number.
+
+Effective quantity is:
+
+```
+V = R + (L - R) × α / 1000
+```
+
+`R` is reserves, `L` is liabilities. When α is 1000, `V` equals liabilities. Notes versus diamonds have an extra layer: the more liabilities there are relative to reserves, the more notes it takes to buy one diamond. If unbacked issuance pulls that ratio from 1 to 2, one diamond goes from 100 notes to 200. When the diamond vault is emptied and α is not 0, the quote is marked collapsed and further conversion is refused.
+
+Depositing a commodity increases the balance, reserves, and liabilities together. Withdrawals decrease all three, but diamonds already locked to notes can't be taken out. Exchange only adjusts liabilities, not the vault. Converting paper into a commodity can't exceed what the vault can actually still redeem.
+
+## Credit
+
+Operators (or permission level 2) can use:
+
+```
+/bank credit unbacked <player> note 1000000
+/bank credit backed <player> note 1000
+/bank credit retire <player> note 1000
+/bank credit check <player> note 1e12
+/bank freeze on
+/bank supply
+/bank reserve diamond 1000
+```
+
+Amounts can be written as `1_000`, `1.5k`, `2m`, or `1e40`.
+
+- **Unbacked issuance**: Adds to the player's balance and to liabilities, without changing reserves. Notes depreciate. If you issue a great deal, the boss bar and hologram will show a bank run.
+- **Backed issuance**: The allowance is computed from diamond stock and the settings. By default, the opening 1000 diamonds already cover the existing 100,000 notes, so the starting allowance is 0. You have to deposit diamonds first to get more room. Notes issued this way lock the corresponding diamonds and stay at par.
+- **Retirement**: Unbacked amounts are retired first, which improves the rate; only further retirement unlocks diamonds.
+- **Freeze convertibility**: Only blocks exchanging paper for copper or diamonds. Ordinary deposits and withdrawals, exchanging copper or diamonds for notes, and bills in or out of accounts still work.
+
+`/bank reserve` is for operators to change the stock figure directly. You can't set it below the locked amount.
+
+## Bills of exchange
+
+What you get is a vanilla written book. It records an id, the currency, the amount, the issuer, and so on, and is marked tattered so it can't be copied at a crafting table. Even if it is copied some other way, the server only honors the first redemption; a second book with the same id is confiscated. If the amount on the book doesn't match the stub, it's confiscated too. If the bill has a named payee and you aren't that person, the book is returned and the stub is left alone.
+
+Issuing a bill from your own balance just turns a deposit into a piece of paper. Total liabilities don't change. An operator's `/bank credit check` is newly printed liability, and the player has to be online to receive the book.
+
+## Saves and config
+
+The ledger lives in the overworld at `data/bankmod.dat`, with a human-readable copy at `data/bankmod-ledger.json`. Uninstalling the mod does not delete these files. To wipe the bank, stop the server and delete both.
+
+If you previously used the scoreboard bank datapack, run this once:
+
+```
+/bank import-scores
+```
+
+It imports positive `copper` and `diamond` scores for players it can match, once per player. Entries whose names start with `#` are skipped. Vault figures from the old datapack are not imported automatically; use `/bank reserve` if you need to line them up.
+
+The part of `config/bank.json` that matches the default economy looks like this:
+
+```json
+{
+  "numeraire": "diamond",
+  "feePercent": "2",
+  "clampMin": null,
+  "clampMax": null,
+  "outletRadius": 4.0,
+  "currencies": [
+    { "id": "copper", "kind": "commodity", "item": "minecraft:copper_ingot", "initialReserve": "1000000", "alphaPermille": "1000" },
+    { "id": "diamond", "kind": "commodity", "item": "minecraft:diamond", "initialReserve": "1000", "alphaPermille": "1000" },
+    { "id": "note", "kind": "virtual", "name": "银票", "initialReserve": "100000", "issuable": true, "backing": "diamond", "parPerBacking": "100", "haircut": "1", "minReserveRatio": "1", "alphaPermille": "1000" }
+  ]
+}
+```
+
+Commodity item ids can't be reused. A paper currency has to name a commodity as its backing.
+
+## What's not here yet
+
+There's no stock market yet. If that gets built later, it will be a separate module. Market prices won't be written into this bank ledger.
+
+## Building
+
+```
+./gradlew build
+./gradlew test
+```
+
+`./gradlew test` does not start the game. It mainly checks deposits, withdrawals, exchange, that bills redeem only once, that unbacked issuance depreciates notes, that backed issuance locks diamonds, and that huge numbers don't blow up the math.
+
+The license is MIT, copyright heplus1s. Minecraft is a trademark of Mojang. This project is not affiliated with Mojang.
