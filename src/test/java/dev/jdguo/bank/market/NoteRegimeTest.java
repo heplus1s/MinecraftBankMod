@@ -37,7 +37,8 @@ class NoteRegimeTest {
         BankBooks later = BankBooks.create(BankConfig.defaults());
         PersonalNote traded = open(later, issuerB, "Bb", NoteRegime.FLOAT, "diamond", BigInteger.ONE, BigInteger.TEN, BigInteger.TEN);
         later.creditUnbacked(buyer, "note", new BigInteger("100"));
-        assertTrue(later.buyPersonalNote(buyer, "Bb", BigInteger.TEN).success());
+        var bought = later.buyPersonalNote(buyer, "Bb", BigInteger.TEN);
+        assertTrue(bought.success(), bought.code());
         BigDecimal market = later.personalDiamondPrice(traded).multiply(BigDecimal.TEN);
         Redemption redeemed = later.redeemPersonal(buyer, "Bb", BigInteger.TEN, "diamond");
         assertTrue(redeemed.success(), redeemed.code());
@@ -57,7 +58,7 @@ class NoteRegimeTest {
         books.creditUnbacked(buyer, "note", new BigInteger("100"));
         assertTrue(books.buyPersonalNote(buyer, "Bb", BigInteger.valueOf(5)).success());
         assertEquals(0, new BigDecimal("2").compareTo(books.personalDiamondPrice(peg)));
-        assertEquals(new BigInteger("20"), peg.locked());
+        assertEquals(new BigInteger("16"), peg.locked());
         assertEquals(new BigInteger("20"), books.personalReserve(issuerB, "diamond"));
 
         SwapTrade swap = books.swapPersonalNotes(issuerA, "Aa", "Bb", BigInteger.ONE);
@@ -153,6 +154,9 @@ class NoteRegimeTest {
                                      BigInteger par, BigInteger reserve, BigInteger amount) {
         books.setPersonalReserve(issuer, anchor, reserve);
         assertTrue(books.createPersonalNote(issuer, name, regime, anchor, par).success());
+        BigInteger cover = amount.multiply(par.max(BigInteger.ONE));
+        books.creditUnbacked(issuer, "note", cover);
+        assertTrue(books.depositCentralReserve(issuer, cover).success());
         assertTrue(books.issuePersonalNote(issuer, amount).success());
         return books.personalNote(issuer);
     }

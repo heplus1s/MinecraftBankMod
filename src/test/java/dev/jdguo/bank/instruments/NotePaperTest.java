@@ -151,6 +151,8 @@ class NotePaperTest {
         books.setPersonalReserve(player, "diamond", BigInteger.valueOf(100));
         assertTrue(books.createPersonalNote(player, "Ada", false, BigInteger.ONE).success());
         PersonalNote note = books.personalNote(player);
+        books.creditUnbacked(player, "note", BigInteger.valueOf(2));
+        assertTrue(books.depositCentralReserve(player, BigInteger.valueOf(2)).success());
         assertTrue(books.issuePersonalNote(player, BigInteger.valueOf(20)).success());
 
         PaperTake taken = books.issuePersonalPaper(player, note.id(), BigInteger.TEN);

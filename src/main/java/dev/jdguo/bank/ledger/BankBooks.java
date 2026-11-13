@@ -73,6 +73,14 @@ public final class BankBooks {
     private BigDecimal interestFraction = new BigDecimal("0.02");
     /** Annual rate on each personal note's circulation. Default is zero. */
     private BigDecimal personalInterestFraction = BigDecimal.ZERO;
+    /** Share of a floating note's M1 that must sit in the issuer's central-bank reserve account. */
+    private BigDecimal floatCentralRatio = new BigDecimal("0.10");
+    /** Share of a pegged note's peg value that must sit in that account. The rest is locked backing. */
+    private BigDecimal pegCentralRatio = new BigDecimal("0.20");
+    /** Clearing buffer, in central notes, on top of a hard note's 100% commodity lock. */
+    private BigDecimal hardCentralRatio = new BigDecimal("0.05");
+    /** Central 银行券 posted by an issuer. Not savings, not interest-bearing, not issuance reserves. */
+    private final Map<UUID, BigInteger> centralReserveAccounts = new LinkedHashMap<>();
     /**
      * Retained central-bank fee income, the equity slice of {@link #savingsPool}.
      * Not issuance reserves, and not player 储蓄保管. Note interest is paid from the note slice.
@@ -109,6 +117,9 @@ public final class BankBooks {
         books.feeFraction = config.feeFraction();
         books.interestFraction = config.interestFraction();
         books.personalInterestFraction = config.personalInterestFraction();
+        books.floatCentralRatio = config.floatCentralReserve();
+        books.pegCentralRatio = config.pegCentralReserve();
+        books.hardCentralRatio = config.hardCentralReserve();
         books.clampMin = config.clampMin();
         books.clampMax = config.clampMax();
         books.globalSidebar = config.sidebar();
@@ -1313,6 +1324,9 @@ public final class BankBooks {
         if (personalReserve(issuer, backing).compareTo(required) < 0) {
             return NoteTrade.fail("reserve");
         }
+        if (centralReserve(issuer).compareTo(requiredCentralReserve(note, next)) < 0) {
+            return NoteTrade.fail("central_reserve");
+        }
         note.setLocked(required);
         note.setCirculation(next);
         addHolding(note.id(), issuer, amount);
@@ -1331,9 +1345,78 @@ public final class BankBooks {
         if (amount == null || amount.signum() <= 0) {
             return NoteTrade.fail("par");
         }
-        note.setCirculation(note.circulation().add(amount));
+        BigInteger next = note.circulation().add(amount);
+        if (centralReserve(issuer).compareTo(requiredCentralReserve(note, next)) < 0) {
+            return NoteTrade.fail("central_reserve");
+        }
+        note.setCirculation(next);
         addHolding(note.id(), issuer, amount);
         return NoteTrade.ok(note, BigInteger.ZERO, BigInteger.ZERO);
+    }
+
+    public BigInteger centralReserve(UUID issuer) {
+        return issuer == null ? BigInteger.ZERO : centralReserveAccounts.getOrDefault(issuer, BigInteger.ZERO);
+    }
+
+    /** Moves central notes from savings into the issuer's reserve account. M1 is unchanged. */
+    public TxResult depositCentralReserve(UUID issuer, BigInteger amount) {
+        if (personalNote(issuer) == null) {
+            return TxResult.fail("none", "No personal note");
+        }
+        if (amount == null || amount.signum() <= 0) {
+            return TxResult.fail("par", "Invalid amount");
+        }
+        if (balance(issuer, "note").compareTo(amount) < 0) {
+            return TxResult.fail("funds", "Not enough bank notes");
+        }
+        debitBalance(issuer, "note", amount);
+        supply("note").addLiability(amount.negate());
+        addCentralReserve(issuer, amount);
+        return TxResult.ok(amount, "Posted central reserve");
+    }
+
+    /** Returns central notes from the reserve account to savings. Nothing else is drawn on. */
+    public TxResult withdrawCentralReserve(UUID issuer, BigInteger amount) {
+        if (personalNote(issuer) == null) {
+            return TxResult.fail("none", "No personal note");
+        }
+        if (amount == null || amount.signum() <= 0) {
+            return TxResult.fail("par", "Invalid amount");
+        }
+        if (centralReserve(issuer).compareTo(amount) < 0) {
+            return TxResult.fail("funds", "Not enough central reserve");
+        }
+        addCentralReserve(issuer, amount.negate());
+        creditBalance(issuer, "note", amount);
+        supply("note").addLiability(amount);
+        return TxResult.ok(amount, "Withdrew central reserve");
+    }
+
+    public BigInteger requiredCentralReserve(PersonalNote note) {
+        return note == null ? BigInteger.ZERO : requiredCentralReserve(note, note.circulation());
+    }
+
+    public BigDecimal centralReserveRatio(NoteRegime regime) {
+        if (regime == NoteRegime.PEG) {
+            return pegCentralRatio;
+        }
+        if (regime == NoteRegime.HARD) {
+            return hardCentralRatio;
+        }
+        return floatCentralRatio;
+    }
+
+    public void setCentralReserveRatio(NoteRegime regime, BigDecimal ratio) {
+        if (ratio == null || ratio.signum() < 0 || ratio.compareTo(BigDecimal.ONE) > 0) {
+            throw new IllegalArgumentException("ratio");
+        }
+        if (regime == NoteRegime.PEG) {
+            pegCentralRatio = ratio;
+        } else if (regime == NoteRegime.HARD) {
+            hardCentralRatio = ratio;
+        } else {
+            floatCentralRatio = ratio;
+        }
     }
 
     public NoteTrade buyPersonalNote(UUID buyer, String name, BigInteger amount) {
@@ -1778,8 +1861,20 @@ public final class BankBooks {
         if (circulation.signum() <= 0) {
             return BigInteger.ZERO;
         }
-        if (note.regime() != NoteRegime.FLOAT) {
+        if (note.regime() == NoteRegime.HARD) {
             return note.par().multiply(circulation);
+        }
+        if (note.regime() == NoteRegime.PEG) {
+            if ("note".equals(note.reserveCurrency())) {
+                return BigInteger.ZERO;
+            }
+            BigDecimal share = BigDecimal.ONE.subtract(pegCentralRatio);
+            if (share.signum() < 0) {
+                share = BigDecimal.ZERO;
+            }
+            BigDecimal raw = new BigDecimal(note.par().multiply(circulation)).multiply(share, FxMath.MC);
+            BigInteger required = raw.setScale(0, RoundingMode.CEILING).toBigInteger();
+            return required.signum() < 0 ? BigInteger.ZERO : required;
         }
         BigDecimal raw = new BigDecimal(note.par().multiply(circulation)).multiply(personalNoteCoverage, FxMath.MC);
         BigInteger required = raw.setScale(0, RoundingMode.CEILING).toBigInteger();
@@ -1905,6 +2000,9 @@ public final class BankBooks {
         this.feeFraction = config.feeFraction();
         this.interestFraction = config.interestFraction();
         this.personalInterestFraction = config.personalInterestFraction();
+        this.floatCentralRatio = config.floatCentralReserve();
+        this.pegCentralRatio = config.pegCentralReserve();
+        this.hardCentralRatio = config.hardCentralReserve();
         this.clampMin = config.clampMin();
         this.clampMax = config.clampMax();
         for (CurrencyDef def : config.currencies()) {
@@ -1962,6 +2060,60 @@ public final class BankBooks {
 
     private BigInteger publicM1(String currency) {
         return claimsOf(currency).add(paperValue(currency));
+    }
+
+    /**
+     * Personal-note M1 is {@code circulation} (book entry plus paper), not those two added twice.
+     * Float counts that M1 directly. Peg and hard convert the peg value into central notes.
+     */
+    private BigInteger requiredCentralReserve(PersonalNote note, BigInteger circulation) {
+        if (circulation.signum() <= 0) {
+            return BigInteger.ZERO;
+        }
+        if (note.regime() == NoteRegime.FLOAT) {
+            return share(circulation, floatCentralRatio);
+        }
+        if (note.regime() == NoteRegime.PEG && "note".equals(note.reserveCurrency())) {
+            return circulation.multiply(note.par());
+        }
+        BigDecimal ratio = note.regime() == NoteRegime.HARD ? hardCentralRatio : pegCentralRatio;
+        return share(pegValueInNotes(note, circulation), ratio);
+    }
+
+    private BigInteger pegValueInNotes(PersonalNote note, BigInteger circulation) {
+        if ("note".equals(note.reserveCurrency())) {
+            return circulation.multiply(note.par());
+        }
+        BigDecimal commodity = new BigDecimal(circulation.multiply(note.par()));
+        BigDecimal diamonds = "copper".equals(note.reserveCurrency())
+                ? commodity.divide(new BigDecimal(copperPerDiamond()), FxMath.MC)
+                : commodity;
+        BigDecimal notes = unitsPer("note", "diamond");
+        if (notes == null || notes.signum() <= 0) {
+            notes = BigDecimal.ONE;
+        }
+        BigInteger value = diamonds.multiply(notes, FxMath.MC).setScale(0, RoundingMode.CEILING).toBigInteger();
+        return value.signum() < 0 ? BigInteger.ZERO : value;
+    }
+
+    private static BigInteger share(BigInteger base, BigDecimal ratio) {
+        if (base.signum() <= 0 || ratio.signum() <= 0) {
+            return BigInteger.ZERO;
+        }
+        BigInteger value = new BigDecimal(base).multiply(ratio, FxMath.MC).setScale(0, RoundingMode.CEILING).toBigInteger();
+        return value.signum() < 0 ? BigInteger.ZERO : value;
+    }
+
+    private void addCentralReserve(UUID issuer, BigInteger delta) {
+        BigInteger next = centralReserve(issuer).add(delta);
+        if (next.signum() < 0) {
+            throw new IllegalStateException("central reserve underflow");
+        }
+        if (next.signum() == 0) {
+            centralReserveAccounts.remove(issuer);
+        } else {
+            centralReserveAccounts.put(issuer, next);
+        }
     }
 
     private BigInteger paperValue(String currency) {
@@ -2078,6 +2230,12 @@ public final class BankBooks {
         root.addProperty("fee", feeFraction.toPlainString());
         root.addProperty("interestRate", interestFraction.toPlainString());
         root.addProperty("personalInterestRate", personalInterestFraction.toPlainString());
+        root.addProperty("floatCentralRatio", floatCentralRatio.toPlainString());
+        root.addProperty("pegCentralRatio", pegCentralRatio.toPlainString());
+        root.addProperty("hardCentralRatio", hardCentralRatio.toPlainString());
+        JsonObject posted = new JsonObject();
+        centralReserveAccounts.forEach((id, amount) -> posted.addProperty(id.toString(), amount.toString()));
+        root.add("centralReserveAccounts", posted);
         root.addProperty("lastInterestDay", lastInterestDay);
         JsonObject pool = new JsonObject();
         interestPool.forEach((id, amount) -> pool.addProperty(id, amount.toString()));
@@ -2285,6 +2443,16 @@ public final class BankBooks {
         books.personalInterestFraction = root.has("personalInterestRate")
                 ? new BigDecimal(root.get("personalInterestRate").getAsString())
                 : fallback.personalInterestFraction();
+        books.floatCentralRatio = root.has("floatCentralRatio")
+                ? new BigDecimal(root.get("floatCentralRatio").getAsString()) : fallback.floatCentralReserve();
+        books.pegCentralRatio = root.has("pegCentralRatio")
+                ? new BigDecimal(root.get("pegCentralRatio").getAsString()) : fallback.pegCentralReserve();
+        books.hardCentralRatio = root.has("hardCentralRatio")
+                ? new BigDecimal(root.get("hardCentralRatio").getAsString()) : fallback.hardCentralReserve();
+        if (root.has("centralReserveAccounts")) {
+            root.getAsJsonObject("centralReserveAccounts").entrySet().forEach(entry ->
+                    books.centralReserveAccounts.put(UUID.fromString(entry.getKey()), new BigInteger(entry.getValue().getAsString())));
+        }
         books.lastInterestDay = root.has("lastInterestDay") ? root.get("lastInterestDay").getAsLong() : -1L;
         if (root.has("interestPool")) {
             root.getAsJsonObject("interestPool").entrySet()

@@ -139,7 +139,16 @@ V = R + (L - R) × α / 1000
 
 ## 个人银行券
 
-这和存款、个人准备金、央行的银行券都不是一回事。每个人只能有一张。名字最多三个汉字或英文字母，不能和别人重名，并且只能用下面的指令起名。创建时选定汇率制度，之后不能改。浮动按市价，钉住不跟买卖走，定额只兑面额上的那种实物。`/bank note issue` 会锁定个人准备金；`/bank note unbacked` 是虚发，不锁定准备金。
+这和存款、个人准备金、央行的银行券都不是一回事。每个人只能有一张。名字最多三个汉字或英文字母，不能和别人重名，并且只能用下面的指令起名。创建时选定汇率制度，之后不能改。浮动按市价，钉住不跟买卖走，定额只兑面额上的那种实物。`/bank note issue` 会锁定个人准备金；`/bank note unbacked` 是虚发，不锁定实物。发行人另有央行准备金账户，只存银行券、不计息。浮动至少存流通量的 10%，联系汇率至少 20% 且其余为锁定的钉住准备，硬兑换在足额实物之外再存 5% 的清算头寸。不足时只暂停新发行。
+
+```
+/bank note reserve
+/bank note reserve deposit <amount>
+/bank note reserve withdraw <amount>
+/bank note ratio float 10
+/bank note ratio peg 20
+/bank note ratio hard 5
+```
 
 ```
 /bank note create float <name>
@@ -390,7 +399,16 @@ Personal reserves are a separate ledger reserved for later personal currency iss
 
 ## Personal notes
 
-These are not savings, not the personal reserve, and not the central bank note. Each player can have one. The name is at most three Chinese characters or English letters, it can't match someone else's, and it is set only with the command below. The exchange-rate regime is chosen at creation and is not switched later. Floating follows the market, a peg ignores trades, and hard convertibility pays only the face commodity. `/bank note issue` locks personal reserves; `/bank note unbacked` does not.
+These are not savings, not the personal reserve, and not the central bank note. Each player can have one. The name is at most three Chinese characters or English letters, it can't match someone else's, and it is set only with the command below. The exchange-rate regime is chosen at creation and is not switched later. Floating follows the market, a peg ignores trades, and hard convertibility pays only the face commodity. `/bank note issue` locks personal reserves; `/bank note unbacked` does not lock commodities. Each issuer also has a central-bank reserve account in bank notes only. It earns no interest. Floating notes keep at least 10% of circulation there, a peg keeps at least 20% there and the rest as locked peg backing, and hard convertibility adds a 5% clearing buffer. A shortfall pauses new issuance only.
+
+```
+/bank note reserve
+/bank note reserve deposit <amount>
+/bank note reserve withdraw <amount>
+/bank note ratio float 10
+/bank note ratio peg 20
+/bank note ratio hard 5
+```
 
 ```
 /bank note create float <name>

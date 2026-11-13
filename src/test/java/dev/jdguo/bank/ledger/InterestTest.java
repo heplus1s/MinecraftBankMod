@@ -33,6 +33,8 @@ class InterestTest {
         fresh.setAlpha("note", BigDecimal.ZERO);
         assertTrue(fresh.createPersonalNote(saver, "泉", false, BigInteger.ONE).success());
         fresh.setPersonalReserve(saver, "diamond", new BigInteger("400"));
+        fresh.creditUnbacked(saver, "note", new BigInteger("40"));
+        assertTrue(fresh.depositCentralReserve(saver, new BigInteger("40")).success());
         assertTrue(fresh.issuePersonalNote(saver, new BigInteger("400")).success());
         fresh.setFeeFraction(new BigDecimal("0.50"));
         fresh.creditUnbacked(payer, "note", new BigInteger("200"));
@@ -152,6 +154,8 @@ class InterestTest {
         books.setAlpha("note", BigDecimal.ZERO);
         assertTrue(books.createPersonalNote(saver, "泉", false, BigInteger.ONE).success());
         books.setPersonalReserve(saver, "diamond", new BigInteger("1000"));
+        books.creditUnbacked(saver, "note", new BigInteger("100"));
+        assertTrue(books.depositCentralReserve(saver, new BigInteger("100")).success());
         assertTrue(books.issuePersonalNote(saver, new BigInteger("1000")).success());
         books.setFeeFraction(new BigDecimal("0.50"));
         books.creditUnbacked(payer, "note", new BigInteger("1000"));
@@ -180,6 +184,8 @@ class InterestTest {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         assertTrue(books.createPersonalNote(saver, "泉", false, BigInteger.ONE).success());
         books.setPersonalReserve(saver, "diamond", BigInteger.TEN);
+        books.creditUnbacked(saver, "note", BigInteger.ONE);
+        assertTrue(books.depositCentralReserve(saver, BigInteger.ONE).success());
         assertTrue(books.issuePersonalNote(saver, BigInteger.TEN).success());
         JsonObject root = JsonParser.parseString(books.toJson()).getAsJsonObject();
         root.getAsJsonArray("personalNotes").get(0).getAsJsonObject().remove("interestPool");

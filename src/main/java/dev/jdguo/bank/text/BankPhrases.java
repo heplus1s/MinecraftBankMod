@@ -466,6 +466,36 @@ public final class BankPhrases {
                         + ", " + backingEn + " locked " + CompactFormat.format(note.locked()) + ".");
     }
 
+    public static Spoken centralReserve(BankBooks books, java.util.UUID issuer) {
+        PersonalNote note = books.personalNote(issuer);
+        String name = note == null ? "" : "「" + note.name() + "」";
+        BigInteger held = books.centralReserve(issuer);
+        BigInteger need = books.requiredCentralReserve(note);
+        return line(Tone.AQUA,
+                "央行准备金账户" + name + "：银行券 ×" + CompactFormat.format(held)
+                        + "，应存 ×" + CompactFormat.format(need) + "。这不是存款，也不计息。",
+                "Central-bank reserve" + (note == null ? "" : " for \"" + note.name() + "\"")
+                        + ": bank note ×" + CompactFormat.format(held)
+                        + ", required ×" + CompactFormat.format(need) + ". Not a deposit, and it earns no interest.");
+    }
+
+    public static Spoken centralReserveMoved(boolean deposit, BigInteger amount) {
+        String n = CompactFormat.format(amount);
+        return deposit
+                ? line(Tone.GREEN, "已存入央行准备金账户 银行券 ×" + n + "。", "Posted bank note ×" + n + " to the central-bank reserve account.")
+                : line(Tone.GREEN, "已从央行准备金账户取出 银行券 ×" + n + "。", "Withdrew bank note ×" + n + " from the central-bank reserve account.");
+    }
+
+    public static Spoken centralRatioSet(String regime, double percent) {
+        String zh = switch (regime) {
+            case "peg" -> "联系汇率";
+            case "hard" -> "硬兑换";
+            default -> "浮动";
+        };
+        return line(Tone.GREEN, zh + "的央行准备金比例已设为 " + percent + "%。",
+                regime + " central-bank reserve ratio is now " + percent + "%.");
+    }
+
     public static Spoken noteBankruptAsk() {
         return line(Tone.RED,
                 "尚未破产。请再点右上角「确认宣告破产」。点左上角「返回」则什么都不会改变。",
@@ -623,6 +653,7 @@ public final class BankPhrases {
             case "taken" -> line(Tone.RED, "这个名字已经有人用了。", "That name is already taken.");
             case "exists" -> line(Tone.RED, "你已经有一张个人银行券了。", "You already have a personal note.");
             case "reserve" -> line(Tone.RED, "个人准备金不够，还不能发行。", "Your personal reserve is not enough to issue that.");
+            case "central_reserve" -> line(Tone.RED, "央行准备金账户不足，新发行暂停。通兑仍按已锁定的准备金办理。", "The central-bank reserve account is short, so new issuance is paused. Redemption still pays from locked reserves.");
             case "funds" -> line(Tone.RED, "你的账户余额不足。", "Your balance isn't enough.");
             case "empty" -> line(Tone.RED, "对方没有这么多券可成交。", "The other side doesn't have that many notes.");
             case "self" -> line(Tone.RED, "不能和自己买卖自己的券。", "You can't trade your own note with yourself.");

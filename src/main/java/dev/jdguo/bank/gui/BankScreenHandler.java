@@ -563,6 +563,28 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                             Text.literal("Unbacked. No reserve is locked.").formatted(Formatting.DARK_GRAY)),
                     "pn:unbacked:" + amount, amount.intValue()));
         }
+        inventory.setStack(15, marker(Items.GOLD_INGOT,
+                Text.literal("央行准备金 " + CompactFormat.format(books.centralReserve(uuid))
+                        + "/" + CompactFormat.format(books.requiredCentralReserve(own))).formatted(Formatting.GOLD),
+                List.of(Text.literal("只存银行券，不计息").formatted(Formatting.GRAY),
+                        Text.literal("Central-bank reserve account").formatted(Formatting.DARK_GRAY)),
+                "noop", 1));
+        inventory.setStack(23, marker(Items.HOPPER,
+                Text.literal("存入准备金 ×10").formatted(Formatting.GREEN),
+                List.of(Text.literal("从活期存款划入").formatted(Formatting.GRAY)),
+                "pn:reserve:deposit:10", 10));
+        inventory.setStack(24, marker(Items.HOPPER,
+                Text.literal("存入准备金 ×100").formatted(Formatting.GREEN),
+                List.of(Text.literal("从活期存款划入").formatted(Formatting.GRAY)),
+                "pn:reserve:deposit:100", 64));
+        inventory.setStack(33, marker(Items.CHEST,
+                Text.literal("取出准备金 ×10").formatted(Formatting.YELLOW),
+                List.of(Text.literal("划回活期存款").formatted(Formatting.GRAY)),
+                "pn:reserve:withdraw:10", 10));
+        inventory.setStack(34, marker(Items.CHEST,
+                Text.literal("取出准备金 ×100").formatted(Formatting.YELLOW),
+                List.of(Text.literal("划回活期存款").formatted(Formatting.GRAY)),
+                "pn:reserve:withdraw:100", 64));
         inventory.setStack(8, marker(Items.BARRIER,
                 Text.literal("宣告破产").formatted(Formatting.DARK_RED),
                 List.of(Text.literal("Opens a confirmation. Nothing is voided yet.").formatted(Formatting.GRAY),
@@ -775,6 +797,20 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
             }
             BankRuntime.save();
             tell(player, BankPhrases.noteRedeem(result, books, uuid));
+            return;
+        }
+        if (action.startsWith("pn:reserve:")) {
+            String[] parts = action.split(":");
+            BigInteger amount = new BigInteger(parts[3]);
+            TxResult result = "deposit".equals(parts[2])
+                    ? books.depositCentralReserve(uuid, amount)
+                    : books.withdrawCentralReserve(uuid, amount);
+            if (!result.success()) {
+                tell(player, BankPhrases.noteRejected(result.code()));
+                return;
+            }
+            BankRuntime.save();
+            tell(player, BankPhrases.centralReserveMoved("deposit".equals(parts[2]), amount));
             return;
         }
         if (action.startsWith("pn:regime:")) {

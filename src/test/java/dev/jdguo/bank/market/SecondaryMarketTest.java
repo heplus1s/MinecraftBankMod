@@ -245,6 +245,9 @@ class SecondaryMarketTest {
                                       BigInteger reserve, BigInteger amount) {
         books.setPersonalReserve(issuer, "diamond", reserve);
         assertTrue(books.createPersonalNote(issuer, name, false, par).success());
+        BigInteger cover = amount.multiply(par.max(BigInteger.ONE));
+        books.creditUnbacked(issuer, "note", cover);
+        assertTrue(books.depositCentralReserve(issuer, cover).success());
         assertTrue(books.issuePersonalNote(issuer, amount).success());
         return books.personalNote(issuer);
     }

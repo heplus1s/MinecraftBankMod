@@ -160,6 +160,13 @@ public final class BankCommands {
                                                         .then(argument("face", StringArgumentType.word()).executes(ctx -> createNote(ctx.getSource(), NoteRegime.HARD, "copper", StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "face"))))))))
                                 .then(literal("issue").then(argument("amount", StringArgumentType.word()).executes(ctx -> issueNote(ctx.getSource(), StringArgumentType.getString(ctx, "amount")))))
                                 .then(literal("unbacked").then(argument("amount", StringArgumentType.word()).executes(ctx -> unbackedNote(ctx.getSource(), StringArgumentType.getString(ctx, "amount")))))
+                                .then(literal("reserve").executes(ctx -> showCentralReserve(ctx.getSource()))
+                                        .then(literal("deposit").then(argument("amount", StringArgumentType.word()).executes(ctx -> moveCentralReserve(ctx.getSource(), true, StringArgumentType.getString(ctx, "amount")))))
+                                        .then(literal("withdraw").then(argument("amount", StringArgumentType.word()).executes(ctx -> moveCentralReserve(ctx.getSource(), false, StringArgumentType.getString(ctx, "amount"))))))
+                                .then(literal("ratio").requires(BankCommands::op)
+                                        .then(literal("float").then(argument("percent", DoubleArgumentType.doubleArg(0, 100)).executes(ctx -> setNoteRatio(ctx.getSource(), NoteRegime.FLOAT, DoubleArgumentType.getDouble(ctx, "percent")))))
+                                        .then(literal("peg").then(argument("percent", DoubleArgumentType.doubleArg(0, 100)).executes(ctx -> setNoteRatio(ctx.getSource(), NoteRegime.PEG, DoubleArgumentType.getDouble(ctx, "percent")))))
+                                        .then(literal("hard").then(argument("percent", DoubleArgumentType.doubleArg(0, 100)).executes(ctx -> setNoteRatio(ctx.getSource(), NoteRegime.HARD, DoubleArgumentType.getDouble(ctx, "percent"))))))
                                 .then(literal("bankrupt").executes(ctx -> bankruptNote(ctx.getSource(), null))
                                         .then(argument("name", StringArgumentType.string()).executes(ctx -> bankruptNote(ctx.getSource(), StringArgumentType.getString(ctx, "name")))))
                                 .then(literal("withdraw")
@@ -653,6 +660,40 @@ public final class BankCommands {
         }
         BankRuntime.save();
         return ok(source, BankPhrases.noteUnbacked(books(), result.note(), amount));
+    }
+
+    private static int showCentralReserve(ServerCommandSource source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        UUID player = source.getPlayerOrThrow().getUuid();
+        return ok(source, BankPhrases.centralReserve(books(), player));
+    }
+
+    private static int moveCentralReserve(ServerCommandSource source, boolean deposit, String raw) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        BigInteger amount;
+        try {
+            amount = Amounts.parse(raw);
+        } catch (RuntimeException error) {
+            return fail(source, BankPhrases.amountProblem(error.getMessage()));
+        }
+        UUID player = source.getPlayerOrThrow().getUuid();
+        TxResult result = deposit
+                ? books().depositCentralReserve(player, amount)
+                : books().withdrawCentralReserve(player, amount);
+        if (!result.success()) {
+            return fail(source, BankPhrases.noteRejected(result.code()));
+        }
+        BankRuntime.save();
+        return ok(source, BankPhrases.centralReserveMoved(deposit, amount));
+    }
+
+    private static int setNoteRatio(ServerCommandSource source, NoteRegime regime, double percent) {
+        books().setCentralReserveRatio(regime, BigDecimal.valueOf(percent).movePointLeft(2));
+        BankRuntime.save();
+        String name = switch (regime) {
+            case PEG -> "peg";
+            case HARD -> "hard";
+            default -> "float";
+        };
+        return ok(source, BankPhrases.centralRatioSet(name, percent));
     }
 
     private static int swapNote(ServerCommandSource source, String pay, String receive, String raw) throws com.mojang.brigadier.exceptions.CommandSyntaxException {

@@ -25,6 +25,9 @@ public final class ConfigJson {
         root.addProperty("feePercent", config.feeFraction().multiply(new BigDecimal("100")).stripTrailingZeros().toPlainString());
         root.addProperty("interestPercent", config.interestFraction().multiply(new BigDecimal("100")).stripTrailingZeros().toPlainString());
         root.addProperty("personalInterestPercent", config.personalInterestFraction().multiply(new BigDecimal("100")).stripTrailingZeros().toPlainString());
+        root.addProperty("floatCentralReservePercent", config.floatCentralReserve().movePointRight(2).stripTrailingZeros().toPlainString());
+        root.addProperty("pegCentralReservePercent", config.pegCentralReserve().movePointRight(2).stripTrailingZeros().toPlainString());
+        root.addProperty("hardCentralReservePercent", config.hardCentralReserve().movePointRight(2).stripTrailingZeros().toPlainString());
         root.add("clampMin", config.clampMin() == null ? JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(config.clampMin().toPlainString()));
         root.add("clampMax", config.clampMax() == null ? JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(config.clampMax().toPlainString()));
         root.addProperty("outletRadius", config.outletRadius());
@@ -73,6 +76,9 @@ public final class ConfigJson {
         BigDecimal personalInterest = root.has("personalInterestPercent")
                 ? decimal(root.get("personalInterestPercent")).divide(new BigDecimal("100"))
                 : defaults.personalInterestFraction();
+        BigDecimal floatReserve = percentOr(root, "floatCentralReservePercent", defaults.floatCentralReserve());
+        BigDecimal pegReserve = percentOr(root, "pegCentralReservePercent", defaults.pegCentralReserve());
+        BigDecimal hardReserve = percentOr(root, "hardCentralReservePercent", defaults.hardCentralReserve());
         BigDecimal clampMin = optionalDecimal(root, "clampMin");
         BigDecimal clampMax = optionalDecimal(root, "clampMax");
         double radius = root.has("outletRadius") ? root.get("outletRadius").getAsDouble() : defaults.outletRadius();
@@ -98,7 +104,8 @@ public final class ConfigJson {
         if (currencies.isEmpty()) {
             currencies = defaults.currencies();
         }
-        BankConfig config = new BankConfig(numeraire, fee, interest, personalInterest, clampMin, clampMax, radius,
+        BankConfig config = new BankConfig(numeraire, fee, interest, personalInterest,
+                floatReserve, pegReserve, hardReserve, clampMin, clampMax, radius,
                 sidebar, bossbar, tab, hologram, join, currencies);
         config.validate();
         return config;
@@ -135,6 +142,13 @@ public final class ConfigJson {
 
     private static boolean bool(JsonObject o, String key, boolean fallback) {
         return o.has(key) ? o.get(key).getAsBoolean() : fallback;
+    }
+
+    private static BigDecimal percentOr(JsonObject root, String key, BigDecimal fallback) {
+        if (!root.has(key)) {
+            return fallback;
+        }
+        return decimal(root.get(key)).divide(new BigDecimal("100"));
     }
 
     private static BigDecimal optionalDecimal(JsonObject o, String key) {

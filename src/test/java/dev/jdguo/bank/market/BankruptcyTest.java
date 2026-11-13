@@ -26,6 +26,8 @@ class BankruptcyTest {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         books.setPersonalReserve(issuer, "diamond", BigInteger.TEN);
         assertTrue(books.createPersonalNote(issuer, "Aa", false, BigInteger.ONE).success());
+        books.creditUnbacked(issuer, "note", BigInteger.ONE);
+        assertTrue(books.depositCentralReserve(issuer, BigInteger.ONE).success());
         assertTrue(books.issuePersonalNote(issuer, BigInteger.TEN).success());
         books.creditUnbacked(buyer, "note", new BigInteger("20"));
         books.deposit(buyer, "copper", new BigInteger("1000"));
@@ -92,6 +94,8 @@ class BankruptcyTest {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         books.setPersonalReserve(issuer, "diamond", BigInteger.TEN);
         assertTrue(books.createPersonalNote(issuer, "Aa", false, BigInteger.ONE).success());
+        books.creditUnbacked(issuer, "note", BigInteger.ONE);
+        assertTrue(books.depositCentralReserve(issuer, BigInteger.ONE).success());
         assertTrue(books.issuePersonalNote(issuer, BigInteger.TEN).success());
         Redemption paid = books.redeemPersonal(issuer, "Aa", new BigInteger("6"), "diamond");
         assertTrue(paid.success(), paid.code());
