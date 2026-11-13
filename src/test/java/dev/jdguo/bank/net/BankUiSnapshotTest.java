@@ -1,5 +1,6 @@
 package dev.jdguo.bank.net;
 
+import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import dev.jdguo.bank.currency.BankConfig;
 import dev.jdguo.bank.ledger.BankBooks;
@@ -14,6 +15,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BankUiSnapshotTest {
@@ -44,5 +46,22 @@ class BankUiSnapshotTest {
         assertTrue(names.contains("银行券"));
         assertFalse(names.contains("diamond"));
         assertFalse(names.contains("copper"));
+        JsonObject diamond = null;
+        for (var row : o.getAsJsonArray("accounts")) {
+            if ("钻石".equals(row.getAsJsonObject().get("name").getAsString())) {
+                diamond = row.getAsJsonObject();
+            }
+        }
+        assertNotNull(diamond);
+        assertEquals("10", diamond.get("amount").getAsString());
+        JsonObject reserve = null;
+        for (var row : o.getAsJsonArray("central")) {
+            if ("钻石".equals(row.getAsJsonObject().get("name").getAsString())) {
+                reserve = row.getAsJsonObject();
+            }
+        }
+        assertNotNull(reserve);
+        assertEquals(dev.jdguo.bank.ledger.CompactFormat.format(books.supply("diamond").reserve()), reserve.get("reserve").getAsString());
+        assertFalse(reserve.get("reserve").getAsString().equals(reserve.get("savings").getAsString()));
     }
 }

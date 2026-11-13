@@ -131,7 +131,11 @@ public final class BankTerminalScreen extends Screen {
         super.render(context, mouseX, mouseY, delta);
         int x = this.width / 2 - 160;
         context.drawText(textRenderer, titleLine(), x, 12, 0xFFD0B060, false);
-        context.drawText(textRenderer, "M0 " + text("m0") + "   M1 " + text("m1") + "   M2 " + text("m2"), x, 24, 0xFFE6E6E6, false);
+        if ("management".equals(category) && level != Level.CONFIRM) {
+            context.drawText(textRenderer, "M0 " + text("m0") + "   M1 " + text("m1") + "   M2 " + text("m2"), x, 24, 0xFFE8E8E8, false);
+        } else if (level == Level.HOME) {
+            context.drawText(textRenderer, "状态 " + text("status"), x, 24, 0xFFB7C7B0, false);
+        }
         if (level == Level.CONFIRM) {
             context.drawText(textRenderer, "确认后才会作废「" + text("personal") + "」。返回则账目不变。", x, 80, 0xFFFF7777, false);
             return;
@@ -142,8 +146,8 @@ public final class BankTerminalScreen extends Screen {
         if (extra != null) {
             extra.render(context, mouseX, mouseY, delta);
         }
-        if (level == Level.HOME) {
-            context.drawText(textRenderer, "储蓄总池 " + text("savings") + "  状态 " + text("status"), x + 180, 70, 0xFFB7C7B0, false);
+        if (level != Level.FORM) {
+            renderFigures(context, x + 180, 70);
         } else if (level == Level.FORM) {
             context.drawText(textRenderer, pickedLabel.isBlank() ? "数量" : pickedLabel, x + 180, 52, 0xFFE8D090, false);
             if ("market".equals(category) && "swap".equals(regime)) {
@@ -154,6 +158,53 @@ public final class BankTerminalScreen extends Screen {
                 context.drawText(textRenderer, "名字", x + 180, 78, 0xFFAAAAAA, false);
             }
         }
+    }
+
+    private void renderFigures(DrawContext context, int x, int y) {
+        if ("management".equals(category)) {
+            y = line(context, "储蓄总池", x, y, 0xFFB7C7B0);
+            y = centralLines(context, x, y, "savings");
+            y = line(context, "发行准备金", x, y + 4, 0xFFD0B060);
+            centralLines(context, x, y, "reserve");
+            return;
+        }
+        if ("issuance".equals(category) && data.has("personal")) {
+            y = line(context, "「" + text("personal") + "」", x, y, 0xFFE8D090);
+            y = line(context, "流通  " + text("circulation"), x, y, 0xFFE8E8E8);
+            line(context, "央行准备金  " + text("reserve") + " / " + text("required"), x, y, 0xFFE8E8E8);
+            return;
+        }
+        if (level == Level.HOME || "savings".equals(category) || "deposit".equals(category) || "withdraw".equals(category)) {
+            y = line(context, "你的账户", x, y, 0xFFD0B060);
+            if (!data.has("accounts")) {
+                return;
+            }
+            JsonArray rows = data.getAsJsonArray("accounts");
+            for (int i = 0; i < rows.size(); i++) {
+                JsonObject row = rows.get(i).getAsJsonObject();
+                y = line(context, row.get("name").getAsString() + "  " + row.get("amount").getAsString(), x, y, 0xFFE8E8E8);
+            }
+        }
+    }
+
+    private int centralLines(DrawContext context, int x, int y, String field) {
+        if (!data.has("central")) {
+            return y;
+        }
+        JsonArray rows = data.getAsJsonArray("central");
+        for (int i = 0; i < rows.size(); i++) {
+            JsonObject row = rows.get(i).getAsJsonObject();
+            if (!row.has(field)) {
+                continue;
+            }
+            y = line(context, row.get("name").getAsString() + "  " + row.get(field).getAsString(), x, y, 0xFFE8E8E8);
+        }
+        return y;
+    }
+
+    private int line(DrawContext context, String text, int x, int y, int color) {
+        context.drawText(textRenderer, text, x, y, color, false);
+        return y + 11;
     }
 
     private String titleLine() {
