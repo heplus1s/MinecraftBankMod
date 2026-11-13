@@ -18,6 +18,8 @@ import dev.jdguo.bank.ledger.BankBooks;
 import dev.jdguo.bank.ledger.TxResult;
 import dev.jdguo.bank.market.NoteTrade;
 import dev.jdguo.bank.market.PersonalNote;
+import dev.jdguo.bank.market.Redemption;
+import dev.jdguo.bank.market.SwapTrade;
 import dev.jdguo.bank.outlet.OutletPoint;
 import dev.jdguo.bank.persistence.BankRuntime;
 import dev.jdguo.bank.text.BankPhrases;
@@ -138,6 +140,24 @@ public final class BankCommands {
                                         .then(argument("amount", StringArgumentType.word()).executes(ctx -> tradeNote(ctx.getSource(), true, StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "amount"))))))
                                 .then(literal("sell").then(argument("name", StringArgumentType.string())
                                         .then(argument("amount", StringArgumentType.word()).executes(ctx -> tradeNote(ctx.getSource(), false, StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "amount"))))))
+                                .then(literal("swap")
+                                        .then(argument("pay", StringArgumentType.string())
+                                                .then(argument("receive", StringArgumentType.string())
+                                                        .then(argument("amount", StringArgumentType.word()).executes(ctx -> swapNote(
+                                                                ctx.getSource(),
+                                                                StringArgumentType.getString(ctx, "pay"),
+                                                                StringArgumentType.getString(ctx, "receive"),
+                                                                StringArgumentType.getString(ctx, "amount")))))))
+                                .then(literal("redeem")
+                                        .then(literal("paper").then(argument("currency", StringArgumentType.word()).executes(ctx -> redeemPaper(
+                                                ctx.getSource(), StringArgumentType.getString(ctx, "currency")))))
+                                        .then(argument("name", StringArgumentType.string())
+                                                .then(argument("currency", StringArgumentType.word())
+                                                        .then(argument("amount", StringArgumentType.word()).executes(ctx -> redeemNote(
+                                                                ctx.getSource(),
+                                                                StringArgumentType.getString(ctx, "name"),
+                                                                StringArgumentType.getString(ctx, "currency"),
+                                                                StringArgumentType.getString(ctx, "amount")))))))
                                 .then(literal("coverage").requires(BankCommands::op).then(argument("ratio", StringArgumentType.word()).executes(ctx -> noteCoverage(ctx.getSource(), StringArgumentType.getString(ctx, "ratio"))))))
                         .then(literal("supply").requires(BankCommands::op).executes(ctx -> supply(ctx.getSource())))
                         .then(literal("audit").requires(BankCommands::op).executes(ctx -> {
@@ -572,6 +592,66 @@ public final class BankCommands {
         }
         BankRuntime.save();
         return ok(source, BankPhrases.noteIssued(books(), result.note(), amount));
+    }
+
+    private static int swapNote(ServerCommandSource source, String pay, String receive, String raw) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        BigInteger amount;
+        try {
+            amount = Amounts.parse(raw);
+        } catch (RuntimeException error) {
+            return fail(source, BankPhrases.amountProblem(error.getMessage()));
+        }
+        UUID player = source.getPlayerOrThrow().getUuid();
+        SwapTrade result = books().swapPersonalNotes(player, pay, receive, amount);
+        if (!result.success()) {
+            return fail(source, BankPhrases.noteRejected(result.code()));
+        }
+        BankRuntime.save();
+        return ok(source, BankPhrases.noteSwap(result, books(), player));
+    }
+
+    private static int redeemNote(ServerCommandSource source, String name, String currency, String raw) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        BigInteger amount;
+        try {
+            amount = Amounts.parse(raw);
+        } catch (RuntimeException error) {
+            return fail(source, BankPhrases.amountProblem(error.getMessage()));
+        }
+        UUID player = source.getPlayerOrThrow().getUuid();
+        Redemption result = books().redeemPersonal(player, name, amount, currency);
+        if (!result.success()) {
+            return fail(source, BankPhrases.noteRejected(result.code()));
+        }
+        BankRuntime.save();
+        return ok(source, BankPhrases.noteRedeem(result, books(), player));
+    }
+
+    private static int redeemPaper(ServerCommandSource source, String currency) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayerEntity player = source.getPlayerOrThrow();
+        ItemStack hand = player.getMainHandStack();
+        if (!NotePaper.tagged(hand)) {
+            return fail(source, BankPhrases.failure(BankPhrases.Kind.DEPOSIT, "not_note", null, null));
+        }
+        PresentedNote presented = NotePaper.read(hand);
+        if (presented == null) {
+            player.getInventory().setStack(player.getInventory().selectedSlot, ItemStack.EMPTY);
+            return fail(source, BankPhrases.failure(BankPhrases.Kind.DEPOSIT, "note_tampered", null, null));
+        }
+        if (presented.central()) {
+            return fail(source, BankPhrases.failure(BankPhrases.Kind.DEPOSIT, "not_note", null, null));
+        }
+        Redemption result = books().redeemPersonalPaper(
+                player.getUuid(), presented.personalNote(), presented.face(), BigInteger.valueOf(hand.getCount()), currency);
+        if (result.success() || "note_spent".equals(result.code()) || "note_tampered".equals(result.code())) {
+            player.getInventory().setStack(player.getInventory().selectedSlot, ItemStack.EMPTY);
+        }
+        if (!result.success()) {
+            return fail(source, "note_spent".equals(result.code()) || "note_tampered".equals(result.code())
+                    ? BankPhrases.failure(BankPhrases.Kind.DEPOSIT, result.code(), null, null)
+                    : BankPhrases.noteRejected(result.code()));
+        }
+        BankRuntime.save();
+        return ok(source, BankPhrases.noteRedeem(result, books(), player.getUuid()));
     }
 
     private static int noteRate(ServerCommandSource source, String name) throws com.mojang.brigadier.exceptions.CommandSyntaxException {

@@ -4,6 +4,8 @@ import dev.jdguo.bank.currency.CurrencyDef;
 import dev.jdguo.bank.ledger.BankBooks;
 import dev.jdguo.bank.market.PersonalMarket;
 import dev.jdguo.bank.market.PersonalNote;
+import dev.jdguo.bank.market.Redemption;
+import dev.jdguo.bank.market.SwapTrade;
 import dev.jdguo.bank.ledger.CompactFormat;
 import dev.jdguo.bank.ledger.Supply;
 import dev.jdguo.bank.ledger.TxResult;
@@ -422,6 +424,66 @@ public final class BankPhrases {
                 enVerb + " \"" + name + "\" ×" + CompactFormat.format(amount) + ", " + payEn + changeEn(copper) + balancesEn(books, player));
     }
 
+    public static Spoken noteSwap(SwapTrade trade, BankBooks books, UUID player) {
+        String extra = "";
+        String extraEn = "";
+        if (trade.central().signum() > 0) {
+            extra += "，支付银行券 ×" + CompactFormat.format(trade.central());
+            extraEn += ", paid bank notes ×" + CompactFormat.format(trade.central());
+        }
+        if (trade.copper().signum() > 0) {
+            extra += "，支付铜锭 ×" + CompactFormat.format(trade.copper());
+            extraEn += ", paid copper ×" + CompactFormat.format(trade.copper());
+        }
+        return line(Tone.GREEN,
+                "互换「" + trade.paid().name() + "」×" + CompactFormat.format(trade.paidNotes())
+                        + " 换成「" + trade.received().name() + "」×" + CompactFormat.format(trade.receivedNotes())
+                        + extra + balancesZh(books, player),
+                "Swapped \"" + trade.paid().name() + "\" ×" + CompactFormat.format(trade.paidNotes())
+                        + " for \"" + trade.received().name() + "\" ×" + CompactFormat.format(trade.receivedNotes())
+                        + extraEn + balancesEn(books, player));
+    }
+
+    public static Spoken noteRedeem(Redemption redemption, BankBooks books, UUID player) {
+        String got = redeemGotZh(redemption);
+        String gotEn = redeemGotEn(redemption);
+        String head = redemption.discounted() ? "准备金不够，按库存通兑" : "通兑";
+        String headEn = redemption.discounted() ? "Reserve was short, so redemption paid what was posted" : "Redeemed";
+        return line(redemption.discounted() ? Tone.GOLD : Tone.AQUA,
+                head + "「" + redemption.note().name() + "」×" + CompactFormat.format(redemption.retired())
+                        + "，得到" + got + balancesZh(books, player),
+                headEn + " \"" + redemption.note().name() + "\" ×" + CompactFormat.format(redemption.retired())
+                        + ", received " + gotEn + balancesEn(books, player));
+    }
+
+    private static String redeemGotZh(Redemption redemption) {
+        List<String> parts = new ArrayList<>();
+        if (redemption.diamonds().signum() > 0) {
+            parts.add("钻石 ×" + CompactFormat.format(redemption.diamonds()));
+        }
+        if (redemption.copper().signum() > 0) {
+            parts.add("铜锭 ×" + CompactFormat.format(redemption.copper()));
+        }
+        if (redemption.central().signum() > 0) {
+            parts.add("银行券 ×" + CompactFormat.format(redemption.central()));
+        }
+        return parts.isEmpty() ? "0" : String.join("，", parts);
+    }
+
+    private static String redeemGotEn(Redemption redemption) {
+        List<String> parts = new ArrayList<>();
+        if (redemption.diamonds().signum() > 0) {
+            parts.add("diamond ×" + CompactFormat.format(redemption.diamonds()));
+        }
+        if (redemption.copper().signum() > 0) {
+            parts.add("copper ×" + CompactFormat.format(redemption.copper()));
+        }
+        if (redemption.central().signum() > 0) {
+            parts.add("bank note ×" + CompactFormat.format(redemption.central()));
+        }
+        return parts.isEmpty() ? "0" : String.join(", ", parts);
+    }
+
     public static Spoken noteRejected(String code) {
         return switch (code == null ? "" : code) {
             case "name" -> line(Tone.RED, "名字最多三个汉字或英文字母。", "The name can be at most three Chinese characters or English letters.");
@@ -431,6 +493,9 @@ public final class BankPhrases {
             case "funds" -> line(Tone.RED, "你的账户余额不足。", "Your balance isn't enough.");
             case "empty" -> line(Tone.RED, "对方没有这么多券可成交。", "The other side doesn't have that many notes.");
             case "self" -> line(Tone.RED, "不能和自己买卖自己的券。", "You can't trade your own note with yourself.");
+            case "pair" -> line(Tone.RED, "不能用同一张个人银行券互换。", "Pick two different personal notes.");
+            case "quote" -> line(Tone.RED, "这个数量换不成整张，换一个数量。", "That amount doesn't buy a whole note. Try another amount.");
+            case "payout" -> line(Tone.RED, "只能兑成铜锭、钻石或银行券。", "Redemption pays copper, diamonds, or bank notes.");
             case "none" -> line(Tone.RED, "没有这张个人银行券。", "No personal note by that name.");
             case "market" -> line(Tone.RED, "中央银行券现在报不出价。", "The central note has no quote right now.");
             case "par" -> line(Tone.RED, "金额无效。", "That amount isn't valid.");

@@ -147,9 +147,16 @@ V = R + (L - R) × α / 1000
 /bank note rate <name>
 /bank note buy <name> <amount>
 /bank note sell <name> <amount>
+/bank note swap <pay> <receive> <amount>
+/bank note redeem <name> <currency> <amount>
+/bank note redeem paper <currency>
 ```
 
-`<par>` 和 `<amount>` 可以用 `1_000`、`1.5k`、`2m` 这种写法，适合箱子按钮上没有的数量。底栏「发行」用来记名和按 1、10、64、100 发行；常见开价是 1 钻、10 钻、1000 铜，名字用你游戏名里前三个汉字或字母。「交易」用来按同样的数量买卖。别的数量用上面的指令。
+`<currency>` 是 `diamond`、`copper` 或 `note`。`<amount>` 在互换里是要换入的张数。
+
+`<par>` 和 `<amount>` 可以用 `1_000`、`1.5k`、`2m` 这种写法，适合箱子按钮上没有的数量。底栏「发行」用来记名和按 1、10、64、100 发行；常见开价是 1 钻、10 钻、1000 铜，名字用你游戏名里前三个汉字或字母。「交易」可以按央行银行券买卖，也可以两张个人银行券按市价互换，或按市价通兑成铜锭、钻石、银行券。别的数量用上面的指令。
+
+个人银行券记在储蓄页上，和铜锭、钻石、央行银行券放在一起。二级买卖和互换只在账户之间过户，发行人的准备金不动。通兑才注销流通、解开锁定，并且只从已经锁定的准备金里付钱。市价高于准备金能付的部分时，按库存兑付，不会多付。发行人不能在二级市场跟自己对做，但可以通兑自己的券。
 
 手里的个人银行券也是这种纸，名字写成「个人银行券「名字」」，不会和央行银行券叠在一起。取出用柜台按钮，或：
 
@@ -380,9 +387,16 @@ These are not savings, not the personal reserve, and not the central bank note. 
 /bank note rate <name>
 /bank note buy <name> <amount>
 /bank note sell <name> <amount>
+/bank note swap <pay> <receive> <amount>
+/bank note redeem <name> <currency> <amount>
+/bank note redeem paper <currency>
 ```
 
-`<par>` and `<amount>` accept `1_000`, `1.5k`, and `2m`, for amounts the chest buttons don't show. The Issuance tab names the note and issues 1, 10, 64, or 100. Common opening prices are 1 diamond, 10 diamonds, or 1000 copper, and the name is the first three Chinese characters or letters of your player name. The personal-trading tab buys and sells those same amounts. Use the commands above for anything else.
+`<currency>` is `diamond`, `copper`, or `note`. In a swap, `<amount>` is how many notes you receive.
+
+`<par>` and `<amount>` accept `1_000`, `1.5k`, and `2m`, for amounts the chest buttons don't show. The Issuance tab names the note and issues 1, 10, 64, or 100. Common opening prices are 1 diamond, 10 diamonds, or 1000 copper, and the name is the first three Chinese characters or letters of your player name. The trading tab buys and sells against central notes, swaps two personal notes at the market cross rate, or redeems a personal note into copper, diamonds, or central notes at the live quote. Use the commands above for anything else.
+
+Personal notes sit on the savings page with the other balances. Secondary buys, sells, and swaps only transfer account holdings. The issuer's posted reserve does not move. Universal redemption is what retires circulation and unlocks the reserve, and it pays only from that posted reserve. If the market value is higher than the reserve can fund, the payout is limited to the reserve. An issuer cannot take the other side of their own note, and can still redeem it.
 
 Personal notes use the same paper. The name reads as a personal note, so it does not stack with central bank notes. Withdraw them from the counter, or with:
 

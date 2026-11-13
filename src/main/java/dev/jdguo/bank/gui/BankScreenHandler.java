@@ -14,6 +14,8 @@ import dev.jdguo.bank.ledger.TxResult;
 import dev.jdguo.bank.market.NoteTrade;
 import dev.jdguo.bank.market.PersonalMarket;
 import dev.jdguo.bank.market.PersonalNote;
+import dev.jdguo.bank.market.Redemption;
+import dev.jdguo.bank.market.SwapTrade;
 import dev.jdguo.bank.text.BankPhrases;
 import dev.jdguo.bank.text.BankTalk;
 import dev.jdguo.bank.text.Spoken;
@@ -55,7 +57,11 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
     private int checkIndex;
     private int adminIndex;
     private int marketIndex;
+    private int marketMode;
+    private int swapPayIndex;
+    private int payoutIndex;
     private boolean payeeSelf;
+    private static final int REDEEM_SLOT = 22;
     private int paintTick = -100;
 
     public BankScreenHandler(int syncId, PlayerInventory playerInventory, SimpleInventory inventory,
@@ -203,7 +209,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
 
     private boolean canDeposit(ItemStack stack) {
         if (NotePaper.tagged(stack)) {
-            return page == Page.DEPOSIT;
+            return page == Page.DEPOSIT || (page == Page.MARKET && marketMode == 2);
         }
         if (CheckItems.read(stack) != null) {
             return page == Page.CHECKS || page == Page.DEPOSIT;
@@ -225,6 +231,10 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
             return;
         }
         if (NotePaper.tagged(stack)) {
+            if (page == Page.MARKET && marketMode == 2) {
+                redeemPresentedPaper(player, stack, deposit);
+                return;
+            }
             if (page != Page.DEPOSIT) {
                 return;
             }
@@ -545,8 +555,21 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         inventory.setStack(4, marker(Items.NAME_TAG,
                 Text.literal("个人交易").formatted(Formatting.YELLOW, Formatting.BOLD),
                 List.of(Text.literal("Personal notes").formatted(Formatting.GRAY),
-                        Text.literal("特殊数量用 /bank note buy 或 sell").formatted(Formatting.DARK_GRAY)),
+                        Text.literal("买卖、互换，或按市价通兑").formatted(Formatting.DARK_GRAY),
+                        Text.literal("特殊数量用 /bank note").formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
+        inventory.setStack(10, marker(Items.EMERALD,
+                Text.literal("买卖").formatted(marketMode == 0 ? Formatting.AQUA : Formatting.WHITE),
+                List.of(Text.literal("Against central notes").formatted(Formatting.GRAY)),
+                "pn:mode:0", 1));
+        inventory.setStack(11, marker(Items.PAPER,
+                Text.literal("互换").formatted(marketMode == 1 ? Formatting.AQUA : Formatting.WHITE),
+                List.of(Text.literal("Note for note").formatted(Formatting.GRAY)),
+                "pn:mode:1", 1));
+        inventory.setStack(12, marker(Items.GOLD_INGOT,
+                Text.literal("通兑").formatted(marketMode == 2 ? Formatting.AQUA : Formatting.WHITE),
+                List.of(Text.literal("Redeem at the market price").formatted(Formatting.GRAY)),
+                "pn:mode:2", 1));
         List<PersonalNote> notes = new ArrayList<>(books.personalNotes());
         if (notes.isEmpty()) {
             inventory.setStack(28, marker(Items.BARRIER,
@@ -558,11 +581,54 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         marketIndex = Math.floorMod(marketIndex, notes.size());
         PersonalNote listed = notes.get(marketIndex);
         inventory.setStack(28, marker(Items.EMERALD,
-                Text.literal("交易 「" + listed.name() + "」").formatted(Formatting.GREEN),
+                Text.literal((marketMode == 1 ? "换入 「" : "交易 「") + listed.name() + "」").formatted(Formatting.GREEN),
                 List.of(Text.literal("Trade").formatted(Formatting.GRAY),
                         Text.literal("现价 " + CompactFormat.formatRate(books.personalDiamondPrice(listed)) + " 钻").formatted(Formatting.WHITE),
                         Text.literal("点击切换").formatted(Formatting.DARK_GRAY)),
                 "pn:cycle", 1));
+        if (marketMode == 1) {
+            swapPayIndex = Math.floorMod(swapPayIndex, notes.size());
+            if (notes.size() > 1 && swapPayIndex == marketIndex) {
+                swapPayIndex = (swapPayIndex + 1) % notes.size();
+            }
+            PersonalNote pay = notes.get(swapPayIndex);
+            inventory.setStack(19, marker(Items.PAPER,
+                    Text.literal("付出 「" + pay.name() + "」").formatted(Formatting.GOLD),
+                    List.of(Text.literal("Pay with this note").formatted(Formatting.GRAY),
+                            Text.literal("现价 " + CompactFormat.formatRate(books.personalDiamondPrice(pay)) + " 钻").formatted(Formatting.WHITE)),
+                    "pn:pay", 1));
+            for (int i = 0; i < NOTE_BUTTONS.length; i++) {
+                BigInteger amount = NOTE_BUTTONS[i];
+                inventory.setStack(29 + i, marker(Items.LIME_DYE,
+                        Text.literal("互换换入 ×" + amount).formatted(Formatting.GREEN),
+                        List.of(Text.literal("Receive ×" + amount).formatted(Formatting.GRAY)),
+                        "pn:swap:" + amount, amount.intValue()));
+            }
+            return;
+        }
+        if (marketMode == 2) {
+            String[] labels = {"兑成钻石", "兑成铜锭", "兑成银行券"};
+            String[] payouts = {"diamond", "copper", "note"};
+            inventory.setStack(19, marker(Items.GOLD_INGOT,
+                    Text.literal(labels[Math.floorMod(payoutIndex, labels.length)]).formatted(Formatting.GOLD),
+                    List.of(Text.literal("Click to change the payout").formatted(Formatting.GRAY),
+                            Text.literal("按市价，从发行人的准备金里付").formatted(Formatting.DARK_GRAY)),
+                    "pn:payout", 1));
+            for (int i = 0; i < NOTE_BUTTONS.length; i++) {
+                BigInteger amount = NOTE_BUTTONS[i];
+                inventory.setStack(29 + i, marker(Items.GOLD_NUGGET,
+                        Text.literal("通兑 ×" + amount).formatted(Formatting.YELLOW),
+                        List.of(Text.literal("From your account").formatted(Formatting.GRAY)),
+                        "pn:redeem:" + payouts[Math.floorMod(payoutIndex, payouts.length)] + ":" + amount,
+                        amount.intValue()));
+            }
+            inventory.setStack(13, marker(Items.SPECTRAL_ARROW,
+                    Text.literal("↓ 放入纸质券通兑").formatted(Formatting.GOLD),
+                    List.of(Text.literal("Copies are refused").formatted(Formatting.RED)),
+                    "noop", 1));
+            inventory.setStack(REDEEM_SLOT, ItemStack.EMPTY);
+            return;
+        }
         for (int i = 0; i < NOTE_BUTTONS.length; i++) {
             BigInteger amount = NOTE_BUTTONS[i];
             inventory.setStack(29 + i, marker(Items.LIME_DYE,
@@ -583,6 +649,62 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
             if (!books.personalNotes().isEmpty()) {
                 marketIndex++;
             }
+            return;
+        }
+        if (action.startsWith("pn:mode:")) {
+            if (marketMode == 2) {
+                returnSlot(player, REDEEM_SLOT);
+            }
+            marketMode = Integer.parseInt(action.substring("pn:mode:".length()));
+            return;
+        }
+        if ("pn:pay".equals(action)) {
+            if (!books.personalNotes().isEmpty()) {
+                swapPayIndex++;
+            }
+            return;
+        }
+        if ("pn:payout".equals(action)) {
+            payoutIndex++;
+            return;
+        }
+        if (action.startsWith("pn:swap:")) {
+            List<PersonalNote> notes = new ArrayList<>(books.personalNotes());
+            if (notes.size() < 2) {
+                tell(player, BankPhrases.noteRejected("pair"));
+                return;
+            }
+            marketIndex = Math.floorMod(marketIndex, notes.size());
+            swapPayIndex = Math.floorMod(swapPayIndex, notes.size());
+            if (swapPayIndex == marketIndex) {
+                swapPayIndex = (swapPayIndex + 1) % notes.size();
+            }
+            BigInteger amount = new BigInteger(action.substring("pn:swap:".length()));
+            SwapTrade result = books.swapPersonalNotes(uuid, notes.get(swapPayIndex).name(), notes.get(marketIndex).name(), amount);
+            if (!result.success()) {
+                tell(player, BankPhrases.noteRejected(result.code()));
+                return;
+            }
+            BankRuntime.save();
+            tell(player, BankPhrases.noteSwap(result, books, uuid));
+            return;
+        }
+        if (action.startsWith("pn:redeem:")) {
+            String[] parts = action.split(":");
+            List<PersonalNote> notes = new ArrayList<>(books.personalNotes());
+            if (notes.isEmpty()) {
+                tell(player, BankPhrases.noteRejected("none"));
+                return;
+            }
+            marketIndex = Math.floorMod(marketIndex, notes.size());
+            BigInteger amount = new BigInteger(parts[3]);
+            Redemption result = books.redeemPersonal(uuid, notes.get(marketIndex).name(), amount, parts[2]);
+            if (!result.success()) {
+                tell(player, BankPhrases.noteRejected(result.code()));
+                return;
+            }
+            BankRuntime.save();
+            tell(player, BankPhrases.noteRedeem(result, books, uuid));
             return;
         }
         if (action.startsWith("pn:create:")) {
@@ -654,14 +776,25 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                     "noop", 1));
             slot += 2;
         }
-        var own = books.personalNote(uuid);
-        if (own != null) {
-            inventory.setStack(22, marker(Items.PAPER,
-                    Text.literal("个人银行券 " + own.name()).formatted(Formatting.YELLOW),
-                    List.of(Text.literal("Personal note").formatted(Formatting.GRAY),
-                            Text.literal("现价 " + CompactFormat.formatRate(books.personalDiamondPrice(own)) + " 钻").formatted(Formatting.WHITE),
-                            Text.literal("持有 " + CompactFormat.format(books.personalHolding(own.id(), uuid))).formatted(Formatting.GRAY)),
+        int holdSlot = 19;
+        for (PersonalNote note : books.personalNotes()) {
+            BigInteger held = books.personalHolding(note.id(), uuid);
+            if (held.signum() <= 0) {
+                continue;
+            }
+            if (holdSlot > 25 && holdSlot < 28) {
+                holdSlot = 28;
+            }
+            if (holdSlot > 34) {
+                break;
+            }
+            inventory.setStack(holdSlot, marker(Items.PAPER,
+                    Text.literal("个人银行券 " + note.name() + "  " + CompactFormat.format(held)).formatted(Formatting.YELLOW),
+                    List.of(Text.literal("Book entry").formatted(Formatting.GRAY),
+                            Text.literal("现价 " + CompactFormat.formatRate(books.personalDiamondPrice(note)) + " 钻").formatted(Formatting.WHITE),
+                            Text.literal("Held " + CompactFormat.format(held)).formatted(Formatting.DARK_GRAY)),
                     "noop", 1));
+            holdSlot += 2;
         }
     }
 
@@ -990,8 +1123,49 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         return switch (page) {
             case DEPOSIT -> 22;
             case CHECKS -> 31;
+            case MARKET -> marketMode == 2 ? REDEEM_SLOT : -1;
             default -> -1;
         };
+    }
+
+    private void redeemPresentedPaper(ServerPlayerEntity player, ItemStack stack, int deposit) {
+        PresentedNote presented = NotePaper.read(stack);
+        if (presented == null) {
+            inventory.setStack(deposit, ItemStack.EMPTY);
+            tell(player, BankPhrases.failure(BankPhrases.Kind.DEPOSIT, "note_tampered", null, null));
+            return;
+        }
+        if (presented.central()) {
+            tell(player, BankPhrases.failure(BankPhrases.Kind.DEPOSIT, "not_note", null, null));
+            return;
+        }
+        String[] payouts = {"diamond", "copper", "note"};
+        String payout = payouts[Math.floorMod(payoutIndex, payouts.length)];
+        Redemption result = BankRuntime.books().redeemPersonalPaper(
+                player.getUuid(), presented.personalNote(), presented.face(), BigInteger.valueOf(stack.getCount()), payout);
+        boolean confiscate = result.success()
+                || "note_spent".equals(result.code())
+                || "note_tampered".equals(result.code());
+        if (confiscate) {
+            inventory.setStack(deposit, ItemStack.EMPTY);
+        }
+        if (!result.success()) {
+            tell(player, "note_spent".equals(result.code()) || "note_tampered".equals(result.code())
+                    ? BankPhrases.failure(BankPhrases.Kind.DEPOSIT, result.code(), null, null)
+                    : BankPhrases.noteRejected(result.code()));
+            return;
+        }
+        BankRuntime.save();
+        tell(player, BankPhrases.noteRedeem(result, BankRuntime.books(), player.getUuid()));
+    }
+
+    private void returnSlot(ServerPlayerEntity player, int slot) {
+        ItemStack stack = inventory.getStack(slot);
+        inventory.setStack(slot, ItemStack.EMPTY);
+        if (stack.isEmpty() || GuiItems.isMarker(stack)) {
+            return;
+        }
+        player.getInventory().offerOrDrop(stack);
     }
 
     private void returnDeposit(PlayerEntity player) {
