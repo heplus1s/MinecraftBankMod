@@ -18,7 +18,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * and says hello. Vanilla clients never register it, so they stay on the chest GUI.
  */
 public final class BankUiNetwork {
-    public static final int PROTOCOL = 1;
+    public static final int PROTOCOL = 2;
     public static final Identifier HELLO = new Identifier("bankmod", "hello");
     public static final Identifier ACTION = new Identifier("bankmod", "action");
     public static final Identifier SYNC = new Identifier("bankmod", "sync");

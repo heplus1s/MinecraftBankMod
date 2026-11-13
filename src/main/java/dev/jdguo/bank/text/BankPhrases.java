@@ -137,6 +137,7 @@ public final class BankPhrases {
             case "already_redeemed" -> line(Tone.RED, "这张汇票已经兑付过。", "This bill has already been paid.");
             case "wrong_payee" -> line(Tone.RED, "这张票据不是开给你的。", "This bill isn't made out to you.");
             case "denied" -> line(Tone.RED, "只有管理员能做这件事。", "Only an operator can do that.");
+            case "empty_hand" -> line(Tone.RED, "背包里没有这么多。", "Your pack doesn't have that many.");
             default -> line(Tone.RED, "办不到。", "That didn't work.");
         };
     }

@@ -28,5 +28,12 @@ class BankUiSnapshotTest {
         assertEquals("1000", o.get("issuanceDiamond").getAsString());
         assertFalse(o.get("savings").getAsString().equals(o.get("issuanceDiamond").getAsString()));
         assertTrue(o.get("m2").getAsString().length() > 0);
+        var names = new java.util.ArrayList<String>();
+        o.getAsJsonArray("currencies").forEach(row -> names.add(row.getAsJsonObject().get("name").getAsString()));
+        assertTrue(names.contains("钻石"));
+        assertTrue(names.contains("铜锭"));
+        assertTrue(names.contains("银行券"));
+        assertFalse(names.contains("diamond"));
+        assertFalse(names.contains("copper"));
     }
 }

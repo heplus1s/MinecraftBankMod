@@ -1,5 +1,7 @@
 package dev.jdguo.bank.net;
 
+import dev.jdguo.bank.gui.BankMenus;
+import dev.jdguo.bank.gui.BankScreenHandler;
 import dev.jdguo.bank.instruments.CheckItems;
 import dev.jdguo.bank.instruments.NotePaper;
 import dev.jdguo.bank.instruments.PaperTake;
@@ -40,6 +42,10 @@ public final class BankUiService {
             return;
         }
         String[] parts = raw.trim().split(" ", 6);
+        if ("chest".equals(parts[0])) {
+            openChest(player, session, parts);
+            return;
+        }
         BankBooks books = BankRuntime.books();
         switch (parts[0]) {
             case "page" -> page(player, session, parts);
@@ -48,6 +54,7 @@ public final class BankUiService {
             case "exchange" -> exchange(player, books, parts);
             case "check" -> check(player, books, parts);
             case "deposit-held" -> depositHeld(player, books);
+            case "deposit-transfer" -> depositTransfer(player, books, parts);
             case "note-create" -> create(player, books, parts);
             case "note-issue" -> issue(player, books, parts, false);
             case "note-unbacked" -> issue(player, books, parts, true);
@@ -74,6 +81,19 @@ public final class BankUiService {
         if (BankUiNetwork.session(player) != null) {
             BankUiNetwork.sync(player);
         }
+    }
+
+    private static void openChest(ServerPlayerEntity player, BankUiNetwork.Session session, String[] parts) {
+        BankScreenHandler.Page page = BankScreenHandler.Page.SAVINGS;
+        if (parts.length > 1 && "deposit".equals(parts[1])) {
+            page = BankScreenHandler.Page.DEPOSIT;
+        } else if (parts.length > 1 && "withdraw".equals(parts[1])) {
+            page = BankScreenHandler.Page.WITHDRAW;
+        }
+        String outlet = session.outlet;
+        boolean admin = session.admin;
+        BankUiNetwork.forget(player);
+        BankMenus.openChest(player, outlet, admin, page);
     }
 
     private static void page(ServerPlayerEntity player, BankUiNetwork.Session session, String[] parts) {
@@ -199,6 +219,83 @@ public final class BankUiService {
             }
         }
         BankRuntime.save();
+    }
+
+    /** Move a typed quantity of one currency from the backpack into the account. */
+    private static void depositTransfer(ServerPlayerEntity player, BankBooks books, String[] parts) {
+        if (parts.length < 3) {
+            return;
+        }
+        var def = books.currency(parts[1]);
+        if (def == null) {
+            return;
+        }
+        BigInteger amount = amount(player, parts[2], null, null);
+        if (amount == null || amount.signum() <= 0) {
+            return;
+        }
+        if (def.kind() == dev.jdguo.bank.currency.CurrencyKind.COMMODITY) {
+            int need = amount.min(BigInteger.valueOf(Integer.MAX_VALUE)).intValue();
+            int taken = takeCommodity(player, def.itemId(), need);
+            if (taken <= 0) {
+                tell(player, BankPhrases.failure(BankPhrases.Kind.DEPOSIT, "empty_hand", def.id(), null));
+                return;
+            }
+            TxResult result = books.deposit(player.getUuid(), def.id(), BigInteger.valueOf(taken));
+            if (!result.success()) {
+                give(player, def.id(), BigInteger.valueOf(taken));
+                tell(player, BankPhrases.failure(BankPhrases.Kind.DEPOSIT, result.code(), def.id(), null));
+                return;
+            }
+            BankRuntime.save();
+            tell(player, BankPhrases.deposit(books, player.getUuid(), def.id(), result.amount()));
+            return;
+        }
+        BigInteger left = amount;
+        BigInteger deposited = BigInteger.ZERO;
+        var inventory = player.getInventory();
+        for (int slot = 0; slot < inventory.size() && left.signum() > 0; slot++) {
+            ItemStack stack = inventory.getStack(slot);
+            if (!NotePaper.tagged(stack)) {
+                continue;
+            }
+            PresentedNote presented = NotePaper.read(stack);
+            if (presented == null || !presented.central()) {
+                continue;
+            }
+            BigInteger face = presented.face().multiply(BigInteger.valueOf(stack.getCount()));
+            if (face.compareTo(left) > 0) {
+                continue;
+            }
+            TxResult result = books.redeemPaper(player.getUuid(), presented, BigInteger.valueOf(stack.getCount()));
+            if (!result.success()) {
+                continue;
+            }
+            inventory.setStack(slot, ItemStack.EMPTY);
+            left = left.subtract(result.amount());
+            deposited = deposited.add(result.amount());
+        }
+        if (deposited.signum() == 0) {
+            tell(player, BankPhrases.failure(BankPhrases.Kind.DEPOSIT, "empty_hand", "note", null));
+            return;
+        }
+        BankRuntime.save();
+        tell(player, BankPhrases.depositPaper(books, player.getUuid(), "银行券", "bank note", deposited, left.signum() > 0));
+    }
+
+    private static int takeCommodity(ServerPlayerEntity player, String itemId, int need) {
+        int left = need;
+        var inventory = player.getInventory();
+        for (int slot = 0; slot < inventory.size() && left > 0; slot++) {
+            ItemStack stack = inventory.getStack(slot);
+            if (stack.isEmpty() || !itemId.equals(Registries.ITEM.getId(stack.getItem()).toString())) {
+                continue;
+            }
+            int take = Math.min(left, stack.getCount());
+            stack.decrement(take);
+            left -= take;
+        }
+        return need - left;
     }
 
     private static void create(ServerPlayerEntity player, BankBooks books, String[] parts) {

@@ -1,6 +1,8 @@
 package dev.jdguo.bank.net;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import dev.jdguo.bank.currency.CurrencyDef;
 import dev.jdguo.bank.ledger.BankBooks;
 import dev.jdguo.bank.market.PersonalNote;
 
@@ -25,6 +27,24 @@ public final class BankUiSnapshot {
         o.addProperty("savings", books.savingsPool("note").toString());
         o.addProperty("issuanceDiamond", books.supply("diamond").reserve().toString());
         o.addProperty("vaultDiamond", books.supply("diamond").depositVault().toString());
+        JsonArray currencies = new JsonArray();
+        for (CurrencyDef def : books.currencies()) {
+            JsonObject row = new JsonObject();
+            row.addProperty("id", def.id());
+            row.addProperty("name", def.name());
+            row.addProperty("balance", books.balance(player, def.id()).toString());
+            currencies.add(row);
+        }
+        o.add("currencies", currencies);
+        JsonArray notes = new JsonArray();
+        for (PersonalNote note : books.personalNotes()) {
+            JsonObject row = new JsonObject();
+            row.addProperty("id", note.id().toString());
+            row.addProperty("name", note.name());
+            row.addProperty("balance", books.personalHolding(note.id(), player).toString());
+            notes.add(row);
+        }
+        o.add("notes", notes);
         PersonalNote own = books.personalNote(player);
         if (own != null) {
             o.addProperty("personal", own.name());

@@ -11,7 +11,7 @@ import net.minecraft.util.Identifier;
 
 /** Client half of the optional UI. It only speaks if this jar is installed. */
 public final class BankUiClient implements ClientModInitializer {
-    static final int PROTOCOL = 1;
+    static final int PROTOCOL = 2;
     static final Identifier HELLO = new Identifier("bankmod", "hello");
     static final Identifier ACTION = new Identifier("bankmod", "action");
     static final Identifier SYNC = new Identifier("bankmod", "sync");

@@ -25,10 +25,17 @@ public final class BankMenus {
             BankUiNetwork.open(player, titleName, remoteAdmin);
             return;
         }
+        openChest(player, titleName, remoteAdmin, remoteAdmin
+                ? BankScreenHandler.Page.MANAGEMENT
+                : BankScreenHandler.Page.SAVINGS);
+    }
+
+    /** Vanilla 9×6 chest, opened on a chosen page. Used directly and by the optional UI for item moves. */
+    public static void openChest(ServerPlayerEntity player, String titleName, boolean remoteAdmin, BankScreenHandler.Page page) {
         SimpleInventory inventory = new SimpleInventory(54);
         Text title = Text.literal("中央银行 · " + titleName).formatted(Formatting.AQUA);
         player.openHandledScreen(new SimpleNamedScreenHandlerFactory(
-                (syncId, playerInventory, unused) -> new BankScreenHandler(syncId, playerInventory, inventory, titleName, remoteAdmin),
+                (syncId, playerInventory, unused) -> new BankScreenHandler(syncId, playerInventory, inventory, titleName, remoteAdmin, page),
                 title));
     }
 }

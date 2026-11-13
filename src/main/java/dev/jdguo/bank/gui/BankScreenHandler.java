@@ -69,11 +69,19 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
 
     public BankScreenHandler(int syncId, PlayerInventory playerInventory, SimpleInventory inventory,
                              String outletName, boolean remoteAdmin) {
+        this(syncId, playerInventory, inventory, outletName, remoteAdmin, Page.SAVINGS);
+    }
+
+    public BankScreenHandler(int syncId, PlayerInventory playerInventory, SimpleInventory inventory,
+                             String outletName, boolean remoteAdmin, Page initial) {
         super(ScreenHandlerType.GENERIC_9X6, syncId, playerInventory, inventory, 6);
         this.inventory = inventory;
         this.outletName = outletName;
         this.remoteAdmin = remoteAdmin;
         this.owner = (ServerPlayerEntity) playerInventory.player;
+        if (initial != null) {
+            this.page = initial;
+        }
         List<CurrencyDef> currencies = new ArrayList<>(BankRuntime.books().currencies());
         if (currencies.size() > 1) {
             receiveIndex = 1;
@@ -85,7 +93,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                 break;
             }
         }
-        if (remoteAdmin) {
+        if (remoteAdmin && this.page == Page.SAVINGS) {
             this.page = Page.MANAGEMENT;
         }
         paint();
