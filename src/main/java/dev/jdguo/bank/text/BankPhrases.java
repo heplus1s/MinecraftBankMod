@@ -222,16 +222,20 @@ public final class BankPhrases {
             String bookZh = def.kind() == dev.jdguo.bank.currency.CurrencyKind.COMMODITY
                     ? "  发行准备金 " + CompactFormat.format(supply.reserve())
                             + "  储蓄保管 " + CompactFormat.format(supply.depositVault())
+                            + "  储蓄总池 " + CompactFormat.format(books.savingsPool(def.id()))
                     : "  M0 " + CompactFormat.format(books.centralM0())
                             + "  M1 " + CompactFormat.format(books.centralM1())
                             + "  M2 " + CompactFormat.formatRate(books.centralM2())
+                            + "  储蓄总池 " + CompactFormat.format(books.savingsPool(def.id()))
                             + "  尚可发行 " + CompactFormat.format(books.backedRoom(def));
             String bookEn = def.kind() == dev.jdguo.bank.currency.CurrencyKind.COMMODITY
                     ? "  issuance " + CompactFormat.format(supply.reserve())
                             + "  vault " + CompactFormat.format(supply.depositVault())
+                            + "  savings pool " + CompactFormat.format(books.savingsPool(def.id()))
                     : "  M0 " + CompactFormat.format(books.centralM0())
                             + "  M1 " + CompactFormat.format(books.centralM1())
                             + "  M2 " + CompactFormat.formatRate(books.centralM2())
+                            + "  savings pool " + CompactFormat.format(books.savingsPool(def.id()))
                             + "  issuable " + CompactFormat.format(books.backedRoom(def));
             lines.add(line(Tone.GRAY,
                     nameZh(books, def.id())

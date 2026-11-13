@@ -883,7 +883,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                         Text.literal("手续费 " + percent(books.feeFraction())).formatted(Formatting.GRAY),
                         Text.literal("央行年利率 " + percent(books.interestFraction())).formatted(Formatting.GOLD),
                         Text.literal("个人银行券年利率 " + percent(books.personalInterestFraction())).formatted(Formatting.GRAY),
-                        Text.literal("利息池 " + CompactFormat.format(books.interestPool("note"))).formatted(Formatting.WHITE)),
+                        Text.literal("储蓄总池 " + CompactFormat.format(books.savingsPool("note"))).formatted(Formatting.WHITE)),
                 "noop", 1));
         int slot = 10;
         for (CurrencyDef def : books.currencies()) {
@@ -896,11 +896,14 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
             if (def.kind() == CurrencyKind.COMMODITY) {
                 lore.add(Text.literal("发行准备金 " + CompactFormat.format(supply.reserve())).formatted(Formatting.WHITE));
                 lore.add(Text.literal("储蓄保管 " + CompactFormat.format(supply.depositVault())).formatted(Formatting.WHITE));
-                lore.add(Text.literal("Issuance reserves / deposit vault").formatted(Formatting.DARK_GRAY));
+                lore.add(Text.literal("储蓄总池 " + CompactFormat.format(books.savingsPool(def.id()))).formatted(Formatting.WHITE));
+                lore.add(Text.literal("手续费留存 " + CompactFormat.format(books.interestPool(def.id()))).formatted(Formatting.GRAY));
+                lore.add(Text.literal("Issuance reserves stay out of the savings pool").formatted(Formatting.DARK_GRAY));
             } else {
                 lore.add(Text.literal("M0 " + CompactFormat.format(books.centralM0())).formatted(Formatting.WHITE));
                 lore.add(Text.literal("M1 " + CompactFormat.format(books.centralM1())).formatted(Formatting.WHITE));
                 lore.add(Text.literal("M2 " + CompactFormat.formatRate(books.centralM2())).formatted(Formatting.WHITE));
+                lore.add(Text.literal("储蓄总池 " + CompactFormat.format(books.savingsPool(def.id()))).formatted(Formatting.WHITE));
                 lore.add(Text.literal("尚可发行 " + CompactFormat.format(books.backedRoom(def))).formatted(Formatting.YELLOW));
                 lore.add(Text.literal("Issuable amount is not part of M2").formatted(Formatting.DARK_GRAY));
             }
@@ -934,8 +937,8 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         inventory.setStack(40, marker(Items.CLOCK,
                 Text.literal("央行年利率 " + percent(books.interestFraction())).formatted(Formatting.GOLD),
                 List.of(Text.literal("个人银行券年利率 " + percent(books.personalInterestFraction())).formatted(Formatting.GRAY),
-                        Text.literal("利息池 银行券 " + CompactFormat.format(books.interestPool("note"))).formatted(Formatting.WHITE),
-                        Text.literal("Interest pool is fee income, not reserves").formatted(Formatting.DARK_GRAY)),
+                        Text.literal("储蓄总池 银行券 " + CompactFormat.format(books.savingsPool("note"))).formatted(Formatting.WHITE),
+                        Text.literal("利息从手续费留存里付，不动发行准备金").formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
         paintCentralIssuance(books);
     }

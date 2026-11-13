@@ -73,7 +73,11 @@ public final class BankBooks {
     private BigDecimal interestFraction = new BigDecimal("0.02");
     /** Annual rate on each personal note's circulation. Default is zero. */
     private BigDecimal personalInterestFraction = BigDecimal.ZERO;
-    /** Retained fee income. Not issuance reserves and not the savings vault. */
+    /**
+     * Retained central-bank fee income, the equity slice of {@link #savingsPool}.
+     * Not issuance reserves, and not player 储蓄保管. Note interest is paid from the note slice.
+     * Persisted as {@code interestPool} so older worlds keep the same balances.
+     */
     private final Map<String, BigInteger> interestPool = new LinkedHashMap<>();
     /** Sub-note remainder carried until it becomes a whole bank note. */
     private final Map<UUID, BigDecimal> interestDust = new LinkedHashMap<>();
@@ -783,8 +787,25 @@ public final class BankBooks {
         this.personalInterestFraction = personalInterestFraction;
     }
 
+    /** Retained fee slice. Central interest is paid from the note balance of this slice. */
     public BigInteger interestPool(String currency) {
         return interestPool.getOrDefault(currency, BigInteger.ZERO);
+    }
+
+    /**
+     * 储蓄总池. Player savings plus retained central fees.
+     * Commodities: deposit vault + retained fees. Notes: book-entry deposits + retained fees.
+     * Paper (M0) is public cash, not part of this pool. Issuance reserves are not included.
+     */
+    public BigInteger savingsPool(String currency) {
+        CurrencyDef def = need(currency);
+        if (def == null) {
+            return BigInteger.ZERO;
+        }
+        BigInteger custody = def.kind() == CurrencyKind.COMMODITY
+                ? supply(currency).depositVault()
+                : claimsOf(currency);
+        return custody.add(interestPool(currency));
     }
 
     public long lastInterestDay() { return lastInterestDay; }
@@ -1700,7 +1721,7 @@ public final class BankBooks {
 
     /**
      * The payer gives up {@code gross}. Only the pre-fee principal enters issuance reserves or is
-     * extinguished as convertibility. The fee is retained in the interest pool.
+     * extinguished as convertibility. The fee enters the retained slice of the savings total pool.
      */
     private void takePayment(UUID player, CurrencyDef pay, BigInteger gross, BigInteger fee) {
         debitBalance(player, pay.id(), gross);

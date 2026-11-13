@@ -78,6 +78,8 @@ class InterestTest {
         assertEquals(new BigInteger("2"), day.credits().get(0).amount());
         assertEquals(issuance, books.supply("diamond").reserve());
         assertEquals(new BigInteger("18"), books.interestPool("note"));
+        assertEquals(books.centralDeposits().add(books.interestPool("note")), books.savingsPool("note"));
+        assertEquals(books.centralM0().add(books.centralDeposits()), books.centralM1());
         books.checkInvariants();
     }
 
@@ -126,8 +128,10 @@ class InterestTest {
         assertTrue(bought.success(), bought.code());
         assertEquals(new BigInteger("51"), bought.amount());
         assertEquals(BigInteger.ONE, books.interestPool("note"));
+        assertEquals(BigInteger.ONE, books.savingsPool("note"));
         assertEquals(BigInteger.ZERO, books.balance(payer, "note"));
         assertEquals(BigInteger.ZERO, books.centralM1());
+        assertEquals(books.centralM0().add(books.centralDeposits()), books.centralM1());
         assertEquals(diamonds.subtract(new BigInteger("50")), books.supply("diamond").reserve());
 
         BankBooks copperBooks = BankBooks.create(BankConfig.defaults());
@@ -135,6 +139,8 @@ class InterestTest {
         TxResult copper = copperBooks.exchange(payer, "copper", "diamond", BigInteger.ONE);
         assertTrue(copper.success(), copper.code());
         assertEquals(new BigInteger("20"), copperBooks.interestPool("copper"));
+        assertEquals(copperBooks.supply("copper").depositVault().add(new BigInteger("20")), copperBooks.savingsPool("copper"));
+        assertEquals(new BigInteger("3980"), copperBooks.supply("copper").depositVault());
         assertEquals(new BigInteger("1001000"), copperBooks.supply("copper").reserve());
         copperBooks.checkInvariants();
         books.checkInvariants();
