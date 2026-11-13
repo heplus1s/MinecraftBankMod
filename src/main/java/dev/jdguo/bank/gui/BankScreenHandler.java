@@ -536,7 +536,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                     "noop", 1));
             return;
         }
-        inventory.setStack(16, marker(Items.NAME_TAG,
+        inventory.setStack(13, marker(Items.NAME_TAG,
                 Text.literal(regimeLabel(own)).formatted(Formatting.AQUA),
                 List.of(Text.literal("开价 " + CompactFormat.format(own.par()) + " " + anchorLabel(own.reserveCurrency())).formatted(Formatting.WHITE),
                         Text.literal("Par " + CompactFormat.format(own.par()) + " " + anchorEn(own.reserveCurrency())).formatted(Formatting.DARK_GRAY)),
@@ -554,9 +554,10 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                             Text.literal("Unbacked. No reserve is locked.").formatted(Formatting.DARK_GRAY)),
                     "pn:unbacked:" + amount, amount.intValue()));
         }
-        inventory.setStack(25, marker(Items.BARRIER,
+        inventory.setStack(8, marker(Items.BARRIER,
                 Text.literal("宣告破产").formatted(Formatting.DARK_RED),
-                List.of(Text.literal("Voids the note. History stays.").formatted(Formatting.GRAY)),
+                List.of(Text.literal("Voids the note. History stays.").formatted(Formatting.GRAY),
+                        Text.literal("离开发行按钮，避免误点").formatted(Formatting.DARK_RED)),
                 "pn:bankrupt", 1));
     }
 
