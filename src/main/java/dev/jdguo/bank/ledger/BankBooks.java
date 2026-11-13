@@ -76,6 +76,8 @@ public final class BankBooks {
     private boolean globalBossbar = true;
     private boolean globalTab = true;
     private boolean globalHologram = true;
+    /** Set while reading a snapshot that still mixes savings and issuance in one reserve. */
+    private boolean migrateVaults;
     private boolean joinMessage = true;
     private BigDecimal personalNoteCoverage = BigDecimal.ONE;
     private long clock;
@@ -98,8 +100,7 @@ public final class BankBooks {
         books.joinMessage = config.joinMessage();
         for (CurrencyDef def : config.currencies()) {
             books.alphas.put(def.id(), def.alphaPermille());
-            books.supplies.put(def.id(), new Supply(
-                    def.id(), def.initialReserve(), def.initialLiability(), def.initialLiability(), BigInteger.ZERO));
+            books.supplies.put(def.id(), openingSupply(def));
         }
         return books;
     }
@@ -116,8 +117,7 @@ public final class BankBooks {
             return TxResult.fail("bad_amount", "Invalid amount");
         }
         creditBalance(player, currency, amount);
-        supply(currency).addReserve(amount);
-        supply(currency).addLiability(amount);
+        addSavings(currency, amount);
         return TxResult.ok(amount, "Deposited " + label(def) + " " + CompactFormat.format(amount));
     }
 
@@ -136,7 +136,7 @@ public final class BankBooks {
             return withdrawDiamond(player, amount, partial);
         }
         BigInteger bal = balance(player, currency);
-        BigInteger free = supply(currency).freeReserve();
+        BigInteger free = supply(currency).depositVault();
         BigInteger give = amount;
         if (partial) {
             give = amount.min(bal).min(free).min(MAX_PHYSICAL);
@@ -158,15 +158,14 @@ public final class BankBooks {
             }
         }
         debitBalance(player, currency, give);
-        supply(currency).addReserve(give.negate());
-        supply(currency).addLiability(give.negate());
-        String extra = partial && give.compareTo(amount) < 0 ? " (short: vault or stack limit)" : "";
+        addSavings(currency, give.negate());
+        String extra = partial && give.compareTo(amount) < 0 ? " (short: savings vault)" : "";
         return TxResult.ok(give, "Withdrew " + label(def) + " " + CompactFormat.format(give) + extra);
     }
 
     /**
-     * Pays diamonds from the vault, and the missing or fractional part in copper at
-     * {@link #copperPerDiamond()} (1,000 copper per diamond when the books are freshly opened).
+     * Savings withdrawals pay only from the deposit vault. They do not draw issuance reserves
+     * and do not make up a shortfall with issuance copper.
      */
     private TxResult withdrawDiamond(UUID player, BigInteger amount, boolean partial) {
         if (!partial && amount.compareTo(MAX_PHYSICAL) > 0) {
@@ -177,30 +176,16 @@ public final class BankBooks {
         if (want.signum() <= 0 || (!partial && bal.compareTo(amount) < 0)) {
             return TxResult.fail("insufficient_funds", "Not enough balance");
         }
-        BigInteger diamonds = want.min(supply("diamond").freeReserve());
-        BigInteger shortfall = want.subtract(diamonds);
-        BigInteger rate = copperPerDiamond();
-        BigInteger copper = shortfall.multiply(rate);
-        if (copper.compareTo(bankStock("copper")) > 0) {
-            if (!partial) {
-                return TxResult.fail("insufficient_reserves", "The vault doesn't have enough to pay this out");
-            }
-            BigInteger affordable = bankStock("copper").divide(rate);
-            copper = affordable.multiply(rate);
-            shortfall = affordable;
-            want = diamonds.add(shortfall);
-            if (want.signum() <= 0) {
-                return TxResult.fail("insufficient_reserves", "The vault doesn't have enough to pay this out");
-            }
+        BigInteger diamonds = want.min(supply("diamond").depositVault());
+        if (diamonds.compareTo(want) < 0 && !partial) {
+            return TxResult.fail("insufficient_reserves", "The savings vault doesn't have enough to pay this out");
         }
-        debitBalance(player, "diamond", want);
-        supply("diamond").addReserve(diamonds.negate());
-        supply("diamond").addLiability(want.negate());
-        if (copper.signum() > 0) {
-            payCopperFromVault(copper);
+        if (diamonds.signum() <= 0) {
+            return TxResult.fail("insufficient_reserves", "The savings vault doesn't have enough to pay this out");
         }
-        return TxResult.ok(diamonds, copper, "Withdrew diamonds " + CompactFormat.format(diamonds)
-                + (copper.signum() > 0 ? " change copper " + CompactFormat.format(copper) : ""));
+        debitBalance(player, "diamond", diamonds);
+        addSavings("diamond", diamonds.negate());
+        return TxResult.ok(diamonds, "Withdrew diamonds " + CompactFormat.format(diamonds));
     }
 
     /**
@@ -326,32 +311,23 @@ public final class BankBooks {
         if (copper.signum() < 0) {
             copper = BigInteger.ZERO;
         }
-        BigInteger headroom = supply("diamond").freeReserve().subtract(claimsOf("diamond"));
-        if (headroom.signum() < 0) {
-            headroom = BigInteger.ZERO;
-        }
+        BigInteger headroom = supply("diamond").freeReserve();
         if (whole.compareTo(headroom) > 0) {
             copper = copper.add(whole.subtract(headroom).multiply(rate));
             whole = headroom;
         }
+        if (copper.compareTo(supply("copper").freeReserve()) > 0) {
+            copper = supply("copper").freeReserve();
+        }
         supply("note").addLiability(notes.negate());
         if (whole.signum() > 0) {
-            creditBalance(player, "diamond", whole);
-            supply("diamond").addLiability(whole);
+            payIssuanceIntoSavings(player, "diamond", whole);
         }
         if (copper.signum() > 0) {
-            creditBalance(player, "copper", copper);
-            supply("copper").addLiability(copper);
+            payIssuanceIntoSavings(player, "copper", copper);
         }
         return TxResult.ok(whole, copper, "Redeemed notes for " + CompactFormat.format(whole) + " diamonds"
                 + (copper.signum() > 0 ? " change " + CompactFormat.format(copper) + " copper" : ""));
-    }
-
-    private void payCopperFromVault(BigInteger copper) {
-        Supply self = supply("copper");
-        self.addReserve(copper.negate());
-        self.setAnchor(self.anchor().subtract(copper));
-        self.addLiability(copper.negate());
     }
 
     public TxResult exchange(UUID player, String payId, String receiveId, BigInteger receiveQty) {
@@ -372,26 +348,6 @@ public final class BankBooks {
         if (frozen && pay.kind() == CurrencyKind.VIRTUAL && recv.kind() == CurrencyKind.COMMODITY) {
             return TxResult.fail("frozen", "Note redemption is halted");
         }
-        BigInteger deliver = receiveQty;
-        BigInteger copperChange = BigInteger.ZERO;
-        if ("diamond".equals(receiveId)) {
-            BigInteger claims = claimsOf(receiveId);
-            BigInteger headroom = supply(receiveId).freeReserve().subtract(claims);
-            if (headroom.signum() < 0) {
-                headroom = BigInteger.ZERO;
-            }
-            deliver = receiveQty.min(headroom);
-            copperChange = receiveQty.subtract(deliver).multiply(copperPerDiamond());
-        } else if (recv.kind() == CurrencyKind.COMMODITY) {
-            BigInteger claims = claimsOf(receiveId);
-            BigInteger headroom = supply(receiveId).freeReserve().subtract(claims);
-            if (headroom.signum() < 0) {
-                headroom = BigInteger.ZERO;
-            }
-            if (receiveQty.compareTo(headroom) > 0) {
-                return TxResult.fail("insufficient_reserves", "The vault can still pay " + CompactFormat.format(headroom) + " " + label(recv));
-            }
-        }
         BigInteger cost = cost(payId, receiveId, receiveQty);
         if (cost == null) {
             return TxResult.fail("no_market", "That currency has collapsed. No quote.");
@@ -399,15 +355,36 @@ public final class BankBooks {
         if (balance(player, payId).compareTo(cost) < 0) {
             return TxResult.fail("insufficient_funds", "Not enough balance. Need " + label(pay) + " " + CompactFormat.format(cost));
         }
-        debitBalance(player, payId, cost);
-        supply(payId).addLiability(cost.negate());
+        BigInteger deliver = receiveQty;
+        BigInteger copperChange = BigInteger.ZERO;
+        if ("diamond".equals(receiveId)) {
+            BigInteger headroom = supply(receiveId).freeReserve();
+            deliver = receiveQty.min(headroom);
+            copperChange = receiveQty.subtract(deliver).multiply(copperPerDiamond());
+            BigInteger copperStock = supply("copper").freeReserve();
+            if (pay.kind() == CurrencyKind.COMMODITY && "copper".equals(payId)) {
+                copperStock = copperStock.add(cost);
+            }
+            if (copperChange.compareTo(copperStock) > 0) {
+                BigInteger affordable = copperStock.divide(copperPerDiamond());
+                copperChange = affordable.multiply(copperPerDiamond());
+                deliver = receiveQty.subtract(affordable).min(headroom);
+                if (deliver.signum() < 0) {
+                    deliver = BigInteger.ZERO;
+                }
+            }
+        } else if (recv.kind() == CurrencyKind.COMMODITY) {
+            BigInteger headroom = supply(receiveId).freeReserve();
+            if (receiveQty.compareTo(headroom) > 0) {
+                return TxResult.fail("insufficient_reserves", "Issuance reserves can still pay " + CompactFormat.format(headroom) + " " + label(recv));
+            }
+        }
+        takePaymentIntoIssuance(player, pay, cost);
         if (deliver.signum() > 0) {
-            creditBalance(player, receiveId, deliver);
-            supply(receiveId).addLiability(deliver);
+            payIssuanceIntoSavings(player, receiveId, deliver);
         }
         if (copperChange.signum() > 0) {
-            creditBalance(player, "copper", copperChange);
-            supply("copper").addLiability(copperChange);
+            payIssuanceIntoSavings(player, "copper", copperChange);
         }
         return TxResult.ok(cost, copperChange, "Exchanged " + CompactFormat.format(cost) + " " + label(pay)
                 + " for " + CompactFormat.format(deliver) + " " + label(recv)
@@ -512,7 +489,11 @@ public final class BankBooks {
             return TxResult.fail("insufficient_funds", "Not enough balance");
         }
         Supply self = supply(currency);
-        BigInteger unbacked = self.liability().subtract(self.reserve());
+        BigInteger backedOutstanding = self.reserve().subtract(self.anchor());
+        if (backedOutstanding.signum() < 0) {
+            backedOutstanding = BigInteger.ZERO;
+        }
+        BigInteger unbacked = self.liability().subtract(backedOutstanding);
         if (unbacked.signum() < 0) {
             unbacked = BigInteger.ZERO;
         }
@@ -559,9 +540,11 @@ public final class BankBooks {
         Supply self = supply(id);
         BigDecimal alpha = alphaOf(id);
         if (def.kind() == CurrencyKind.COMMODITY) {
-            return FxMath.commodityAbundance(self.reserve(), self.liability(), alpha);
+            return FxMath.commodityAbundance(self.reserve(), self.reserve(), alpha);
         }
-        BigDecimal scale = FxMath.virtualScale(self.reserve(), self.liability(), alpha);
+        // Public M1 sits in liability. The opening seed in anchor/reserve keeps the peg at par
+        // before anyone holds a note, without counting that seed as money in circulation.
+        BigDecimal scale = FxMath.virtualScale(self.reserve(), self.liability().add(self.anchor()), alpha);
         if (scale == null || def.backing() == null) {
             return null;
         }
@@ -596,10 +579,14 @@ public final class BankBooks {
 
     public BigDecimal reserveRatio(String id) {
         Supply self = supplies.get(id);
-        if (self == null || self.liability().signum() <= 0) {
+        if (self == null) {
             return null;
         }
-        return new BigDecimal(self.reserve()).divide(new BigDecimal(self.liability()), FxMath.MC);
+        BigInteger denom = self.liability().add(self.anchor());
+        if (denom.signum() <= 0) {
+            return null;
+        }
+        return new BigDecimal(self.reserve()).divide(new BigDecimal(denom), FxMath.MC);
     }
 
     /** Par value of the backing vault divided by virtual liabilities. Null when there is no backing. */
@@ -769,9 +756,8 @@ public final class BankBooks {
     public void setJoinMessage(boolean v) { this.joinMessage = v; }
 
     /**
-     * Sets the opening stock of one currency. Player savings and outstanding bills stay.
-     * The vault moves by the same amount as the opening anchor, and liabilities stay
-     * {@code anchor + claims}, so the quote follows the new books instead of a leftover seed.
+     * Adjusts issuance reserves only. Savings balances and the deposit vault stay put.
+     * For the central note, this moves the FX seed, not public M1.
      */
     public void setOpeningReserve(String currency, BigInteger opening) {
         if (need(currency) == null) {
@@ -781,7 +767,6 @@ public final class BankBooks {
             throw new IllegalArgumentException("negative");
         }
         Supply self = supply(currency);
-        BigInteger claims = claimsOf(currency);
         BigInteger newReserve = self.reserve().add(opening.subtract(self.anchor()));
         if (newReserve.signum() < 0) {
             throw new IllegalArgumentException("negative");
@@ -790,7 +775,6 @@ public final class BankBooks {
             throw new IllegalArgumentException("below_locked");
         }
         self.setAnchor(opening);
-        self.setLiability(opening.add(claims));
         self.setReserve(newReserve);
     }
 
@@ -1453,9 +1437,45 @@ public final class BankBooks {
             return;
         }
         creditBalance(player, currency, amount);
-        supply(currency).addLiability(amount);
         if (need(currency).kind() == CurrencyKind.COMMODITY) {
-            supply(currency).addReserve(amount);
+            addSavings(currency, amount);
+        } else {
+            supply(currency).addLiability(amount);
+        }
+    }
+
+    private static Supply openingSupply(CurrencyDef def) {
+        BigInteger seed = def.initialReserve() == null ? BigInteger.ZERO : def.initialReserve();
+        return new Supply(def.id(), seed, BigInteger.ZERO, seed, BigInteger.ZERO);
+    }
+
+    /** Savings custody only. Issuance reserves are not touched. */
+    private void addSavings(String currency, BigInteger delta) {
+        Supply self = supply(currency);
+        self.addDepositVault(delta);
+        self.addLiability(delta);
+    }
+
+    /** Commodity savings leave the deposit vault and join issuance reserves. Notes leave public M1. */
+    private void takePaymentIntoIssuance(UUID player, CurrencyDef pay, BigInteger cost) {
+        debitBalance(player, pay.id(), cost);
+        if (pay.kind() == CurrencyKind.COMMODITY) {
+            addSavings(pay.id(), cost.negate());
+            supply(pay.id()).addReserve(cost);
+        } else {
+            supply(pay.id()).addLiability(cost.negate());
+        }
+    }
+
+    /** Issuance reserves pay a commodity into savings, or a virtual unit into public M1. */
+    private void payIssuanceIntoSavings(UUID player, String currency, BigInteger amount) {
+        CurrencyDef def = need(currency);
+        creditBalance(player, currency, amount);
+        if (def != null && def.kind() == CurrencyKind.COMMODITY) {
+            supply(currency).addReserve(amount.negate());
+            addSavings(currency, amount);
+        } else {
+            supply(currency).addLiability(amount);
         }
     }
 
@@ -1616,23 +1636,123 @@ public final class BankBooks {
         for (CurrencyDef def : config.currencies()) {
             currencies.putIfAbsent(def.id(), def);
             alphas.put(def.id(), def.alphaPermille());
-            supplies.computeIfAbsent(def.id(), id -> new Supply(
-                    id, def.initialReserve(), def.initialLiability(), def.initialLiability(), BigInteger.ZERO));
+            supplies.computeIfAbsent(def.id(), id -> openingSupply(def));
+        }
+    }
+
+    public BigInteger centralM0() {
+        CurrencyDef note = primaryVirtual();
+        return note == null ? BigInteger.ZERO : paperValue(note.id());
+    }
+
+    public BigInteger centralDeposits() {
+        CurrencyDef note = primaryVirtual();
+        return note == null ? BigInteger.ZERO : claimsOf(note.id());
+    }
+
+    public BigInteger centralM1() {
+        return centralM0().add(centralDeposits());
+    }
+
+    /** M1 plus personal notes and commodity savings, valued in central notes at the live rate. */
+    public BigDecimal centralM2() {
+        BigDecimal notesPerDiamond = unitsPer("note", "diamond");
+        BigDecimal quasi = BigDecimal.ZERO;
+        if (notesPerDiamond != null && notesPerDiamond.signum() > 0) {
+            for (PersonalNote note : personalNotes.values()) {
+                if (note.bankrupt()) {
+                    continue;
+                }
+                BigDecimal diamonds = personalDiamondPrice(note).multiply(new BigDecimal(note.circulation()), FxMath.MC);
+                quasi = quasi.add(diamonds.multiply(notesPerDiamond, FxMath.MC), FxMath.MC);
+            }
+            BigInteger rate = copperPerDiamond();
+            if (rate.signum() > 0) {
+                BigDecimal copperNotes = new BigDecimal(claimsOf("copper")).multiply(notesPerDiamond, FxMath.MC)
+                        .divide(new BigDecimal(rate), FxMath.MC);
+                quasi = quasi.add(copperNotes, FxMath.MC);
+            }
+            quasi = quasi.add(new BigDecimal(claimsOf("diamond")).multiply(notesPerDiamond, FxMath.MC), FxMath.MC);
+        }
+        return new BigDecimal(centralM1()).add(quasi, FxMath.MC);
+    }
+
+    public BigInteger personalM0(PersonalNote note) {
+        return note == null ? BigInteger.ZERO : personalPaperValue(note.id());
+    }
+
+    /** Book entry plus paper. Unused issuance capacity is not included. */
+    public BigInteger personalM1(PersonalNote note) {
+        return note == null ? BigInteger.ZERO : note.circulation();
+    }
+
+    private BigInteger publicM1(String currency) {
+        return claimsOf(currency).add(paperValue(currency));
+    }
+
+    private BigInteger paperValue(String currency) {
+        String prefix = "c/" + currency + "/";
+        BigInteger sum = BigInteger.ZERO;
+        for (Map.Entry<String, BigInteger> entry : notePaper.entrySet()) {
+            if (!entry.getKey().startsWith(prefix)) {
+                continue;
+            }
+            BigInteger face = new BigInteger(entry.getKey().substring(prefix.length()));
+            sum = sum.add(face.multiply(entry.getValue()));
+        }
+        return sum;
+    }
+
+    /**
+     * Old snapshots stored depositor commodity and issuance stock in one reserve, and counted
+     * the opening note seed as a liability. Split them without changing player balances.
+     * If subtracting deposits would push issuance reserves below the locked amount, issuance
+     * stays at the lock and the savings vault still matches deposits.
+     */
+    private void migrateMixedVaults() {
+        for (CurrencyDef def : currencies.values()) {
+            Supply self = supplies.get(def.id());
+            if (self == null) {
+                continue;
+            }
+            if (def.kind() == CurrencyKind.COMMODITY) {
+                BigInteger claims = claimsOf(def.id());
+                BigInteger issuance = self.reserve().subtract(claims);
+                if (issuance.compareTo(self.locked()) < 0) {
+                    issuance = self.locked();
+                }
+                if (issuance.signum() < 0) {
+                    issuance = BigInteger.ZERO;
+                }
+                self.setReserve(issuance);
+                self.setDepositVault(claims);
+                self.setLiability(claims);
+            } else {
+                self.setLiability(publicM1(def.id()));
+            }
         }
     }
 
     public void checkInvariants() {
-        Map<String, BigInteger> claims = claimMap();
-        for (Supply supply : supplies.values()) {
-            BigInteger expected = supply.anchor().add(claims.getOrDefault(supply.currency(), BigInteger.ZERO));
-            if (expected.compareTo(supply.liability()) != 0) {
-                throw new AssertionError(supply.currency() + " liability " + supply.liability() + " != " + expected);
+        for (CurrencyDef def : currencies.values()) {
+            Supply supply = supplies.get(def.id());
+            if (supply == null) {
+                continue;
             }
-            if (supply.reserve().signum() < 0 || supply.locked().signum() < 0 || supply.liability().signum() < 0) {
-                throw new AssertionError(supply.currency() + " went negative");
+            if (supply.reserve().signum() < 0 || supply.locked().signum() < 0 || supply.liability().signum() < 0
+                    || supply.depositVault().signum() < 0) {
+                throw new AssertionError(def.id() + " went negative");
             }
             if (supply.locked().compareTo(supply.reserve()) > 0) {
-                throw new AssertionError(supply.currency() + " locked exceeds reserve");
+                throw new AssertionError(def.id() + " locked exceeds issuance reserve");
+            }
+            if (def.kind() == CurrencyKind.COMMODITY) {
+                BigInteger claims = claimsOf(def.id());
+                if (supply.depositVault().compareTo(claims) != 0) {
+                    throw new AssertionError(def.id() + " savings vault " + supply.depositVault() + " != deposits " + claims);
+                }
+            } else if (supply.liability().compareTo(publicM1(def.id())) != 0) {
+                throw new AssertionError(def.id() + " M1 " + supply.liability() + " != " + publicM1(def.id()));
             }
         }
         for (Map<String, BigInteger> bals : accounts.values()) {
@@ -1704,6 +1824,7 @@ public final class BankBooks {
             o.addProperty("liability", supply.liability().toString());
             o.addProperty("anchor", supply.anchor().toString());
             o.addProperty("locked", supply.locked().toString());
+            o.addProperty("depositVault", supply.depositVault().toString());
             supplyJson.add(supply.currency(), o);
         }
         root.add("supplies", supplyJson);
@@ -1884,14 +2005,19 @@ public final class BankBooks {
                 BigInteger liability = new BigInteger(o.get("liability").getAsString());
                 BigInteger anchor = new BigInteger(o.get("anchor").getAsString());
                 BigInteger locked = new BigInteger(o.get("locked").getAsString());
-                books.supplies.put(entry.getKey(), new Supply(entry.getKey(), reserve, liability, anchor, locked));
+                Supply supply = new Supply(entry.getKey(), reserve, liability, anchor, locked);
+                if (o.has("depositVault")) {
+                    supply.setDepositVault(new BigInteger(o.get("depositVault").getAsString()));
+                } else {
+                    books.migrateVaults = true;
+                }
+                books.supplies.put(entry.getKey(), supply);
                 books.currencies.putIfAbsent(entry.getKey(), CurrencyDef.orphan(entry.getKey()));
                 books.alphas.putIfAbsent(entry.getKey(), new BigDecimal("1000"));
             }
         }
         for (CurrencyDef def : defs.values()) {
-            books.supplies.putIfAbsent(def.id(), new Supply(
-                    def.id(), def.initialReserve(), def.initialLiability(), def.initialLiability(), BigInteger.ZERO));
+            books.supplies.putIfAbsent(def.id(), openingSupply(def));
         }
         if (root.has("accounts")) {
             for (Map.Entry<String, JsonElement> entry : root.getAsJsonObject("accounts").entrySet()) {
@@ -2020,6 +2146,9 @@ public final class BankBooks {
                 books.imported.add(UUID.fromString(element.getAsString()));
             }
         }
+        if (books.migrateVaults) {
+            books.migrateMixedVaults();
+        }
         return books;
     }
 
@@ -2100,19 +2229,6 @@ public final class BankBooks {
             if (record.status() == CheckStatus.OUTSTANDING) {
                 claims.merge(record.currency(), record.amount(), BigInteger::add);
             }
-        }
-        for (Map.Entry<String, BigInteger> entry : notePaper.entrySet()) {
-            String key = entry.getKey();
-            if (!key.startsWith("c/")) {
-                continue;
-            }
-            int slash = key.indexOf('/', 2);
-            if (slash < 0) {
-                continue;
-            }
-            String currency = key.substring(2, slash);
-            BigInteger face = new BigInteger(key.substring(slash + 1));
-            claims.merge(currency, face.multiply(entry.getValue()), BigInteger::add);
         }
         return claims;
     }

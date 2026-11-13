@@ -26,7 +26,8 @@ class SnapshotTest {
         BankBooks loaded = BankBooks.fromJson(books.toJson(), BankConfig.defaults());
 
         assertEquals(huge.subtract(new BigInteger("999")), loaded.balance(player, "note"));
-        assertEquals(huge.add(new BigInteger("1000")), loaded.supply("note").liability());
+        assertEquals(huge, loaded.supply("note").liability());
+        assertEquals(BigInteger.ZERO, loaded.centralM0());
         assertEquals("OUTSTANDING", loaded.check(issued.instrumentId()).status().name());
         assertEquals("主楼", loaded.outlet("主楼").name());
         assertEquals(10, loaded.outlet("主楼").x());

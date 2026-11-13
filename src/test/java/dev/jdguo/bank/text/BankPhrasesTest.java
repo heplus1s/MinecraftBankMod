@@ -17,9 +17,9 @@ class BankPhrasesTest {
     void freshBooksOpenAtOneDiamondPerThousandCopper() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         assertEquals(new BigInteger("1000000"), books.supply("copper").reserve());
-        assertEquals(new BigInteger("1000000"), books.supply("copper").liability());
+        assertEquals(BigInteger.ZERO, books.supply("copper").liability());
         assertEquals(new BigInteger("1000"), books.supply("diamond").reserve());
-        assertEquals(new BigInteger("1000"), books.supply("diamond").liability());
+        assertEquals(BigInteger.ZERO, books.centralM1());
         assertEquals(0, new BigDecimal("1000").compareTo(books.unitsPer("copper", "diamond")));
         assertEquals("1000", BankPhrases.copperPerDiamond(books));
         assertEquals("银行券", books.currency("note").name());
@@ -36,10 +36,10 @@ class BankPhrasesTest {
         books.deposit(player, "diamond", BigInteger.TEN);
         books.setOpeningReserve("diamond", new BigInteger("2000"));
         assertEquals(new BigInteger("2000"), books.supply("diamond").anchor());
-        assertEquals(new BigInteger("2010"), books.supply("diamond").reserve());
-        assertEquals(new BigInteger("2010"), books.supply("diamond").liability());
+        assertEquals(new BigInteger("2000"), books.supply("diamond").reserve());
+        assertEquals(BigInteger.TEN, books.supply("diamond").depositVault());
         assertEquals(BigInteger.TEN, books.balance(player, "diamond"));
-        assertEquals(0, new BigDecimal("1000000").divide(new BigDecimal("2010"), dev.jdguo.bank.fx.FxMath.MC)
+        assertEquals(0, new BigDecimal("1000000").divide(new BigDecimal("2000"), dev.jdguo.bank.fx.FxMath.MC)
                 .compareTo(books.unitsPer("copper", "diamond")));
         books.checkInvariants();
     }
@@ -59,7 +59,8 @@ class BankPhrasesTest {
         assertEquals(BigInteger.TEN, loaded.personalReserve(player, "diamond"));
         assertEquals(BigInteger.valueOf(64), loaded.balance(player, "copper"));
         assertEquals(BigInteger.ZERO, loaded.balance(player, "diamond"));
-        assertEquals(new BigInteger("1000064"), loaded.supply("copper").reserve());
+        assertEquals(new BigInteger("1000000"), loaded.supply("copper").reserve());
+        assertEquals(BigInteger.valueOf(64), loaded.supply("copper").depositVault());
         assertEquals(new BigInteger("1000"), loaded.supply("diamond").reserve());
         loaded.checkInvariants();
     }

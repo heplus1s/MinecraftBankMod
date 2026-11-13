@@ -131,8 +131,8 @@ class SecondaryMarketTest {
         assertEquals(new BigInteger("6"), books.personalReserve(issuerA, "diamond"));
         assertEquals(new BigInteger("6"), books.personalHolding(note.id(), issuerA));
         assertEquals(new BigInteger("4"), books.balance(issuerA, "diamond"));
-        assertEquals(new BigInteger("1004"), books.supply("diamond").reserve());
-        assertEquals(new BigInteger("1004"), books.supply("diamond").liability());
+        assertEquals(new BigInteger("1000"), books.supply("diamond").reserve());
+        assertEquals(new BigInteger("4"), books.supply("diamond").depositVault());
         books.checkInvariants();
     }
 

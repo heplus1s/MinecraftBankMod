@@ -176,14 +176,14 @@ public final class BankPhrases {
         Supply supply = books.supply(currency);
         String rate = copperPerDiamond(books);
         return line(Tone.AQUA,
-                nameZh(books, currency) + "开局准备金设为 " + CompactFormat.format(supply.anchor())
-                        + " ｜库存 " + CompactFormat.format(supply.reserve())
-                        + " ｜发行额 " + CompactFormat.format(supply.liability())
+                nameZh(books, currency) + "发行准备金开局设为 " + CompactFormat.format(supply.anchor())
+                        + " ｜发行准备金 " + CompactFormat.format(supply.reserve())
+                        + " ｜储蓄保管 " + CompactFormat.format(supply.depositVault())
                         + " ｜锁定 " + CompactFormat.format(supply.locked())
                         + " ｜汇率 " + rate + " 铜/钻",
-                nameEn(books, currency) + " opening reserve is now " + CompactFormat.format(supply.anchor())
-                        + " | Stock " + CompactFormat.format(supply.reserve())
-                        + " | Issued " + CompactFormat.format(supply.liability())
+                nameEn(books, currency) + " opening issuance reserve is now " + CompactFormat.format(supply.anchor())
+                        + " | Issuance reserves " + CompactFormat.format(supply.reserve())
+                        + " | Deposit vault " + CompactFormat.format(supply.depositVault())
                         + " | Locked " + CompactFormat.format(supply.locked())
                         + " | Rate " + rate + " copper per diamond");
     }
@@ -219,16 +219,28 @@ public final class BankPhrases {
             BigDecimal rate = def.id().equals(books.numeraire()) ? null : books.unitsPer(def.id(), books.numeraire());
             String rateZh = rate == null ? "" : "  1" + nameZh(books, books.numeraire()) + "=" + CompactFormat.formatRate(rate) + nameZh(books, def.id());
             String rateEn = rate == null ? "" : "  1 " + books.numeraire() + " = " + CompactFormat.formatRate(rate) + " " + shortEn(books, def.id());
+            String bookZh = def.kind() == dev.jdguo.bank.currency.CurrencyKind.COMMODITY
+                    ? "  发行准备金 " + CompactFormat.format(supply.reserve())
+                            + "  储蓄保管 " + CompactFormat.format(supply.depositVault())
+                    : "  M0 " + CompactFormat.format(books.centralM0())
+                            + "  M1 " + CompactFormat.format(books.centralM1())
+                            + "  M2 " + CompactFormat.formatRate(books.centralM2())
+                            + "  尚可发行 " + CompactFormat.format(books.backedRoom(def));
+            String bookEn = def.kind() == dev.jdguo.bank.currency.CurrencyKind.COMMODITY
+                    ? "  issuance " + CompactFormat.format(supply.reserve())
+                            + "  vault " + CompactFormat.format(supply.depositVault())
+                    : "  M0 " + CompactFormat.format(books.centralM0())
+                            + "  M1 " + CompactFormat.format(books.centralM1())
+                            + "  M2 " + CompactFormat.formatRate(books.centralM2())
+                            + "  issuable " + CompactFormat.format(books.backedRoom(def));
             lines.add(line(Tone.GRAY,
                     nameZh(books, def.id())
-                            + "  准备 " + CompactFormat.format(supply.reserve())
-                            + "  发行额 " + CompactFormat.format(supply.liability())
+                            + bookZh
                             + "  锁定 " + CompactFormat.format(supply.locked())
                             + "  覆盖 " + CompactFormat.formatRatio(books.tightness(def.id()))
                             + rateZh,
                     nameEn(books, def.id())
-                            + "  reserve " + CompactFormat.format(supply.reserve())
-                            + "  issued " + CompactFormat.format(supply.liability())
+                            + bookEn
                             + "  locked " + CompactFormat.format(supply.locked())
                             + "  cover " + CompactFormat.formatRatio(books.tightness(def.id()))
                             + rateEn));
@@ -428,7 +440,10 @@ public final class BankPhrases {
                     "\"" + note.name() + "\" is bankrupt and has no quote. Holdings on the books are void.");
         }
         BigDecimal diamonds = books.personalDiamondPrice(note);
-        BigDecimal m2 = new BigDecimal(note.circulation()).add(PersonalMarket.reserveNotes(note, books.effectiveBacking(note)), dev.jdguo.bank.fx.FxMath.MC);
+        BigInteger issuable = note.par().signum() <= 0
+                ? BigInteger.ZERO
+                : books.personalReserve(note.issuer(), note.reserveCurrency()).subtract(note.locked()).max(BigInteger.ZERO)
+                        .divide(note.par());
         String price = CompactFormat.formatRate(diamonds);
         String kind = switch (note.regime()) {
             case PEG -> "钉住价 ";
@@ -442,10 +457,13 @@ public final class BankPhrases {
         };
         return line(Tone.AQUA,
                 "「" + note.name() + "」" + kind + price + " 钻（约 " + price + " 银行券）。M1 "
-                        + CompactFormat.format(note.circulation()) + "，M2 " + CompactFormat.formatRate(m2) + "。",
+                        + CompactFormat.format(books.personalM1(note)) + "，纸币 "
+                        + CompactFormat.format(books.personalM0(note)) + "，尚可发行 "
+                        + CompactFormat.format(issuable) + "。",
                 "\"" + note.name() + "\" is " + kindEn + price + " diamond each (about " + price
-                        + " central bank notes). M1 " + CompactFormat.format(note.circulation())
-                        + ", M2 " + CompactFormat.formatRate(m2) + ".");
+                        + " central bank notes). M1 " + CompactFormat.format(books.personalM1(note))
+                        + ", paper " + CompactFormat.format(books.personalM0(note))
+                        + ", still issuable " + CompactFormat.format(issuable) + ".");
     }
 
     public static Spoken noteTrade(boolean buy, String name, BigInteger amount, BigInteger central, BigInteger copper, BankBooks books, UUID player) {

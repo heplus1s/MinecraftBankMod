@@ -843,13 +843,22 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                 break;
             }
             Supply supply = books.supply(def.id());
+            List<Text> lore = new ArrayList<>();
+            lore.add(Text.literal(def.nameEn()).formatted(Formatting.GRAY));
+            if (def.kind() == CurrencyKind.COMMODITY) {
+                lore.add(Text.literal("发行准备金 " + CompactFormat.format(supply.reserve())).formatted(Formatting.WHITE));
+                lore.add(Text.literal("储蓄保管 " + CompactFormat.format(supply.depositVault())).formatted(Formatting.WHITE));
+                lore.add(Text.literal("Issuance reserves / deposit vault").formatted(Formatting.DARK_GRAY));
+            } else {
+                lore.add(Text.literal("M0 " + CompactFormat.format(books.centralM0())).formatted(Formatting.WHITE));
+                lore.add(Text.literal("M1 " + CompactFormat.format(books.centralM1())).formatted(Formatting.WHITE));
+                lore.add(Text.literal("M2 " + CompactFormat.formatRate(books.centralM2())).formatted(Formatting.WHITE));
+                lore.add(Text.literal("尚可发行 " + CompactFormat.format(books.backedRoom(def))).formatted(Formatting.YELLOW));
+                lore.add(Text.literal("Issuable amount is not part of M2").formatted(Formatting.DARK_GRAY));
+            }
             inventory.setStack(slot, marker(icon(def),
                     Text.literal(def.name()).formatted(color(def)),
-                    List.of(Text.literal(def.nameEn()).formatted(Formatting.GRAY),
-                            Text.literal("准备金 " + CompactFormat.format(supply.reserve())).formatted(Formatting.WHITE),
-                            Text.literal("发行额 " + CompactFormat.format(supply.liability())).formatted(Formatting.WHITE),
-                            Text.literal("Issued " + CompactFormat.format(supply.liability())).formatted(Formatting.DARK_GRAY),
-                            Text.literal("锁定 " + CompactFormat.format(supply.locked())).formatted(Formatting.YELLOW)),
+                    lore,
                     "noop", 1));
             slot += 2;
         }

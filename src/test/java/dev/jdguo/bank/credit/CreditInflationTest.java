@@ -47,10 +47,10 @@ class CreditInflationTest {
     @Test
     void backedIssueAfterADiamondDepositHoldsThePegAndLocksTheVault() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
-        assertEquals(BigInteger.ZERO, books.backedRoom(books.currency("note")));
-
+        assertEquals(new BigInteger("1000"), books.backedRoom(books.currency("note")));
         books.deposit(player, "diamond", BigInteger.TEN);
-        assertEquals(BigInteger.TEN, books.backedRoom(books.currency("note")));
+        assertEquals(new BigInteger("1000"), books.supply("diamond").reserve());
+        assertEquals(new BigInteger("1000"), books.backedRoom(books.currency("note")));
         BigDecimal peg = books.unitsPer("note", "diamond");
 
         var result = books.creditBacked(player, "note", BigInteger.TEN);
@@ -58,11 +58,11 @@ class CreditInflationTest {
         assertTrue(result.success(), result.message());
         assertEquals(0, peg.compareTo(books.unitsPer("note", "diamond")));
         assertEquals(BigInteger.TEN, books.supply("diamond").locked());
-        assertEquals(new BigInteger("1000"), books.supply("diamond").freeReserve());
-        assertEquals(BigInteger.ZERO, books.backedRoom(books.currency("note")));
+        assertEquals(new BigInteger("990"), books.supply("diamond").freeReserve());
+        assertEquals(new BigInteger("990"), books.backedRoom(books.currency("note")));
         assertTrue(books.withdraw(player, "diamond", BigInteger.TEN, false).success());
         assertEquals(BigInteger.TEN, books.supply("diamond").locked());
-        assertEquals(BigInteger.ZERO, books.supply("diamond").freeReserve().subtract(new BigInteger("990")));
+        assertEquals(new BigInteger("990"), books.supply("diamond").freeReserve());
         books.checkInvariants();
     }
 
