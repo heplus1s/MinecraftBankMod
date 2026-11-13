@@ -605,7 +605,7 @@ public final class BankCommands {
             return fail(source, BankPhrases.noteRejected(result.code()));
         }
         BankRuntime.save();
-        return ok(source, BankPhrases.noteBankrupt(result.note()));
+        return ok(source, BankPhrases.noteBankrupt(books(), result.note()));
     }
 
     private static int issueNote(ServerCommandSource source, String raw) throws com.mojang.brigadier.exceptions.CommandSyntaxException {

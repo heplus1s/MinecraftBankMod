@@ -157,7 +157,7 @@ V = R + (L - R) × α / 1000
 /bank note redeem paper <currency>
 ```
 
-`<currency>` 是 `diamond`、`copper` 或 `note`。`<amount>` 在互换里是要换入的张数。
+`<currency>` 是 `diamond`、`copper` 或 `note`。`<amount>` 在互换里是要换入的张数。`/bank note bankrupt` 让这张券作废并留下账。已经兑出或不够的准备金记成欠央行的债，剩下的抵押收归央行，不退回发行人。之后发行人身上和附近新出现的铜锭、钻石，大约每秒划走一次用来还债。
 
 `<par>` 和 `<amount>` 可以用 `1_000`、`1.5k`、`2m` 这种写法，适合箱子按钮上没有的数量。底栏「发行」用来记名和按 1、10、64、100 发行；常见开价是 1 钻、10 钻、1000 铜，名字用你游戏名里前三个汉字或字母。「交易」可以按央行银行券买卖，也可以两张个人银行券按市价互换，或按市价通兑成铜锭、钻石、银行券。别的数量用上面的指令。
 
@@ -402,7 +402,7 @@ These are not savings, not the personal reserve, and not the central bank note. 
 /bank note redeem paper <currency>
 ```
 
-`<currency>` is `diamond`, `copper`, or `note`. In a swap, `<amount>` is how many notes you receive.
+`<currency>` is `diamond`, `copper`, or `note`. In a swap, `<amount>` is how many notes you receive. `/bank note bankrupt` voids the note and keeps the ledger. Reserves already paid out, and any shortfall, become a debt to the central bank. Leftover collateral is taken by the bank, not handed back. Copper and diamonds on the issuer, including new ones that appear nearby, are levied about once a second and applied to that debt.
 
 `<par>` and `<amount>` accept `1_000`, `1.5k`, and `2m`, for amounts the chest buttons don't show. The Issuance tab names the note and issues 1, 10, 64, or 100. Common opening prices are 1 diamond, 10 diamonds, or 1000 copper, and the name is the first three Chinese characters or letters of your player name. The trading tab buys and sells against central notes, swaps two personal notes at the market cross rate, or redeems a personal note into copper, diamonds, or central notes at the live quote. Use the commands above for anything else.
 

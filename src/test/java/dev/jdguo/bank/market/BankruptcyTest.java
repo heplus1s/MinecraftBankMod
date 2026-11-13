@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -48,7 +49,9 @@ class BankruptcyTest {
         assertTrue(note.bankrupt());
         assertEquals(locked, note.released());
         assertEquals(BigInteger.ZERO, note.locked());
-        assertEquals(reserve, books.personalReserve(issuer, "diamond"));
+        assertEquals(BigInteger.ZERO, books.personalReserve(issuer, "diamond"));
+        assertEquals(new BigInteger("1010"), books.supply("diamond").reserve());
+        assertEquals(BigInteger.ZERO, books.issuerDebt(issuer, "diamond"));
         assertEquals(circulation, note.circulation());
         assertEquals(buys, note.buys());
         assertEquals(sells, note.sells());
@@ -80,6 +83,56 @@ class BankruptcyTest {
         assertEquals(buys, saved.buys());
         assertEquals(buyerHolding, loaded.personalHolding(saved.id(), buyer));
         assertEquals("bankrupt", loaded.swapPersonalNotes(buyer, "Aa", "Aa", BigInteger.ONE).code());
+        loaded.checkInvariants();
+        books.checkInvariants();
+    }
+
+    @Test
+    void drawnReservesBecomeCentralDebtAndLaterCommoditiesRepayIt() {
+        BankBooks books = BankBooks.create(BankConfig.defaults());
+        books.setPersonalReserve(issuer, "diamond", BigInteger.TEN);
+        assertTrue(books.createPersonalNote(issuer, "Aa", false, BigInteger.ONE).success());
+        assertTrue(books.issuePersonalNote(issuer, BigInteger.TEN).success());
+        Redemption paid = books.redeemPersonal(issuer, "Aa", new BigInteger("6"), "diamond");
+        assertTrue(paid.success(), paid.code());
+        assertEquals(new BigInteger("6"), books.personalNote(issuer).drawn());
+        assertEquals(new BigInteger("6"), books.balance(issuer, "diamond"));
+        BigInteger stockAfterRedeem = books.supply("diamond").reserve();
+
+        assertTrue(books.declareBankruptcy(issuer, "Aa", true).success());
+
+        assertEquals(new BigInteger("6"), books.issuerDebt(issuer, "diamond"));
+        assertEquals(BigInteger.ZERO, books.personalReserve(issuer, "diamond"));
+        assertEquals(new BigInteger("4"), books.personalNote(issuer).released());
+        assertEquals(stockAfterRedeem.add(new BigInteger("4")), books.supply("diamond").reserve());
+        assertEquals(new BigInteger("6"), books.balance(issuer, "diamond"));
+        assertTrue(books.personalNote(issuer).bankrupt());
+        assertEquals(new BigInteger("4"), books.personalHolding(books.personalNote(issuer).id(), issuer));
+
+        Map<String, BigInteger> twoDiamonds = Map.of("diamond", new BigInteger("2"));
+        assertEquals(new BigInteger("2"), books.seizeCommodities(issuer, twoDiamonds).get("diamond"));
+        assertEquals(new BigInteger("4"), books.issuerDebt(issuer, "diamond"));
+        assertEquals(new BigInteger("6"), books.balance(issuer, "diamond"));
+        assertEquals(stockAfterRedeem.add(new BigInteger("6")), books.supply("diamond").reserve());
+
+        BigInteger rate = books.copperPerDiamond();
+        BigInteger copperPile = rate.multiply(new BigInteger("3"));
+        Map<String, BigInteger> copperTaken = books.seizeCommodities(issuer, Map.of("copper", copperPile));
+        assertEquals(copperPile, copperTaken.get("copper"));
+        assertEquals(BigInteger.ONE, books.issuerDebt(issuer, "diamond"));
+        assertEquals(new BigInteger("1000000").add(copperPile), books.supply("copper").reserve());
+        assertEquals(BigInteger.ZERO, books.balance(issuer, "copper"));
+
+        assertTrue(DebtSeizure.due(20));
+        assertFalse(DebtSeizure.due(19));
+        BankBooks loaded = BankBooks.fromJson(books.toJson(), BankConfig.defaults());
+        assertEquals(BigInteger.ONE, loaded.issuerDebt(issuer, "diamond"));
+        assertEquals(new BigInteger("6"), loaded.personalNote(issuer).drawn());
+        assertTrue(loaded.personalNote(issuer).bankrupt());
+
+        assertEquals(BigInteger.ONE, loaded.seizeCommodities(issuer, Map.of("diamond", BigInteger.TEN)).get("diamond"));
+        assertEquals(BigInteger.ZERO, loaded.issuerDebt(issuer, "diamond"));
+        assertTrue(loaded.seizeCommodities(issuer, Map.of("diamond", BigInteger.TEN)).isEmpty());
         loaded.checkInvariants();
         books.checkInvariants();
     }

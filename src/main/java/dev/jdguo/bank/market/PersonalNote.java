@@ -18,7 +18,9 @@ public final class PersonalNote {
     private BigInteger buys = BigInteger.ZERO;
     private BigInteger sells = BigInteger.ZERO;
     private BigInteger locked = BigInteger.ZERO;
-    /** Lock released when the note was declared bankrupt. Zero while the note is still live. */
+    /** Reserve units already paid out by redemption. Counted into bankruptcy debt. */
+    private BigInteger drawn = BigInteger.ZERO;
+    /** Collateral taken by the central bank at bankruptcy. Not returned to the issuer. */
     private BigInteger released = BigInteger.ZERO;
     private boolean bankrupt;
     private long closedAtEpochMs;
@@ -50,25 +52,33 @@ public final class PersonalNote {
     public BigInteger buys() { return buys; }
     public BigInteger sells() { return sells; }
     public BigInteger locked() { return locked; }
+    public BigInteger drawn() { return drawn; }
     public BigInteger released() { return released; }
     public boolean bankrupt() { return bankrupt; }
     public long closedAtEpochMs() { return closedAtEpochMs; }
 
-    /** Voids the note. Circulation, trades, and the released lock stay on the record. */
-    public void declareBankrupt(long when) {
+    public void addDrawn(BigInteger amount) {
+        if (amount != null && amount.signum() > 0) {
+            this.drawn = this.drawn.add(amount);
+        }
+    }
+
+    /** Voids the note. {@code seized} is collateral taken by the bank, not a refund. */
+    public void declareBankrupt(long when, BigInteger seized) {
         if (bankrupt) {
             return;
         }
-        this.released = locked;
+        this.released = seized == null ? BigInteger.ZERO : seized;
         this.locked = BigInteger.ZERO;
         this.bankrupt = true;
         this.closedAtEpochMs = when;
     }
 
-    public void restoreClosure(boolean bankrupt, long closedAtEpochMs, BigInteger released) {
+    public void restoreClosure(boolean bankrupt, long closedAtEpochMs, BigInteger released, BigInteger drawn) {
         this.bankrupt = bankrupt;
         this.closedAtEpochMs = closedAtEpochMs;
         this.released = released == null ? BigInteger.ZERO : released;
+        this.drawn = drawn == null ? BigInteger.ZERO : drawn;
     }
 
     public void setCirculation(BigInteger circulation) { this.circulation = circulation; }

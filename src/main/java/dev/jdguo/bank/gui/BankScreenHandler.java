@@ -533,7 +533,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
             inventory.setStack(19, marker(Items.BARRIER,
                     Text.literal("已破产").formatted(Formatting.RED),
                     List.of(Text.literal("Void. No issue, trade, or redemption").formatted(Formatting.GRAY),
-                            Text.literal("解开的锁定 " + CompactFormat.format(own.released())).formatted(Formatting.DARK_GRAY)),
+                            Text.literal("抵押已收归央行").formatted(Formatting.DARK_GRAY)),
                     "noop", 1));
             return;
         }
@@ -659,7 +659,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                 return;
             }
             BankRuntime.save();
-            tell(player, BankPhrases.noteBankrupt(result.note()));
+            tell(player, BankPhrases.noteBankrupt(books, result.note()));
             return;
         }
         if ("pn:cycle".equals(action)) {

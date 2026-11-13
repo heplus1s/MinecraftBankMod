@@ -7,6 +7,7 @@ import dev.jdguo.bank.display.DisplayService;
 import dev.jdguo.bank.gui.BankScreenHandler;
 import dev.jdguo.bank.gui.BankMenus;
 import dev.jdguo.bank.gui.GuiItems;
+import dev.jdguo.bank.market.IssuerLevy;
 import dev.jdguo.bank.market.MarketHooks;
 import dev.jdguo.bank.outlet.OutletPoint;
 import dev.jdguo.bank.persistence.BankRuntime;
@@ -85,6 +86,7 @@ public final class BankMod implements ModInitializer {
                 return;
             }
             displays.tick(server);
+            IssuerLevy.tick(server);
             for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
                 if (player.currentScreenHandler instanceof BankScreenHandler handler) {
                     handler.tick();

@@ -19,6 +19,7 @@ import dev.jdguo.bank.instruments.NoteSeries;
 import dev.jdguo.bank.instruments.PaperTake;
 import dev.jdguo.bank.instruments.PresentedCheck;
 import dev.jdguo.bank.instruments.PresentedNote;
+import dev.jdguo.bank.market.DebtSeizure;
 import dev.jdguo.bank.market.NoteRegime;
 import dev.jdguo.bank.market.NoteTrade;
 import dev.jdguo.bank.market.PersonalMarket;
@@ -55,6 +56,8 @@ public final class BankBooks {
     /** Per-player reserves for a later personal mint. Not savings, and not the central vault. */
     private final Map<UUID, Map<String, BigInteger>> personalReserves = new LinkedHashMap<>();
     private final Map<UUID, PersonalNote> personalNotes = new LinkedHashMap<>();
+    /** Commodity units a bankrupt issuer still owes the central bank. */
+    private final Map<UUID, Map<String, BigInteger>> issuerDebt = new LinkedHashMap<>();
     private final Map<UUID, Map<UUID, BigInteger>> personalHoldings = new LinkedHashMap<>();
     private final CheckBook checks = new CheckBook();
     /** Sheets of stackable paper still out. Keyed by series, not by individual item. */
@@ -974,8 +977,98 @@ public final class BankBooks {
         if (note.bankrupt()) {
             return NoteTrade.fail("closed");
         }
-        note.declareBankrupt(System.currentTimeMillis());
-        return NoteTrade.ok(note, note.released(), BigInteger.ZERO);
+        String currency = note.reserveCurrency();
+        BigInteger reserve = personalReserve(note.issuer(), currency);
+        BigInteger backing = reserve.min(note.locked());
+        BigInteger owed = note.regime() == NoteRegime.FLOAT
+                ? requiredLock(note, note.circulation())
+                : note.par().multiply(note.circulation());
+        BigInteger shortfall = owed.subtract(backing);
+        if (shortfall.signum() < 0) {
+            shortfall = BigInteger.ZERO;
+        }
+        BigInteger gross = note.drawn().add(shortfall);
+        BigInteger seized = backing;
+        if (seized.signum() > 0) {
+            setPersonalReserve(note.issuer(), currency, reserve.subtract(seized));
+            if (need(currency) != null) {
+                supply(currency).addReserve(seized);
+            }
+        }
+        // Collateral is forfeited to the bank. It does not pay down reserves already drawn.
+        // Uncovered promises are added on top of that drawn amount.
+        BigInteger residual = gross;
+        if (residual.signum() > 0) {
+            addDebt(note.issuer(), currency, residual);
+        }
+        note.declareBankrupt(System.currentTimeMillis(), seized);
+        return NoteTrade.ok(note, seized, residual);
+    }
+
+    public BigInteger issuerDebt(UUID player, String currency) {
+        Map<String, BigInteger> row = issuerDebt.get(player);
+        if (row == null || currency == null) {
+            return BigInteger.ZERO;
+        }
+        return row.getOrDefault(currency, BigInteger.ZERO);
+    }
+
+    public boolean owesTheBank(UUID player) {
+        Map<String, BigInteger> row = issuerDebt.get(player);
+        if (row == null) {
+            return false;
+        }
+        for (BigInteger amount : row.values()) {
+            if (amount.signum() > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Takes commodity counts the caller removes from the issuer and applies them to debt.
+     * The goods enter central stock. They are not credited to the issuer's savings.
+     */
+    public Map<String, BigInteger> seizeCommodities(UUID player, Map<String, BigInteger> available) {
+        Map<String, BigInteger> debt = issuerDebt.get(player);
+        if (debt == null || debt.isEmpty()) {
+            return Map.of();
+        }
+        BigInteger rate = copperPerDiamond();
+        Map<String, BigInteger> take = DebtSeizure.plan(debt, available, rate);
+        if (take.isEmpty()) {
+            return take;
+        }
+        for (Map.Entry<String, BigInteger> entry : take.entrySet()) {
+            if (need(entry.getKey()) != null && need(entry.getKey()).kind() == CurrencyKind.COMMODITY) {
+                supply(entry.getKey()).addReserve(entry.getValue());
+            }
+        }
+        writeDebt(player, DebtSeizure.settle(debt, take, rate));
+        return take;
+    }
+
+    private void addDebt(UUID player, String currency, BigInteger amount) {
+        if (amount == null || amount.signum() <= 0) {
+            return;
+        }
+        Map<String, BigInteger> row = issuerDebt.computeIfAbsent(player, id -> new LinkedHashMap<>());
+        row.merge(currency, amount, BigInteger::add);
+    }
+
+    private void writeDebt(UUID player, Map<String, BigInteger> remaining) {
+        Map<String, BigInteger> row = new LinkedHashMap<>();
+        remaining.forEach((currency, amount) -> {
+            if (amount.signum() > 0) {
+                row.put(currency, amount);
+            }
+        });
+        if (row.isEmpty()) {
+            issuerDebt.remove(player);
+        } else {
+            issuerDebt.put(player, row);
+        }
     }
 
     public NoteTrade issuePersonalNote(UUID issuer, BigInteger amount) {
@@ -1306,6 +1399,7 @@ public final class BankBooks {
                 relock = nextReserve;
             }
             note.setLocked(relock);
+            note.addDrawn(consumed);
             payRedemption(player, priced);
             return;
         }
@@ -1328,6 +1422,7 @@ public final class BankBooks {
             relock = nextReserve;
         }
         note.setLocked(relock);
+        note.addDrawn(consumed);
         payRedemption(player, priced);
     }
 
@@ -1640,6 +1735,19 @@ public final class BankBooks {
             }
         }
         root.add("personalReserves", personalJson);
+        JsonObject debtJson = new JsonObject();
+        for (Map.Entry<UUID, Map<String, BigInteger>> entry : issuerDebt.entrySet()) {
+            JsonObject row = new JsonObject();
+            entry.getValue().forEach((currency, amount) -> {
+                if (amount.signum() > 0) {
+                    row.addProperty(currency, amount.toString());
+                }
+            });
+            if (row.size() > 0) {
+                debtJson.add(entry.getKey().toString(), row);
+            }
+        }
+        root.add("issuerDebt", debtJson);
         root.addProperty("personalNoteCoverage", personalNoteCoverage.toPlainString());
         JsonArray noteJson = new JsonArray();
         for (PersonalNote note : personalNotes.values()) {
@@ -1655,6 +1763,7 @@ public final class BankBooks {
             o.addProperty("buys", note.buys().toString());
             o.addProperty("sells", note.sells().toString());
             o.addProperty("locked", note.locked().toString());
+            o.addProperty("drawn", note.drawn().toString());
             o.addProperty("bankrupt", note.bankrupt());
             o.addProperty("closedAt", note.closedAtEpochMs());
             o.addProperty("released", note.released().toString());
@@ -1804,6 +1913,17 @@ public final class BankBooks {
                 }
             }
         }
+        if (root.has("issuerDebt")) {
+            for (Map.Entry<String, JsonElement> entry : root.getAsJsonObject("issuerDebt").entrySet()) {
+                UUID id = UUID.fromString(entry.getKey());
+                Map<String, BigInteger> row = new LinkedHashMap<>();
+                entry.getValue().getAsJsonObject().entrySet()
+                        .forEach(e -> row.put(e.getKey(), new BigInteger(e.getValue().getAsString())));
+                if (!row.isEmpty()) {
+                    books.issuerDebt.put(id, row);
+                }
+            }
+        }
         if (root.has("personalNotes")) {
             for (JsonElement element : root.getAsJsonArray("personalNotes")) {
                 JsonObject o = element.getAsJsonObject();
@@ -1825,10 +1945,11 @@ public final class BankBooks {
                 note.setBuys(new BigInteger(o.get("buys").getAsString()));
                 note.setSells(new BigInteger(o.get("sells").getAsString()));
                 note.setLocked(new BigInteger(o.get("locked").getAsString()));
-                if (o.has("bankrupt") && o.get("bankrupt").getAsBoolean()) {
-                    note.restoreClosure(true,
+                if (o.has("bankrupt") || o.has("drawn")) {
+                    note.restoreClosure(o.has("bankrupt") && o.get("bankrupt").getAsBoolean(),
                             o.has("closedAt") ? o.get("closedAt").getAsLong() : 0L,
-                            o.has("released") ? new BigInteger(o.get("released").getAsString()) : BigInteger.ZERO);
+                            o.has("released") ? new BigInteger(o.get("released").getAsString()) : BigInteger.ZERO,
+                            o.has("drawn") ? new BigInteger(o.get("drawn").getAsString()) : BigInteger.ZERO);
                 }
                 books.personalNotes.put(note.id(), note);
             }

@@ -403,14 +403,22 @@ public final class BankPhrases {
                         + ", " + backingEn + " locked " + CompactFormat.format(note.locked()) + ".");
     }
 
-    public static Spoken noteBankrupt(PersonalNote note) {
+    public static Spoken noteBankrupt(BankBooks books, PersonalNote note) {
+        return noteBankrupt(note, books.issuerDebt(note.issuer(), note.reserveCurrency()));
+    }
+
+    public static Spoken noteBankrupt(PersonalNote note, BigInteger debt) {
         String unit = anchorZh(note.reserveCurrency());
         String unitEn = anchorEn(note.reserveCurrency());
+        BigInteger owed = debt == null ? BigInteger.ZERO : debt;
         return line(Tone.RED,
-                "「" + note.name() + "」宣告破产。锁定的" + unit + " ×" + CompactFormat.format(note.released())
-                        + " 已解开。持有和纸券还在账上，但不能再交易、通兑或发行。",
-                "\"" + note.name() + "\" is bankrupt. Locked " + unitEn + " ×" + CompactFormat.format(note.released())
-                        + " was released. Holdings and paper stay on the books as void records.");
+                "「" + note.name() + "」宣告破产。央行收走抵押" + unit + " ×" + CompactFormat.format(note.released())
+                        + "，余下欠款" + unit + " ×" + CompactFormat.format(owed)
+                        + "。持有和纸券还在账上，但不能再交易、通兑或发行。",
+                "\"" + note.name() + "\" is bankrupt. The central bank took collateral " + unitEn + " ×"
+                        + CompactFormat.format(note.released()) + ". Remaining debt " + unitEn + " ×"
+                        + CompactFormat.format(owed)
+                        + ". Holdings and paper stay on the books as void records.");
     }
 
     public static Spoken noteRate(BankBooks books, PersonalNote note) {
@@ -552,6 +560,12 @@ public final class BankPhrases {
             case "coverage" -> line(Tone.RED, "覆盖倍数要大于 0，并且不超过 100。", "Coverage must be above 0 and at most 100.");
             default -> line(Tone.RED, "办不到。", "That didn't work.");
         };
+    }
+
+    public static Spoken debtSeized(String takenZh, String takenEn, String leftZh, String leftEn) {
+        return line(Tone.GOLD,
+                "破产清偿：扣下" + takenZh + "。尚欠" + leftZh + "。",
+                "Bankruptcy levy: took " + takenEn + ". Still owed " + leftEn + ".");
     }
 
     public static Spoken noteCoverage(BigDecimal coverage) {
