@@ -55,7 +55,7 @@
 - **取出**：铜锭和钻石可以按 1、10、64 或「尽可能多」来取。库存不够会拒绝；选「尽可能多」时，会按实际库存少给。银行券取出来是原版纸，面额相同的叠成一摞，64 张是一摞。一次最多取 4096 张，再多可以用 `/bank withdraw note <amount>`，会给一张这个面额的纸，同样的面额还能继续叠。
 - **兑换**：先选付出哪种货币、得到哪种货币。按钮上写的是已经算上手续费的价格。
 - **汇票**：从余额里开出一本成书，可以写成持票人或仅本人。把书放进兑付格，钱会回到账户。
-- **发行**：先选汇率制度，再用 `/bank note create` 起名和开价。记名之后可以按准备金发行，也可以虚发（不锁定准备金）。央行的增发、注销和暂停兑付在管理员的「管理」页。
+- **发行**：先选浮动、钉住或定额。柜台会关掉，聊天里出现一行可点的英文指令，点一下就会填进聊天框，补上名字后回车。只写名字时按 1 钻记名。记名之后可以按准备金发行，也可以虚发（不锁定准备金）。央行的增发、注销和暂停兑付在管理员的「管理」页。
 
 做成或被拒绝时，会在聊天里说一声，动作栏也会闪一下。中文客户端看到数据包那种说法，例如 `[银行] 存入 铜锭 ×64 成功 ｜余额：铜 64，钻 0，银行券 0`，取出和兑换也带上这笔余额。英文客户端看到对应的英文，例如 `[Bank] Deposited copper ×64 | Balance: Cu 64, Dia 0, bank note 0`。汇率本身不写进每一条聊天。
 
@@ -142,6 +142,9 @@ V = R + (L - R) × α / 1000
 这和存款、个人准备金、央行的银行券都不是一回事。每个人只能有一张。名字最多三个汉字或英文字母，不能和别人重名，并且只能用下面的指令起名。创建时选定汇率制度，之后不能改。浮动按市价，钉住不跟买卖走，定额只兑面额上的那种实物。`/bank note issue` 会锁定个人准备金；`/bank note unbacked` 是虚发，不锁定准备金。
 
 ```
+/bank note create float <name>
+/bank note create peg <name>
+/bank note create hard <name>
 /bank note create diamond <name> <par>
 /bank note create copper <name> <par>
 /bank note create float diamond|copper <name> <par>
@@ -303,7 +306,7 @@ The counter opens on Savings, which is your own deposits. The bottom row switche
 - **Withdraw**: Copper and diamonds can be taken as 1, 10, 64, or "as many as possible". If the stock doesn't have enough, the request is refused; "as many as possible" gives you whatever is actually in stock. Bank notes come out as vanilla paper. The same face value stacks, and 64 sheets are one pile. One withdrawal gives at most 4096 sheets. For more, `/bank withdraw note <amount>` gives a single sheet of that face, and another withdrawal of the same face stacks with it.
 - **Exchange**: First pick what you pay and what you get. The button already shows the price with the fee included.
 - **Bills**: Issue a written book from your balance, payable to bearer or to yourself only. Put the book in the redeem slot and the money goes back to the account.
-- **Issuance**: Choose the exchange-rate regime, then name the note and set its par with `/bank note create`. After that you can issue against reserves, or issue unbacked without locking reserves. Central issue, retire, and freeze live on the operator Management page.
+- **Issuance**: Choose floating, pegged, or hard convertibility. The counter closes and chat shows a clickable English command. Clicking that line fills the chat box; type the name and press Enter. A name alone is registered at 1 diamond. After that you can issue against reserves, or issue unbacked without locking reserves. Central issue, retire, and freeze live on the operator Management page.
 
 Successful or refused actions get a chat message and a flash on the action bar. A Chinese client sees the datapack wording, for example `[银行] 存入 铜锭 ×64 成功 ｜余额：铜 64，钻 0，银行券 0`. Withdrawals and exchanges include that balance too. An English client sees the matching English line, for example `[Bank] Deposited copper ×64 | Balance: Cu 64, Dia 0, bank note 0`. The rate itself is not repeated in every chat line.
 
@@ -390,6 +393,9 @@ Personal reserves are a separate ledger reserved for later personal currency iss
 These are not savings, not the personal reserve, and not the central bank note. Each player can have one. The name is at most three Chinese characters or English letters, it can't match someone else's, and it is set only with the command below. The exchange-rate regime is chosen at creation and is not switched later. Floating follows the market, a peg ignores trades, and hard convertibility pays only the face commodity. `/bank note issue` locks personal reserves; `/bank note unbacked` does not.
 
 ```
+/bank note create float <name>
+/bank note create peg <name>
+/bank note create hard <name>
 /bank note create diamond <name> <par>
 /bank note create copper <name> <par>
 /bank note create float diamond|copper <name> <par>

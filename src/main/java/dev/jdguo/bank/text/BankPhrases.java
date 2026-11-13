@@ -409,15 +409,21 @@ public final class BankPhrases {
         return line(Tone.GREEN, "已导入 " + count + " 条记分板余额（每人每种货币只导入一次）", "Imported " + count + " scoreboard balances (once per player per currency)");
     }
 
-    public static Spoken noteCreateHint(String regime) {
-        String command = switch (regime == null ? "" : regime) {
-            case "peg" -> "/bank note create peg diamond <name> <rate>";
-            case "hard" -> "/bank note create hard diamond <name> <face>";
-            default -> "/bank note create float diamond <name> <par>";
+    /** English command with a trailing space, ready for the player to type the name. */
+    public static String noteCreateCommand(String regime) {
+        String kind = switch (regime == null ? "" : regime) {
+            case "peg" -> "peg";
+            case "hard" -> "hard";
+            default -> "float";
         };
+        return "/bank note create " + kind + " ";
+    }
+
+    public static Spoken noteCreateFill(String regime) {
+        String command = noteCreateCommand(regime);
         return line(Tone.AQUA,
-                "请用指令起名：" + command + "。名字最多三个汉字或英文字母，不能和别人重复。",
-                "Name it with " + command + ". At most three Chinese characters or English letters, and the name must be unique.");
+                "点击这条消息，聊天框会填入 " + command + "。补上名字后回车。名字最多三个汉字或英文字母。",
+                "Click this message to fill the chat with " + command + ". Type the name and press Enter. At most three Chinese characters or English letters.");
     }
 
     public static Spoken noteNamed(PersonalNote note) {

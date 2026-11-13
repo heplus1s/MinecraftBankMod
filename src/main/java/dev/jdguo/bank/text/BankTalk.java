@@ -2,6 +2,7 @@ package dev.jdguo.bank.text;
 
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.ClickEvent;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
@@ -29,6 +30,12 @@ public final class BankTalk {
 
     public static Text text(ServerCommandSource source, Spoken spoken) {
         return text(english(source), spoken);
+    }
+
+    /** Vanilla click: while chat is open, this line replaces the input with {@code command}. */
+    public static Text suggest(ServerPlayerEntity player, Spoken spoken, String command) {
+        return text(player, spoken).copy().styled(style -> style.withClickEvent(
+                new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, command)));
     }
 
     public static Formatting formatting(Tone tone) {

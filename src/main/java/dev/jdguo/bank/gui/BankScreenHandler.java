@@ -736,7 +736,9 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         }
         if (action.startsWith("pn:regime:")) {
             createRegime = action.substring("pn:regime:".length());
-            tell(player, BankPhrases.noteCreateHint(createRegime));
+            String command = BankPhrases.noteCreateCommand(createRegime);
+            player.closeHandledScreen();
+            player.sendMessage(BankTalk.suggest(player, BankPhrases.noteCreateFill(createRegime), command), false);
             return;
         }
         if (action.startsWith("pn:unbacked:")) {
@@ -1218,17 +1220,17 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         inventory.setStack(10, marker(Items.EMERALD,
                 Text.literal("浮动").formatted("float".equals(createRegime) ? Formatting.AQUA : Formatting.WHITE),
                 List.of(Text.literal("Market price").formatted(Formatting.GRAY),
-                        Text.literal("选定后用指令起名").formatted(Formatting.DARK_GRAY)),
+                        Text.literal("点选后，再点聊天那一行，指令会填好").formatted(Formatting.DARK_GRAY)),
                 "pn:regime:float", 1));
         inventory.setStack(11, marker(Items.GOLD_INGOT,
                 Text.literal("钉住").formatted("peg".equals(createRegime) ? Formatting.AQUA : Formatting.WHITE),
                 List.of(Text.literal("Fixed peg").formatted(Formatting.GRAY),
-                        Text.literal("选定后用指令起名").formatted(Formatting.DARK_GRAY)),
+                        Text.literal("点选后，再点聊天那一行，指令会填好").formatted(Formatting.DARK_GRAY)),
                 "pn:regime:peg", 1));
         inventory.setStack(12, marker(Items.DIAMOND,
                 Text.literal("定额兑付").formatted("hard".equals(createRegime) ? Formatting.AQUA : Formatting.WHITE),
                 List.of(Text.literal("Face value only").formatted(Formatting.GRAY),
-                        Text.literal("选定后用指令起名").formatted(Formatting.DARK_GRAY)),
+                        Text.literal("点选后，再点聊天那一行，指令会填好").formatted(Formatting.DARK_GRAY)),
                 "pn:regime:hard", 1));
     }
 
