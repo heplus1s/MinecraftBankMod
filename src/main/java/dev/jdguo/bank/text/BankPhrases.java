@@ -384,7 +384,11 @@ public final class BankPhrases {
     }
 
     public static Spoken interestSet(double percent) {
-        return line(Tone.GREEN, "银行券活期存款年利率已设为 " + percent + "%", "Bank-note demand-deposit rate is now " + percent + "% a year");
+        return line(Tone.GREEN, "央行银行券年利率已设为 " + percent + "%", "Central bank-note rate is now " + percent + "% a year");
+    }
+
+    public static Spoken personalInterestSet(double percent) {
+        return line(Tone.GREEN, "个人银行券年利率已设为 " + percent + "%", "Personal-note rate is now " + percent + "% a year");
     }
 
     public static Spoken personalInterestPaid(BankBooks books, java.util.UUID player, String name, java.math.BigInteger amount) {

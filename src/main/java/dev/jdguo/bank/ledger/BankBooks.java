@@ -70,8 +70,10 @@ public final class BankBooks {
 
     private String numeraire;
     private BigDecimal feeFraction;
-    /** Annual demand-deposit rate on central-note savings. 0.02 is 2% over 365 game days. */
+    /** Annual rate on central-note M1. 0.02 is 2% over 365 game days. */
     private BigDecimal interestFraction = new BigDecimal("0.02");
+    /** Annual rate on each personal note's circulation. Default is zero. */
+    private BigDecimal personalInterestFraction = BigDecimal.ZERO;
     /** Retained fee income. Not issuance reserves and not the savings vault. */
     private final Map<String, BigInteger> interestPool = new LinkedHashMap<>();
     /** Sub-note remainder carried until it becomes a whole bank note. */
@@ -107,6 +109,7 @@ public final class BankBooks {
         books.numeraire = config.numeraire();
         books.feeFraction = config.feeFraction();
         books.interestFraction = config.interestFraction();
+        books.personalInterestFraction = config.personalInterestFraction();
         books.clampMin = config.clampMin();
         books.clampMax = config.clampMax();
         books.globalSidebar = config.sidebar();
@@ -782,6 +785,16 @@ public final class BankBooks {
         this.interestFraction = interestFraction;
     }
 
+    public BigDecimal personalInterestFraction() { return personalInterestFraction; }
+
+    public void setPersonalInterestFraction(BigDecimal personalInterestFraction) {
+        if (personalInterestFraction == null || personalInterestFraction.signum() < 0
+                || personalInterestFraction.compareTo(BigDecimal.ONE) > 0) {
+            throw new IllegalArgumentException("interest");
+        }
+        this.personalInterestFraction = personalInterestFraction;
+    }
+
     public BigInteger interestPool(String currency) {
         return interestPool.getOrDefault(currency, BigInteger.ZERO);
     }
@@ -905,7 +918,7 @@ public final class BankBooks {
     }
 
     private List<InterestCredit> settlePersonalDay(PersonalNote series) {
-        if (series.bankrupt() || interestFraction.signum() <= 0) {
+        if (series.bankrupt() || personalInterestFraction.signum() <= 0) {
             return List.of();
         }
         Map<UUID, BigInteger> holdings = personalHoldings.get(series.id());
@@ -927,7 +940,7 @@ public final class BankBooks {
             BigInteger balance = personalHolding(series.id(), player)
                     .add(paper == null ? BigInteger.ZERO : paper.getOrDefault(player, BigInteger.ZERO));
             BigDecimal carried = dust.getOrDefault(player, BigDecimal.ZERO);
-            BigDecimal raw = new BigDecimal(balance).multiply(interestFraction, FxMath.MC)
+            BigDecimal raw = new BigDecimal(balance).multiply(personalInterestFraction, FxMath.MC)
                     .divide(new BigDecimal("365"), FxMath.MC)
                     .add(carried, FxMath.MC);
             BigInteger whole = raw.setScale(0, RoundingMode.FLOOR).toBigInteger();
@@ -1920,6 +1933,7 @@ public final class BankBooks {
         config.validate();
         this.feeFraction = config.feeFraction();
         this.interestFraction = config.interestFraction();
+        this.personalInterestFraction = config.personalInterestFraction();
         this.clampMin = config.clampMin();
         this.clampMax = config.clampMax();
         for (CurrencyDef def : config.currencies()) {
@@ -2092,6 +2106,7 @@ public final class BankBooks {
         root.addProperty("numeraire", numeraire);
         root.addProperty("fee", feeFraction.toPlainString());
         root.addProperty("interestRate", interestFraction.toPlainString());
+        root.addProperty("personalInterestRate", personalInterestFraction.toPlainString());
         root.addProperty("lastInterestDay", lastInterestDay);
         JsonObject pool = new JsonObject();
         interestPool.forEach((id, amount) -> pool.addProperty(id, amount.toString()));
@@ -2308,6 +2323,9 @@ public final class BankBooks {
         books.interestFraction = root.has("interestRate")
                 ? new BigDecimal(root.get("interestRate").getAsString())
                 : fallback.interestFraction();
+        books.personalInterestFraction = root.has("personalInterestRate")
+                ? new BigDecimal(root.get("personalInterestRate").getAsString())
+                : fallback.personalInterestFraction();
         books.lastInterestDay = root.has("lastInterestDay") ? root.get("lastInterestDay").getAsLong() : -1L;
         if (root.has("interestPool")) {
             root.getAsJsonObject("interestPool").entrySet()

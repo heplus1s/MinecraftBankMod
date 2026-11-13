@@ -96,11 +96,17 @@ public final class BankCommands {
                             BankRuntime.save();
                             return ok(ctx.getSource(), BankPhrases.feeSet(DoubleArgumentType.getDouble(ctx, "percent")));
                         })))
-                        .then(literal("interest").requires(BankCommands::op).then(argument("percent", DoubleArgumentType.doubleArg(0, 100)).executes(ctx -> {
-                            books().setInterestFraction(BigDecimal.valueOf(DoubleArgumentType.getDouble(ctx, "percent")).movePointLeft(2));
-                            BankRuntime.save();
-                            return ok(ctx.getSource(), BankPhrases.interestSet(DoubleArgumentType.getDouble(ctx, "percent")));
-                        })))
+                        .then(literal("interest").requires(BankCommands::op)
+                                .then(argument("percent", DoubleArgumentType.doubleArg(0, 100)).executes(ctx -> {
+                                    books().setInterestFraction(BigDecimal.valueOf(DoubleArgumentType.getDouble(ctx, "percent")).movePointLeft(2));
+                                    BankRuntime.save();
+                                    return ok(ctx.getSource(), BankPhrases.interestSet(DoubleArgumentType.getDouble(ctx, "percent")));
+                                }))
+                                .then(literal("personal").then(argument("percent", DoubleArgumentType.doubleArg(0, 100)).executes(ctx -> {
+                                    books().setPersonalInterestFraction(BigDecimal.valueOf(DoubleArgumentType.getDouble(ctx, "percent")).movePointLeft(2));
+                                    BankRuntime.save();
+                                    return ok(ctx.getSource(), BankPhrases.personalInterestSet(DoubleArgumentType.getDouble(ctx, "percent")));
+                                }))))
                         .then(literal("alpha").requires(BankCommands::op)
                                 .then(argument("currency", StringArgumentType.word())
                                         .then(argument("permille", StringArgumentType.word()).executes(ctx -> setAlpha(ctx.getSource(), StringArgumentType.getString(ctx, "currency"), StringArgumentType.getString(ctx, "permille"))))))

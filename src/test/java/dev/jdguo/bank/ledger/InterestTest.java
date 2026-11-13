@@ -18,6 +18,37 @@ class InterestTest {
     private final UUID payer = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3");
 
     @Test
+    void personalNotesDefaultToZeroWhileCentralNotesStayAtTwoPercent() {
+        BankBooks books = BankBooks.create(BankConfig.defaults());
+        assertEquals(0, new BigDecimal("0.02").compareTo(books.interestFraction()));
+        assertEquals(0, BigDecimal.ZERO.compareTo(books.personalInterestFraction()));
+        books.setPersonalInterestFraction(new BigDecimal("0.05"));
+        assertEquals(0, new BigDecimal("0.02").compareTo(books.interestFraction()));
+        assertEquals(0, new BigDecimal("0.05").compareTo(books.personalInterestFraction()));
+
+        BankBooks loaded = BankBooks.fromJson(books.toJson(), BankConfig.defaults());
+        assertEquals(0, new BigDecimal("0.05").compareTo(loaded.personalInterestFraction()));
+
+        BankBooks fresh = BankBooks.create(BankConfig.defaults());
+        fresh.setAlpha("note", BigDecimal.ZERO);
+        assertTrue(fresh.createPersonalNote(saver, "泉", false, BigInteger.ONE).success());
+        fresh.setPersonalReserve(saver, "diamond", new BigInteger("400"));
+        assertTrue(fresh.issuePersonalNote(saver, new BigInteger("400")).success());
+        fresh.setFeeFraction(new BigDecimal("0.50"));
+        fresh.creditUnbacked(payer, "note", new BigInteger("200"));
+        assertTrue(fresh.buyPersonalNote(payer, "泉", new BigInteger("100")).success());
+        var series = fresh.personalNote(saver);
+        BigInteger held = fresh.personalHolding(series.id(), saver);
+        BigInteger pool = series.interestPool();
+        assertTrue(pool.signum() > 0);
+        fresh.accrueInterest(0);
+        fresh.accrueInterest(1);
+        assertEquals(held, fresh.personalHolding(series.id(), saver));
+        assertEquals(pool, series.interestPool());
+        fresh.checkInvariants();
+    }
+
+    @Test
     void commoditySavingsEarnNothing() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         books.deposit(saver, "diamond", new BigInteger("36500"));
@@ -123,7 +154,7 @@ class InterestTest {
         assertEquals(new BigInteger("1000"), books.personalReserve(saver, "diamond"));
         assertEquals(new BigInteger("1000"), books.supply("diamond").reserve());
         assertTrue(books.issuePersonalPaper(payer, series.id(), new BigInteger("400")).result().success());
-        books.setInterestFraction(BigDecimal.ONE);
+        books.setPersonalInterestFraction(BigDecimal.ONE);
         books.accrueInterest(0);
         books.accrueInterest(1);
 
@@ -173,6 +204,7 @@ class InterestTest {
         assertEquals(BigInteger.ZERO, loaded.interestPool("note"));
         assertEquals(-1L, loaded.lastInterestDay());
         assertEquals(0, new java.math.BigDecimal("0.02").compareTo(loaded.interestFraction()));
+        assertEquals(0, BigDecimal.ZERO.compareTo(loaded.personalInterestFraction()));
         loaded.accrueInterest(8);
         assertEquals(new BigInteger("40"), loaded.balance(saver, "note"));
         loaded.checkInvariants();

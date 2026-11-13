@@ -528,6 +528,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                         Text.literal("持有 " + CompactFormat.format(books.personalHolding(own.id(), uuid))).formatted(Formatting.WHITE),
                         Text.literal("M1 " + CompactFormat.format(own.circulation())).formatted(Formatting.DARK_GRAY),
                         Text.literal("利息池 " + CompactFormat.format(own.interestPool())).formatted(Formatting.GOLD),
+                        Text.literal("年利率 " + percent(books.personalInterestFraction())).formatted(Formatting.GOLD),
                         Text.literal(issueHint(own)).formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
         if (own.bankrupt()) {
@@ -837,7 +838,8 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                         Text.literal(books.statusLabel()).formatted(Formatting.YELLOW),
                         Text.literal("汇率 " + BankPhrases.copperPerDiamond(books) + " 铜/钻").formatted(Formatting.WHITE),
                         Text.literal("手续费 " + percent(books.feeFraction())).formatted(Formatting.GRAY),
-                        Text.literal("存款年利率 " + percent(books.interestFraction())).formatted(Formatting.GOLD),
+                        Text.literal("央行年利率 " + percent(books.interestFraction())).formatted(Formatting.GOLD),
+                        Text.literal("个人银行券年利率 " + percent(books.personalInterestFraction())).formatted(Formatting.GRAY),
                         Text.literal("利息池 " + CompactFormat.format(books.interestPool("note"))).formatted(Formatting.WHITE)),
                 "noop", 1));
         int slot = 10;
@@ -887,8 +889,9 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                         Text.literal(books.frozen() ? "Redemption suspended" : "Redemption available").formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
         inventory.setStack(40, marker(Items.CLOCK,
-                Text.literal("年利率 " + percent(books.interestFraction())).formatted(Formatting.GOLD),
-                List.of(Text.literal("利息池 银行券 " + CompactFormat.format(books.interestPool("note"))).formatted(Formatting.WHITE),
+                Text.literal("央行年利率 " + percent(books.interestFraction())).formatted(Formatting.GOLD),
+                List.of(Text.literal("个人银行券年利率 " + percent(books.personalInterestFraction())).formatted(Formatting.GRAY),
+                        Text.literal("利息池 银行券 " + CompactFormat.format(books.interestPool("note"))).formatted(Formatting.WHITE),
                         Text.literal("Interest pool is fee income, not reserves").formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
         paintCentralIssuance(books);

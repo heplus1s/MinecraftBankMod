@@ -24,6 +24,7 @@ public final class ConfigJson {
         root.addProperty("numeraire", config.numeraire());
         root.addProperty("feePercent", config.feeFraction().multiply(new BigDecimal("100")).stripTrailingZeros().toPlainString());
         root.addProperty("interestPercent", config.interestFraction().multiply(new BigDecimal("100")).stripTrailingZeros().toPlainString());
+        root.addProperty("personalInterestPercent", config.personalInterestFraction().multiply(new BigDecimal("100")).stripTrailingZeros().toPlainString());
         root.add("clampMin", config.clampMin() == null ? JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(config.clampMin().toPlainString()));
         root.add("clampMax", config.clampMax() == null ? JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(config.clampMax().toPlainString()));
         root.addProperty("outletRadius", config.outletRadius());
@@ -69,6 +70,9 @@ public final class ConfigJson {
         BigDecimal interest = root.has("interestPercent")
                 ? decimal(root.get("interestPercent")).divide(new BigDecimal("100"))
                 : defaults.interestFraction();
+        BigDecimal personalInterest = root.has("personalInterestPercent")
+                ? decimal(root.get("personalInterestPercent")).divide(new BigDecimal("100"))
+                : defaults.personalInterestFraction();
         BigDecimal clampMin = optionalDecimal(root, "clampMin");
         BigDecimal clampMax = optionalDecimal(root, "clampMax");
         double radius = root.has("outletRadius") ? root.get("outletRadius").getAsDouble() : defaults.outletRadius();
@@ -94,7 +98,7 @@ public final class ConfigJson {
         if (currencies.isEmpty()) {
             currencies = defaults.currencies();
         }
-        BankConfig config = new BankConfig(numeraire, fee, interest, clampMin, clampMax, radius,
+        BankConfig config = new BankConfig(numeraire, fee, interest, personalInterest, clampMin, clampMax, radius,
                 sidebar, bossbar, tab, hologram, join, currencies);
         config.validate();
         return config;
