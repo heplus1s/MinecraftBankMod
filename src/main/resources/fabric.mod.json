@@ -4,7 +4,7 @@
   "version": "${version}",
   "name": "Central Bank",
   "description": "Server-only multi-currency bank for vanilla Minecraft 1.20.1 clients. Ledger, dynamic FX, checks, and credit live on the server.",
-  "authors": ["jd guo"],
+  "authors": ["heplus1s"],
   "contact": {},
   "license": "MIT",
   "environment": "server",

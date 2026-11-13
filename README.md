@@ -4,13 +4,13 @@ Minecraft Java **1.20.1** 的服务器端银行模组。纯 Fabric，**只装在
 
 账本用 `BigInteger` / `BigDecimal`，不把记分板当账。记分板只有 32 位，恶性通胀时会溢出。
 
-代码版权 **jd guo**，许可 **MIT**（见 [LICENSE](LICENSE)）。经济规则改写自作者自己的银行数据包。按作者要求，本模组不再沿用那个仓库的 GPL-3.0 与 CC BY-NC。界面只用原版物品图标，没有搬数据包里的图片。
+代码版权 **heplus1s**，许可 **MIT**（见 [LICENSE](LICENSE)）。经济规则改写自作者自己的银行数据包。按作者要求，本模组不再沿用那个仓库的 GPL-3.0 与 CC BY-NC。界面只用原版物品图标，没有搬数据包里的图片。
 
 Minecraft 是 Mojang Synergies AB 的商标。本项目与 Mojang 无关。
 
 ## English
 
-Server-only Fabric 1.20.1 bank. Vanilla clients need no mod and no resource pack. Money is arbitrary precision, not a scoreboard. Open a counter by right-clicking an outlet block an operator placed on a building; `/bank` works only while you are standing in that outlet's radius. MIT, copyright jd guo.
+Server-only Fabric 1.20.1 bank. Vanilla clients need no mod and no resource pack. Money is arbitrary precision, not a scoreboard. Open a counter by right-clicking an outlet block an operator placed on a building; `/bank` works only while you are standing in that outlet's radius. MIT, copyright heplus1s.
 
 ## 安装
 
