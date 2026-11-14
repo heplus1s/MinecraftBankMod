@@ -72,9 +72,13 @@ public final class DisplayService {
     }
 
     public static final String MARKER_TAG = "bankmod_outlet";
+    public static final String HOLO_TAG = "bankmod_holo";
 
     public void tick(MinecraftServer server) {
         syncMarkers(server);
+        if (frame % 20 == 0) {
+            sweepOrphanDisplays(server);
+        }
         frame++;
         if (frame % 15 != 0) {
             return;
@@ -132,6 +136,41 @@ public final class DisplayService {
         }
         for (OutletPoint outlet : BankRuntime.books().outlets()) {
             pinMarker(server, outlet, false);
+        }
+    }
+
+    /**
+     * Removes bank counters and holograms whose ids are no longer in the outlet list.
+     * Deleting the bank save leaves those vanilla displays in the world; the next tick
+     * of a loaded chunk drops only entities carrying the bank outlet tags.
+     */
+    private void sweepOrphanDisplays(MinecraftServer server) {
+        if (BankRuntime.books() == null) {
+            return;
+        }
+        Set<UUID> kept = new HashSet<>();
+        for (OutletPoint outlet : BankRuntime.books().outlets()) {
+            if (outlet.markerId() != null) {
+                kept.add(outlet.markerId());
+            }
+            if (outlet.hologramId() != null) {
+                kept.add(outlet.hologramId());
+            }
+        }
+        for (ServerWorld world : server.getWorlds()) {
+            List<Entity> doomed = new ArrayList<>();
+            for (Entity entity : world.iterateEntities()) {
+                UUID vehicle = entity.getVehicle() == null ? null : entity.getVehicle().getUuid();
+                if (OutletDisplaySweep.shouldDiscard(entity.getCommandTags(), entity.getUuid(), vehicle, kept)) {
+                    doomed.add(entity);
+                }
+            }
+            doomed.sort((left, right) -> Boolean.compare(left.getVehicle() != null, right.getVehicle() != null));
+            for (Entity entity : doomed) {
+                if (!entity.isRemoved()) {
+                    dropEntity(entity);
+                }
+            }
         }
     }
 
@@ -350,7 +389,7 @@ public final class DisplayService {
         display.setNoGravity(true);
         display.setInvulnerable(true);
         display.setSilent(true);
-        display.addCommandTag("bankmod_holo");
+        display.addCommandTag(HOLO_TAG);
         writeHologram(display, text, true);
         world.spawnEntity(display);
         return display;

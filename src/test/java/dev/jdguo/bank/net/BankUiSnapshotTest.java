@@ -74,6 +74,10 @@ class BankUiSnapshotTest {
         assertEquals("1", currency(o, "diamond").get("rate").getAsString());
         assertEquals(CompactFormat.formatRate(books.unitsPer("note", "diamond")), currency(o, "note").get("rate").getAsString());
         assertEquals("1", currency(o, "note").get("rate").getAsString());
+        assertEquals(CompactFormat.formatRate(books.unitsPer("diamond", "note")), o.get("diamondsPerNote").getAsString());
+        assertEquals("1", o.get("diamondsPerNote").getAsString());
+        assertEquals("1", currency(o, "note").get("diamondsPerNote").getAsString());
+        assertFalse(currency(o, "copper").has("diamondsPerNote"));
     }
 
     /**
@@ -96,10 +100,19 @@ class BankUiSnapshotTest {
         assertEquals(CompactFormat.formatRate(books.personalDiamondPrice(note)), row.get("diamondPrice").getAsString());
         assertEquals("1000", quoted.get("copperPerDiamond").getAsString());
 
+        books.creditUnbacked(player, "note", new BigInteger("1000"));
+        JsonObject weak = JsonParser.parseString(BankUiSnapshot.json(books, player, false, "savings", false)).getAsJsonObject();
+        assertEquals("2", currency(weak, "note").get("rate").getAsString());
+        assertEquals("0.5", weak.get("diamondsPerNote").getAsString());
+        assertEquals("0.5", currency(weak, "note").get("diamondsPerNote").getAsString());
+        assertEquals(CompactFormat.formatRate(books.unitsPer("diamond", "note")), weak.get("diamondsPerNote").getAsString());
+
         books.setReserve("diamond", BigInteger.ZERO);
         JsonObject collapsed = JsonParser.parseString(BankUiSnapshot.json(books, player, false, "savings", false)).getAsJsonObject();
         assertFalse(collapsed.has("copperPerDiamond"));
+        assertFalse(collapsed.has("diamondsPerNote"));
         assertFalse(currency(collapsed, "note").has("rate"));
+        assertFalse(currency(collapsed, "note").has("diamondsPerNote"));
         assertFalse(personal(collapsed, "泉").has("price"));
         assertFalse(personal(collapsed, "泉").has("diamondPrice"));
         assertFalse(personal(collapsed, "泉").has("rate"));

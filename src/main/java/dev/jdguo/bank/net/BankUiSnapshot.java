@@ -33,6 +33,10 @@ public final class BankUiSnapshot {
         o.addProperty("issuanceDiamond", books.supply("diamond").reserve().toString());
         o.addProperty("vaultDiamond", books.supply("diamond").depositVault().toString());
         putQuote(o, "copperPerDiamond", quoted(books, "copper", "diamond"));
+        CurrencyDef centralNote = books.primaryVirtual();
+        if (centralNote != null) {
+            putQuote(o, "diamondsPerNote", quoted(books, "diamond", centralNote.id()));
+        }
         JsonArray currencies = new JsonArray();
         JsonArray accounts = new JsonArray();
         JsonArray central = new JsonArray();
@@ -42,9 +46,13 @@ public final class BankUiSnapshot {
             row.addProperty("id", def.id());
             row.addProperty("name", def.name());
             row.addProperty("balance", shown);
-            // Chest line: 1 numeraire = this many units of the currency. Omitted when the books cannot quote.
+            // rate / unitsPerDiamond: units of this currency for one numeraire or one diamond.
+            // diamondsPerNote, on the central note only: diamonds for one 银行券.
             putQuote(row, "rate", quoted(books, def.id(), books.numeraire()));
             putQuote(row, "unitsPerDiamond", quoted(books, def.id(), "diamond"));
+            if (centralNote != null && def.id().equals(centralNote.id())) {
+                putQuote(row, "diamondsPerNote", quoted(books, "diamond", def.id()));
+            }
             currencies.add(row);
             JsonObject account = new JsonObject();
             account.addProperty("name", def.name());
