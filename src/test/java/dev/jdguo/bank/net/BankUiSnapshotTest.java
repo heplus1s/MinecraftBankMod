@@ -3,7 +3,10 @@ package dev.jdguo.bank.net;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import dev.jdguo.bank.currency.BankConfig;
+import dev.jdguo.bank.fx.FxMath;
 import dev.jdguo.bank.ledger.BankBooks;
+import dev.jdguo.bank.market.PersonalNote;
+import dev.jdguo.bank.text.BankPhrases;
 import org.junit.jupiter.api.Test;
 
 import dev.jdguo.bank.ledger.CompactFormat;
@@ -64,5 +67,59 @@ class BankUiSnapshotTest {
         assertNotNull(reserve);
         assertEquals(dev.jdguo.bank.ledger.CompactFormat.format(books.supply("diamond").reserve()), reserve.get("reserve").getAsString());
         assertFalse(reserve.get("reserve").getAsString().equals(reserve.get("savings").getAsString()));
+        assertEquals("1000", o.get("copperPerDiamond").getAsString());
+        assertEquals(BankPhrases.copperPerDiamond(books), o.get("copperPerDiamond").getAsString());
+        assertEquals("1000", currency(o, "copper").get("rate").getAsString());
+        assertEquals("1000", currency(o, "copper").get("unitsPerDiamond").getAsString());
+        assertEquals("1", currency(o, "diamond").get("rate").getAsString());
+        assertEquals(CompactFormat.formatRate(books.unitsPer("note", "diamond")), currency(o, "note").get("rate").getAsString());
+        assertEquals("1", currency(o, "note").get("rate").getAsString());
+    }
+
+    /**
+     * {@code price} is central 银行券 for one personal note: {@code personalDiamondPrice}
+     * times the live 银行券-per-diamond quote. At the opening peg that is 1, so one personal
+     * note priced at one diamond is one 银行券. {@code diamondPrice} is the diamond quote alone.
+     */
+    @Test
+    void personalNotePriceIsCentralBankNotesAndAMissingQuoteIsOmitted() {
+        BankBooks books = BankBooks.create(BankConfig.defaults());
+        UUID player = UUID.randomUUID();
+        assertTrue(books.createPersonalNote(player, "泉", false, BigInteger.ONE).success());
+        PersonalNote note = books.personalNote(player);
+        BigDecimal central = books.personalDiamondPrice(note).multiply(books.unitsPer("note", "diamond"), FxMath.MC);
+
+        JsonObject quoted = JsonParser.parseString(BankUiSnapshot.json(books, player, false, "savings", false)).getAsJsonObject();
+        JsonObject row = personal(quoted, "泉");
+        assertEquals(CompactFormat.formatRate(central), row.get("price").getAsString());
+        assertEquals("1", row.get("price").getAsString());
+        assertEquals(CompactFormat.formatRate(books.personalDiamondPrice(note)), row.get("diamondPrice").getAsString());
+        assertEquals("1000", quoted.get("copperPerDiamond").getAsString());
+
+        books.setReserve("diamond", BigInteger.ZERO);
+        JsonObject collapsed = JsonParser.parseString(BankUiSnapshot.json(books, player, false, "savings", false)).getAsJsonObject();
+        assertFalse(collapsed.has("copperPerDiamond"));
+        assertFalse(currency(collapsed, "note").has("rate"));
+        assertFalse(personal(collapsed, "泉").has("price"));
+        assertFalse(personal(collapsed, "泉").has("diamondPrice"));
+        assertFalse(personal(collapsed, "泉").has("rate"));
+    }
+
+    private static JsonObject currency(JsonObject snapshot, String id) {
+        for (var row : snapshot.getAsJsonArray("currencies")) {
+            if (id.equals(row.getAsJsonObject().get("id").getAsString())) {
+                return row.getAsJsonObject();
+            }
+        }
+        throw new AssertionError(id);
+    }
+
+    private static JsonObject personal(JsonObject snapshot, String name) {
+        for (var row : snapshot.getAsJsonArray("notes")) {
+            if (name.equals(row.getAsJsonObject().get("name").getAsString())) {
+                return row.getAsJsonObject();
+            }
+        }
+        throw new AssertionError(name);
     }
 }

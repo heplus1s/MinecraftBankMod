@@ -4,10 +4,12 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import dev.jdguo.bank.currency.CurrencyDef;
 import dev.jdguo.bank.currency.CurrencyKind;
+import dev.jdguo.bank.fx.FxMath;
 import dev.jdguo.bank.ledger.BankBooks;
 import dev.jdguo.bank.ledger.CompactFormat;
 import dev.jdguo.bank.market.PersonalNote;
 
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.UUID;
 
@@ -30,6 +32,7 @@ public final class BankUiSnapshot {
         o.addProperty("savings", books.savingsPool("note").toString());
         o.addProperty("issuanceDiamond", books.supply("diamond").reserve().toString());
         o.addProperty("vaultDiamond", books.supply("diamond").depositVault().toString());
+        putQuote(o, "copperPerDiamond", quoted(books, "copper", "diamond"));
         JsonArray currencies = new JsonArray();
         JsonArray accounts = new JsonArray();
         JsonArray central = new JsonArray();
@@ -39,6 +42,9 @@ public final class BankUiSnapshot {
             row.addProperty("id", def.id());
             row.addProperty("name", def.name());
             row.addProperty("balance", shown);
+            // Chest line: 1 numeraire = this many units of the currency. Omitted when the books cannot quote.
+            putQuote(row, "rate", quoted(books, def.id(), books.numeraire()));
+            putQuote(row, "unitsPerDiamond", quoted(books, def.id(), "diamond"));
             currencies.add(row);
             JsonObject account = new JsonObject();
             account.addProperty("name", def.name());
@@ -81,6 +87,7 @@ public final class BankUiSnapshot {
             row.addProperty("name", note.name());
             String shown = CompactFormat.format(books.personalHolding(note.id(), player));
             row.addProperty("balance", shown);
+            putPersonalNotePrice(row, books, note);
             notes.add(row);
             if (books.personalHolding(note.id(), player).signum() > 0) {
                 JsonObject account = new JsonObject();
@@ -100,6 +107,51 @@ public final class BankUiSnapshot {
             o.addProperty("bankrupt", own.bankrupt());
         }
         return o.toString();
+    }
+
+    /**
+     * {@code price} is central 银行券 for one personal note: diamond price times the live
+     * 银行券-per-diamond quote. {@code diamondPrice} is that same note in diamonds.
+     * Both are omitted when either quote is missing, so the client can say 暂无牌价.
+     */
+    private static void putPersonalNotePrice(JsonObject row, BankBooks books, PersonalNote note) {
+        if (note.bankrupt()) {
+            return;
+        }
+        CurrencyDef central = books.primaryVirtual();
+        if (central == null) {
+            return;
+        }
+        BigDecimal diamonds = books.personalDiamondPrice(note);
+        BigDecimal notesPerDiamond = quoted(books, central.id(), "diamond");
+        if (diamonds == null || diamonds.signum() <= 0 || notesPerDiamond == null) {
+            return;
+        }
+        putQuote(row, "price", diamonds.multiply(notesPerDiamond, FxMath.MC));
+        putQuote(row, "diamondPrice", diamonds);
+    }
+
+    /** Units of {@code pay} for one unit of {@code receive}, or null when the books cannot quote. */
+    private static BigDecimal quoted(BankBooks books, String pay, String receive) {
+        if (pay == null || receive == null || books.currency(pay) == null || books.currency(receive) == null) {
+            return null;
+        }
+        BigDecimal rate = books.unitsPer(pay, receive);
+        if (rate == null || rate.signum() <= 0) {
+            return null;
+        }
+        return rate;
+    }
+
+    private static void putQuote(JsonObject row, String key, BigDecimal rate) {
+        if (rate == null || rate.signum() <= 0) {
+            return;
+        }
+        String shown = CompactFormat.formatRate(rate);
+        if (shown == null || shown.isBlank() || "无法报价".equals(shown)) {
+            return;
+        }
+        row.addProperty(key, shown);
     }
 
     private static JsonObject institution(String account, String currency, BigInteger amount) {
