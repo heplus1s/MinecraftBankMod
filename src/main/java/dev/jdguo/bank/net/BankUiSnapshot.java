@@ -9,6 +9,7 @@ import dev.jdguo.bank.ledger.BankBooks;
 import dev.jdguo.bank.ledger.CompactFormat;
 import dev.jdguo.bank.ledger.Supply;
 import dev.jdguo.bank.market.PersonalNote;
+import dev.jdguo.bank.market.RegimePreview;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -85,6 +86,9 @@ public final class BankUiSnapshot {
                     o.addProperty("tightness", CompactFormat.formatRatio(tight));
                 }
             }
+            putWhole(o, "copperReserve", books.currency("copper") == null ? null : books.supply("copper").reserve());
+            putWhole(o, "diamondReserve", books.currency("diamond") == null ? null : books.supply("diamond").reserve());
+            putWhole(o, "noteReserve", centralNote == null ? null : books.supply(centralNote.id()).reserve());
             JsonArray institutions = new JsonArray();
             CurrencyDef note = books.primaryVirtual();
             String noteId = note == null ? "note" : note.id();
@@ -123,10 +127,13 @@ public final class BankUiSnapshot {
         if (own != null) {
             o.addProperty("personal", own.name());
             o.addProperty("regime", own.regime().name());
-            o.addProperty("circulation", CompactFormat.formatAggregate(own.circulation()));
-            o.addProperty("reserve", CompactFormat.format(books.centralReserve(player)));
-            o.addProperty("required", CompactFormat.format(books.requiredCentralReserve(own)));
+            o.addProperty("regimeName", BankBooks.regimeZh(own.regime()));
+            o.addProperty("anchor", own.anchor());
+            o.addProperty("circulation", whole(own.circulation()));
+            o.addProperty("reserve", whole(books.centralReserve(player)));
+            o.addProperty("required", whole(books.requiredCentralReserve(own)));
             o.addProperty("bankrupt", own.bankrupt());
+            o.add("ownNote", ownNote(books, player, own));
         }
         return o.toString();
     }
@@ -174,6 +181,59 @@ public final class BankUiSnapshot {
             return;
         }
         row.addProperty(key, shown);
+    }
+
+    private static JsonObject ownNote(BankBooks books, UUID player, PersonalNote note) {
+        JsonObject row = new JsonObject();
+        row.addProperty("name", note.name());
+        row.addProperty("regime", note.regime().name());
+        row.addProperty("regimeName", BankBooks.regimeZh(note.regime()));
+        row.addProperty("anchor", note.anchor());
+        row.addProperty("par", whole(note.par()));
+        row.addProperty("locked", whole(note.locked()));
+        row.addProperty("personalReserve", whole(books.personalReserve(player, note.anchor())));
+        row.addProperty("centralReserve", whole(books.centralReserve(player)));
+        row.addProperty("circulation", whole(note.circulation()));
+        row.addProperty("face", whole(note.par()));
+        BigDecimal live = books.personalDiamondPrice(note);
+        if (live != null && live.signum() > 0) {
+            row.addProperty("live", CompactFormat.formatRate(live));
+            row.addProperty("diamondPrice", CompactFormat.formatRate(live));
+        }
+        if (note.openingDiamonds() != null && note.openingDiamonds().signum() > 0) {
+            row.addProperty("official", CompactFormat.formatRate(note.openingDiamonds()));
+        } else if (live != null && live.signum() > 0 && note.regime() != dev.jdguo.bank.market.NoteRegime.FLOAT) {
+            row.addProperty("official", CompactFormat.formatRate(live));
+        }
+        JsonArray switches = new JsonArray();
+        for (RegimePreview option : books.regimePreviews(note)) {
+            JsonObject choice = new JsonObject();
+            choice.addProperty("regime", option.regime().name());
+            choice.addProperty("anchor", option.anchor());
+            choice.addProperty("name", BankBooks.regimeZh(option.regime()));
+            choice.addProperty("allowed", option.allowed());
+            if (!option.allowed() && !option.reason().isBlank()) {
+                choice.addProperty("reason", option.reason());
+            }
+            switches.add(choice);
+        }
+        row.add("switches", switches);
+        return row;
+    }
+
+    /** Whole units. Zero is {@code 0}, never a six-decimal placeholder. */
+    private static String whole(BigInteger amount) {
+        if (amount == null || amount.signum() == 0) {
+            return "0";
+        }
+        return CompactFormat.format(amount);
+    }
+
+    private static void putWhole(JsonObject row, String key, BigInteger amount) {
+        if (amount == null) {
+            return;
+        }
+        row.addProperty(key, whole(amount));
     }
 
     /** Same percent string the chest prints, for example {@code 2%}. */

@@ -12,6 +12,7 @@ import dev.jdguo.bank.market.NoteRegime;
 import dev.jdguo.bank.market.NoteTrade;
 import dev.jdguo.bank.market.PersonalNote;
 import dev.jdguo.bank.market.Redemption;
+import dev.jdguo.bank.market.RegimePreview;
 import dev.jdguo.bank.market.SwapTrade;
 import dev.jdguo.bank.outlet.OutletPoint;
 import dev.jdguo.bank.persistence.BankRuntime;
@@ -52,6 +53,7 @@ public final class BankUiService {
             case "deposit-held" -> depositHeld(player, books);
             case "deposit-transfer" -> depositTransfer(player, books, parts);
             case "note-create" -> create(player, books, parts);
+            case "note-switch" -> switchRegime(player, books, parts);
             case "note-issue" -> issue(player, books, parts, false);
             case "note-unbacked" -> issue(player, books, parts, true);
             case "note-buy" -> trade(player, books, parts, true);
@@ -369,6 +371,25 @@ public final class BankUiService {
             left -= take;
         }
         return need - left;
+    }
+
+    private static void switchRegime(ServerPlayerEntity player, BankBooks books, String[] parts) {
+        if (parts.length < 2) {
+            tell(player, BankPhrases.noteSwitchUsage());
+            return;
+        }
+        NoteRegime regime = switch (parts[1]) {
+            case "float" -> NoteRegime.FLOAT;
+            case "peg" -> NoteRegime.PEG;
+            case "hard" -> NoteRegime.HARD;
+            default -> null;
+        };
+        String anchor = parts.length >= 3 ? parts[2] : null;
+        RegimePreview result = books.switchPersonalRegime(player.getUuid(), regime, anchor);
+        if (result.applied()) {
+            BankRuntime.save();
+        }
+        tell(player, BankPhrases.regimeSwitch(result));
     }
 
     private static void create(ServerPlayerEntity player, BankBooks books, String[] parts) {

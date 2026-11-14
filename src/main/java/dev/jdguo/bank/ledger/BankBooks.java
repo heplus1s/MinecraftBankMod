@@ -24,6 +24,7 @@ import dev.jdguo.bank.market.NoteRegime;
 import dev.jdguo.bank.market.NoteTrade;
 import dev.jdguo.bank.market.PersonalMarket;
 import dev.jdguo.bank.market.PersonalNote;
+import dev.jdguo.bank.market.RegimePreview;
 import dev.jdguo.bank.market.Redemption;
 import dev.jdguo.bank.market.SecondaryClearing;
 import dev.jdguo.bank.market.SwapTrade;
@@ -1301,6 +1302,9 @@ public final class BankBooks {
         if (note.regime() == NoteRegime.FLOAT) {
             return PersonalMarket.diamondPrice(note, copperPerDiamond(), effectiveBacking(note));
         }
+        if (note.regime() == NoteRegime.PEG && note.openingDiamonds() != null) {
+            return note.openingDiamonds();
+        }
         return fixedDiamondQuote(note);
     }
 
@@ -1327,7 +1331,6 @@ public final class BankBooks {
         return createPersonalNote(issuer, name, NoteRegime.FLOAT, copperPar ? "copper" : "diamond", par);
     }
 
-    /** Regime is fixed at creation. There is no later switch. */
     public NoteTrade createPersonalNote(UUID issuer, String name, NoteRegime regime, String anchor, BigInteger par) {
         if (!PersonalMarket.validName(name)) {
             return NoteTrade.fail("name");
@@ -1347,6 +1350,253 @@ public final class BankBooks {
         PersonalNote note = new PersonalNote(UUID.randomUUID(), issuer, name, regime, anchor, par);
         personalNotes.put(note.id(), note);
         return NoteTrade.ok(note, BigInteger.ZERO, BigInteger.ZERO);
+    }
+
+    /** Every other regime, and every valid peg anchor, without posting a switch. */
+    public List<RegimePreview> regimePreviews(PersonalNote note) {
+        List<RegimePreview> options = new ArrayList<>();
+        if (note == null) {
+            return options;
+        }
+        for (NoteRegime regime : NoteRegime.values()) {
+            for (String anchor : anchorsOf(regime)) {
+                if (regime == note.regime() && anchor.equals(note.anchor())) {
+                    continue;
+                }
+                options.add(describeSwitch(note, regime, anchor, false));
+            }
+        }
+        return options;
+    }
+
+    /**
+     * Posts a regime change when the target rule's collateral is already in place.
+     * Circulation, locked collateral, and personal reserves are not reduced, and no notes are issued.
+     */
+    public RegimePreview switchPersonalRegime(UUID issuer, NoteRegime regime, String anchor) {
+        PersonalNote note = personalNote(issuer);
+        if (note == null) {
+            return new RegimePreview(regime, anchor, false, false, "没有这张个人银行券。");
+        }
+        if (anchor == null || anchor.isBlank()) {
+            anchor = note.anchor();
+        }
+        RegimePreview preview = describeSwitch(note, regime, anchor, true);
+        if (!preview.allowed()) {
+            return preview;
+        }
+        BigDecimal opening = regime == NoteRegime.PEG
+                ? personalDiamondPrice(note)
+                : regime == NoteRegime.FLOAT ? officialOrFace(note) : null;
+        note.adopt(regime, anchor, opening);
+        if (regime == NoteRegime.FLOAT) {
+            note.setBuys(BigInteger.ZERO);
+            note.setSells(BigInteger.ZERO);
+        }
+        return new RegimePreview(regime, anchor, true, true, successSentence(note, opening));
+    }
+
+    private RegimePreview describeSwitch(PersonalNote note, NoteRegime regime, String anchor, boolean posting) {
+        String name = note.name();
+        if (note.bankrupt()) {
+            return refused(regime, anchor, "「" + name + "」已经破产，不能改汇率制度。");
+        }
+        if (regime == null || !validAnchor(regime, anchor)) {
+            return refused(regime, anchor, "请指定 float、peg 或 hard。计价货币用 diamond 或 copper，联系汇率制还可以用 note。");
+        }
+        if (suspended(note)) {
+            return refused(regime, anchor, "「" + name + "」的兑付已经暂停，不能改汇率制度。");
+        }
+        if (regime == note.regime() && anchor.equals(note.anchor())) {
+            return refused(regime, anchor, "「" + name + "」已经实行" + regimeZh(regime) + "，计价货币是"
+                    + anchorZh(anchor) + "，无需再切换。");
+        }
+        if (!anchor.equals(note.anchor()) && note.locked().signum() > 0) {
+            return refused(regime, anchor, "「" + name + "」已锁定" + anchorZh(note.anchor()) + " ×"
+                    + CompactFormat.format(note.locked()) + "。已锁定的抵押不能改记到"
+                    + anchorZh(anchor) + "上，也不能在切换时解除。");
+        }
+        BigInteger face = note.par();
+        BigInteger personalNeed = personalNeed(regime, anchor, face, note.circulation());
+        BigInteger centralNeed = centralNeed(regime, anchor, face, note.circulation());
+        BigInteger haveLock = anchor.equals(note.anchor()) ? note.locked() : BigInteger.ZERO;
+        BigInteger haveReserve = personalReserve(note.issuer(), anchor);
+        BigInteger haveCentral = centralReserve(note.issuer());
+        List<String> gaps = new ArrayList<>();
+        if (regime == NoteRegime.HARD) {
+            BigDecimal live = personalDiamondPrice(note);
+            BigDecimal faceDiamonds = faceDiamonds(anchor, face);
+            if (note.circulation().signum() > 0 && live.subtract(faceDiamonds).abs().compareTo(new BigDecimal("0.0000005")) > 0) {
+                gaps.add("现价每张 " + CompactFormat.formatRate(live) + " 钻石，面额每张 "
+                        + CompactFormat.formatRate(faceDiamonds) + " 钻石，两者不一致。固定汇率制要求现价与面额相同");
+            }
+            BigInteger faceCover = face.multiply(note.circulation());
+            if (haveLock.compareTo(faceCover) < 0) {
+                gaps.add("已锁定的" + anchorZh(anchor) + " ×" + CompactFormat.format(haveLock)
+                        + " 不足以按面额兑付全部流通 ×" + CompactFormat.format(note.circulation())
+                        + "，尚缺 ×" + CompactFormat.format(faceCover.subtract(haveLock)));
+            }
+        }
+        if (regime != NoteRegime.HARD && personalNeed.signum() > 0 && haveLock.compareTo(personalNeed) < 0) {
+            gaps.add("已锁定的" + anchorZh(anchor) + " ×" + CompactFormat.format(haveLock)
+                    + " 还没有达到应锁定的 ×" + CompactFormat.format(personalNeed)
+                    + "，尚缺 ×" + CompactFormat.format(personalNeed.subtract(haveLock)));
+        }
+        if (personalNeed.signum() > 0 && haveReserve.compareTo(personalNeed) < 0) {
+            gaps.add("个人准备金里的" + anchorZh(anchor) + " ×" + CompactFormat.format(haveReserve)
+                    + " 少于应锁定的 ×" + CompactFormat.format(personalNeed)
+                    + "，尚缺 ×" + CompactFormat.format(personalNeed.subtract(haveReserve)));
+        }
+        if (centralNeed.signum() > 0 && haveCentral.compareTo(centralNeed) < 0) {
+            gaps.add("央行准备金账户的银行券 ×" + CompactFormat.format(haveCentral)
+                    + " 少于应存的 ×" + CompactFormat.format(centralNeed)
+                    + "，尚缺 ×" + CompactFormat.format(centralNeed.subtract(haveCentral)));
+        }
+        if (!gaps.isEmpty()) {
+            return refused(regime, anchor, "不能改为" + regimeZh(regime) + "，计价货币是" + anchorZh(anchor)
+                    + "。" + String.join("。", gaps) + "。");
+        }
+        if (!posting) {
+            return new RegimePreview(regime, anchor, true, false, "可以改为" + regimeZh(regime) + "，计价货币是" + anchorZh(anchor) + "。");
+        }
+        return new RegimePreview(regime, anchor, true, false, "");
+    }
+
+    private String successSentence(PersonalNote note, BigDecimal opening) {
+        String price = opening == null
+                ? CompactFormat.format(note.par()) + " " + anchorZh(note.anchor())
+                : "每张 " + CompactFormat.formatRate(opening) + " 钻石";
+        String priceRule = switch (note.regime()) {
+            case PEG -> "官价按切换时的现价定为" + price + "，以后买卖不改这个官价。";
+            case FLOAT -> "开盘价按切换时的官价或面额定为" + price + "。";
+            case HARD -> "以后按面额每张 " + CompactFormat.format(note.par()) + " " + anchorZh(note.anchor()) + "定额兑付。";
+        };
+        return "「" + note.name() + "」已改为" + regimeZh(note.regime()) + "，计价货币是" + anchorZh(note.anchor())
+                + "。" + priceRule + "已锁定的抵押不退回，流通 ×" + CompactFormat.format(note.circulation()) + " 不变，也不新发券。";
+    }
+
+    private static RegimePreview refused(NoteRegime regime, String anchor, String reason) {
+        return new RegimePreview(regime, anchor == null ? "" : anchor, false, false, reason);
+    }
+
+    private boolean suspended(PersonalNote note) {
+        if (note.circulation().signum() <= 0) {
+            return false;
+        }
+        if (note.regime() == NoteRegime.FLOAT) {
+            return effectiveBacking(note).signum() <= 0;
+        }
+        return effectiveBacking(note).compareTo(note.par()) < 0;
+    }
+
+    private BigDecimal officialOrFace(PersonalNote note) {
+        if (note.openingDiamonds() != null) {
+            return note.openingDiamonds();
+        }
+        return faceDiamonds(note.anchor(), note.par());
+    }
+
+    private BigDecimal faceDiamonds(String anchor, BigInteger par) {
+        if ("copper".equals(anchor)) {
+            BigInteger rate = copperPerDiamond();
+            if (rate.signum() <= 0) {
+                return BigDecimal.ZERO;
+            }
+            return new BigDecimal(par).divide(new BigDecimal(rate), FxMath.MC);
+        }
+        if ("note".equals(anchor)) {
+            BigDecimal notesPerDiamond = unitsPer("note", "diamond");
+            if (notesPerDiamond == null || notesPerDiamond.signum() <= 0) {
+                return BigDecimal.ZERO;
+            }
+            return new BigDecimal(par).divide(notesPerDiamond, FxMath.MC);
+        }
+        return new BigDecimal(par);
+    }
+
+    private BigInteger personalNeed(NoteRegime regime, String anchor, BigInteger par, BigInteger circulation) {
+        if (circulation.signum() <= 0 || par.signum() <= 0) {
+            return BigInteger.ZERO;
+        }
+        if (regime == NoteRegime.PEG && "note".equals(anchor)) {
+            return BigInteger.ZERO;
+        }
+        if (regime == NoteRegime.HARD) {
+            return par.multiply(circulation);
+        }
+        if (regime == NoteRegime.PEG) {
+            BigDecimal share = BigDecimal.ONE.subtract(pegCentralRatio);
+            if (share.signum() < 0) {
+                share = BigDecimal.ZERO;
+            }
+            return ceiling(par.multiply(circulation), share);
+        }
+        return ceiling(par.multiply(circulation), personalNoteCoverage);
+    }
+
+    private BigInteger centralNeed(NoteRegime regime, String anchor, BigInteger par, BigInteger circulation) {
+        if (circulation.signum() <= 0) {
+            return BigInteger.ZERO;
+        }
+        if (regime == NoteRegime.FLOAT) {
+            return share(circulation, floatCentralRatio);
+        }
+        if (regime == NoteRegime.PEG && "note".equals(anchor)) {
+            return par.multiply(circulation);
+        }
+        BigDecimal ratio = regime == NoteRegime.HARD ? hardCentralRatio : pegCentralRatio;
+        return share(pegValue(anchor, par, circulation), ratio);
+    }
+
+    private BigInteger pegValue(String anchor, BigInteger par, BigInteger circulation) {
+        if ("note".equals(anchor)) {
+            return par.multiply(circulation);
+        }
+        BigDecimal commodity = new BigDecimal(par.multiply(circulation));
+        BigDecimal diamonds = "copper".equals(anchor)
+                ? commodity.divide(new BigDecimal(copperPerDiamond()), FxMath.MC)
+                : commodity;
+        BigDecimal notes = unitsPer("note", "diamond");
+        if (notes == null || notes.signum() <= 0) {
+            notes = BigDecimal.ONE;
+        }
+        BigInteger value = diamonds.multiply(notes, FxMath.MC).setScale(0, RoundingMode.CEILING).toBigInteger();
+        return value.signum() < 0 ? BigInteger.ZERO : value;
+    }
+
+    private static BigInteger ceiling(BigInteger base, BigDecimal ratio) {
+        if (base.signum() <= 0 || ratio.signum() <= 0) {
+            return BigInteger.ZERO;
+        }
+        BigInteger value = new BigDecimal(base).multiply(ratio, FxMath.MC).setScale(0, RoundingMode.CEILING).toBigInteger();
+        return value.signum() < 0 ? BigInteger.ZERO : value;
+    }
+
+    private static List<String> anchorsOf(NoteRegime regime) {
+        if (regime == NoteRegime.PEG) {
+            return List.of("diamond", "copper", "note");
+        }
+        return List.of("diamond", "copper");
+    }
+
+    public static String regimeZh(NoteRegime regime) {
+        if (regime == null) {
+            return "汇率制度";
+        }
+        return switch (regime) {
+            case FLOAT -> "浮动汇率制";
+            case PEG -> "联系汇率制";
+            case HARD -> "固定汇率制";
+        };
+    }
+
+    public static String anchorZh(String anchor) {
+        return switch (anchor == null ? "" : anchor) {
+            case "copper" -> "铜锭";
+            case "note" -> "银行券";
+            case "diamond" -> "钻石";
+            default -> anchor;
+        };
     }
 
     private static boolean validAnchor(NoteRegime regime, String anchor) {
@@ -2521,6 +2771,9 @@ public final class BankBooks {
             o.addProperty("released", note.released().toString());
             o.addProperty("interestPool", note.interestPool().toString());
             o.addProperty("interestDay", note.interestDay());
+            if (note.openingDiamonds() != null) {
+                o.addProperty("openingDiamonds", note.openingDiamonds().toPlainString());
+            }
             noteJson.add(o);
         }
         root.add("personalNotes", noteJson);
@@ -2744,6 +2997,9 @@ public final class BankBooks {
                 note.setBuys(new BigInteger(o.get("buys").getAsString()));
                 note.setSells(new BigInteger(o.get("sells").getAsString()));
                 note.setLocked(new BigInteger(o.get("locked").getAsString()));
+                if (o.has("openingDiamonds") && !o.get("openingDiamonds").isJsonNull()) {
+                    note.adopt(note.regime(), note.anchor(), new BigDecimal(o.get("openingDiamonds").getAsString()));
+                }
                 if (o.has("interestPool")) {
                     note.addInterestPool(new BigInteger(o.get("interestPool").getAsString()));
                 }

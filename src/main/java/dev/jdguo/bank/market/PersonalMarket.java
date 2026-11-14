@@ -74,7 +74,14 @@ public final class PersonalMarket {
     }
 
     public static BigDecimal diamondPrice(PersonalNote note, BigInteger copperPerDiamond, BigInteger effectiveBacking) {
-        BigDecimal p0 = note.copperPar()
+        return diamondPrice(note, copperPerDiamond, effectiveBacking, note.openingDiamonds());
+    }
+
+    public static BigDecimal diamondPrice(PersonalNote note, BigInteger copperPerDiamond, BigInteger effectiveBacking,
+                                          BigDecimal openingDiamonds) {
+        BigDecimal p0 = openingDiamonds != null
+                ? openingDiamonds
+                : note.copperPar()
                 ? new BigDecimal(note.par()).divide(new BigDecimal(copperPerDiamond), FxMath.MC)
                 : new BigDecimal(note.par());
         if (note.circulation().signum() <= 0) {

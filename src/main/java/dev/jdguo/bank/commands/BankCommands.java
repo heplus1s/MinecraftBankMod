@@ -20,6 +20,7 @@ import dev.jdguo.bank.market.NoteRegime;
 import dev.jdguo.bank.market.NoteTrade;
 import dev.jdguo.bank.market.PersonalNote;
 import dev.jdguo.bank.market.Redemption;
+import dev.jdguo.bank.market.RegimePreview;
 import dev.jdguo.bank.market.SwapTrade;
 import dev.jdguo.bank.outlet.OutletPoint;
 import dev.jdguo.bank.persistence.BankRuntime;
@@ -160,6 +161,17 @@ public final class BankCommands {
                                                         .then(argument("face", StringArgumentType.word()).executes(ctx -> createNote(ctx.getSource(), NoteRegime.HARD, "diamond", StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "face"))))))
                                                 .then(literal("copper").then(argument("name", StringArgumentType.string())
                                                         .then(argument("face", StringArgumentType.word()).executes(ctx -> createNote(ctx.getSource(), NoteRegime.HARD, "copper", StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "face"))))))))
+                                .then(literal("switch")
+                                        .then(literal("float").executes(ctx -> switchNote(ctx.getSource(), NoteRegime.FLOAT, null))
+                                                .then(literal("diamond").executes(ctx -> switchNote(ctx.getSource(), NoteRegime.FLOAT, "diamond")))
+                                                .then(literal("copper").executes(ctx -> switchNote(ctx.getSource(), NoteRegime.FLOAT, "copper"))))
+                                        .then(literal("peg").executes(ctx -> switchNote(ctx.getSource(), NoteRegime.PEG, null))
+                                                .then(literal("diamond").executes(ctx -> switchNote(ctx.getSource(), NoteRegime.PEG, "diamond")))
+                                                .then(literal("copper").executes(ctx -> switchNote(ctx.getSource(), NoteRegime.PEG, "copper")))
+                                                .then(literal("note").executes(ctx -> switchNote(ctx.getSource(), NoteRegime.PEG, "note"))))
+                                        .then(literal("hard").executes(ctx -> switchNote(ctx.getSource(), NoteRegime.HARD, null))
+                                                .then(literal("diamond").executes(ctx -> switchNote(ctx.getSource(), NoteRegime.HARD, "diamond")))
+                                                .then(literal("copper").executes(ctx -> switchNote(ctx.getSource(), NoteRegime.HARD, "copper")))))
                                 .then(literal("issue").then(argument("amount", StringArgumentType.word()).executes(ctx -> issueNote(ctx.getSource(), StringArgumentType.getString(ctx, "amount")))))
                                 .then(literal("unbacked").then(argument("amount", StringArgumentType.word()).executes(ctx -> unbackedNote(ctx.getSource(), StringArgumentType.getString(ctx, "amount")))))
                                 .then(literal("reserve").executes(ctx -> showCentralReserve(ctx.getSource()))
@@ -494,6 +506,15 @@ public final class BankCommands {
         }
         BankRuntime.save();
         return ok(source, BankPhrases.personalSet(profile.getName(), books(), currency, amount));
+    }
+
+    private static int switchNote(ServerCommandSource source, NoteRegime regime, String anchor) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        RegimePreview result = books().switchPersonalRegime(source.getPlayerOrThrow().getUuid(), regime, anchor);
+        if (result.applied()) {
+            BankRuntime.save();
+            return ok(source, BankPhrases.regimeSwitch(result));
+        }
+        return fail(source, BankPhrases.regimeSwitch(result));
     }
 
     private static int createNote(ServerCommandSource source, NoteRegime regime, String anchor, String name, String rawPar) throws com.mojang.brigadier.exceptions.CommandSyntaxException {

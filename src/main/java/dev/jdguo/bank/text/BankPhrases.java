@@ -4,6 +4,7 @@ import dev.jdguo.bank.currency.CurrencyDef;
 import dev.jdguo.bank.ledger.BankBooks;
 import dev.jdguo.bank.market.PersonalMarket;
 import dev.jdguo.bank.market.PersonalNote;
+import dev.jdguo.bank.market.RegimePreview;
 import dev.jdguo.bank.market.Redemption;
 import dev.jdguo.bank.market.SwapTrade;
 import dev.jdguo.bank.ledger.CompactFormat;
@@ -659,6 +660,20 @@ public final class BankPhrases {
             parts.add("bank note ×" + CompactFormat.format(redemption.central()));
         }
         return parts.isEmpty() ? "0" : String.join(", ", parts);
+    }
+
+    public static Spoken noteSwitchUsage() {
+        return line(Tone.RED,
+                "用法是 note-switch float、note-switch peg diamond、note-switch peg copper、note-switch peg note，或 note-switch hard diamond。",
+                "Use note-switch float, note-switch peg diamond, note-switch peg copper, note-switch peg note, or note-switch hard diamond.");
+    }
+
+    public static Spoken regimeSwitch(RegimePreview preview) {
+        String en = preview.applied()
+                ? "The personal note now uses " + preview.regime() + " against " + preview.anchor()
+                + ". Locked collateral stays, and no new notes were issued."
+                : "The regime switch was refused.";
+        return line(preview.applied() ? Tone.GREEN : Tone.RED, preview.reason(), en);
     }
 
     public static Spoken noteRejected(String code) {
