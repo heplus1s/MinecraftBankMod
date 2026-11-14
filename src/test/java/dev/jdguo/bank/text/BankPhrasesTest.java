@@ -95,11 +95,15 @@ class BankPhrasesTest {
         assertEquals(Tone.DARK_RED, sold.tone());
         assertTrue(sold.zh().startsWith("[银行] 卖出 钻×10 成功"));
 
-        assertEquals("[银行] 你的账户余额不足。", BankPhrases.failure(BankPhrases.Kind.WITHDRAW, "insufficient_funds", "copper", null).zh());
+        assertEquals("[银行] 账户余额不足，这次已全部拒绝，不会只支付一部分。",
+                BankPhrases.failure(BankPhrases.Kind.WITHDRAW, "insufficient_funds", "copper", null).zh());
         assertEquals("[银行] 银行准备金不足。", BankPhrases.failure(BankPhrases.Kind.WITHDRAW, "insufficient_reserves", "diamond", null).zh());
-        assertEquals("[银行] 铜锭不足。", BankPhrases.failure(BankPhrases.Kind.EXCHANGE, "insufficient_funds", "diamond", "copper").zh());
-        assertEquals("[银行] 你的钻石不足。", BankPhrases.failure(BankPhrases.Kind.EXCHANGE, "insufficient_funds", "copper", "diamond").zh());
-        assertEquals("[Bank] Not enough copper.", BankPhrases.failure(BankPhrases.Kind.EXCHANGE, "insufficient_funds", "diamond", "copper").en());
+        assertEquals("[银行] 铜锭余额不足，这次兑换已全部拒绝，不会只换一部分。",
+                BankPhrases.failure(BankPhrases.Kind.EXCHANGE, "insufficient_funds", "diamond", "copper").zh());
+        assertEquals("[银行] 钻石余额不足，这次兑换已全部拒绝，不会只换一部分。",
+                BankPhrases.failure(BankPhrases.Kind.EXCHANGE, "insufficient_funds", "copper", "diamond").zh());
+        assertEquals("[Bank] Not enough copper, so none was exchanged.",
+                BankPhrases.failure(BankPhrases.Kind.EXCHANGE, "insufficient_funds", "diamond", "copper").en());
     }
 
     @Test

@@ -1,6 +1,6 @@
 package dev.jdguo.bank.market;
 
-/** Chosen when a personal note is created. It is not changed afterwards. */
+/** Exchange-rate rule for one personal note. The issuer may switch when the target rule's reserves are already in place. */
 public enum NoteRegime {
     /** P = P0 × strength × flow. Redemption follows the live quote. */
     FLOAT,

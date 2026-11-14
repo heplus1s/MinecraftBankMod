@@ -6,6 +6,7 @@ import dev.jdguo.bank.instruments.NoteSeries;
 import dev.jdguo.bank.instruments.PresentedNote;
 import dev.jdguo.bank.fx.FxMath;
 import dev.jdguo.bank.ledger.BankBooks;
+import dev.jdguo.bank.ledger.Money;
 import dev.jdguo.bank.ledger.TxResult;
 import org.junit.jupiter.api.Test;
 
@@ -206,9 +207,9 @@ class SecondaryMarketTest {
 
     /** Central notes and copper for a diamond quote, using the same rounding as a live sale. */
     private static BigInteger[] cash(BankBooks books, BigDecimal diamondEach, BigInteger amount) {
-        BigDecimal exact = diamondEach.multiply(new BigDecimal(amount), FxMath.MC)
-                .multiply(books.unitsPer("note", "diamond"), FxMath.MC);
-        BigInteger central = exact.setScale(0, RoundingMode.FLOOR).toBigInteger();
+        BigDecimal exact = Money.of(diamondEach.multiply(new BigDecimal(amount), FxMath.MC)
+                .multiply(books.unitsPer("note", "diamond"), FxMath.MC));
+        BigInteger central = exact.setScale(0, RoundingMode.DOWN).toBigInteger();
         if (central.signum() < 0) {
             central = BigInteger.ZERO;
         }

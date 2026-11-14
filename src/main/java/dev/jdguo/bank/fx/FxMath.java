@@ -1,5 +1,7 @@
 package dev.jdguo.bank.fx;
 
+import dev.jdguo.bank.ledger.Money;
+
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.MathContext;
@@ -19,7 +21,7 @@ import java.math.RoundingMode;
  * (copper/diamond = 1000), the same number the datapack shows. Printing liabilities
  * without reserves raises V and weakens that currency. Alpha 0 ignores liabilities and
  * pegs V to reserves. There is no 32-bit floor; the division keeps 50 decimal digits
- * and settlement rounds the payer's cost up to a whole unit.
+ * and settlement rounds the payer's cost to four decimal places.
  *
  * <p>A virtual currency is quoted off its backing commodity:
  * {@code scale = (1 - alpha/1000) + (alpha/1000) * (L / R)}, then multiplied by par.
@@ -78,10 +80,13 @@ public final class FxMath {
         return q;
     }
 
-    /** Whole units of {@code pay} required to receive {@code quantity} of the other currency, fee included. */
-    public static BigInteger cost(BigInteger quantity, BigDecimal abundancePay, BigDecimal abundanceReceive,
-                                  BigDecimal feeFraction, BigDecimal clampMin, BigDecimal clampMax) {
-        if (quantity.signum() <= 0) {
+    /**
+     * Units of {@code pay} required to receive {@code quantity} of the other currency, fee included,
+     * settled at four decimal places. Null when the market has collapsed or the settled cost is not positive.
+     */
+    public static BigDecimal settle(BigInteger quantity, BigDecimal abundancePay, BigDecimal abundanceReceive,
+                                    BigDecimal feeFraction, BigDecimal clampMin, BigDecimal clampMax) {
+        if (quantity == null || quantity.signum() <= 0) {
             return null;
         }
         BigDecimal q = quote(abundancePay, abundanceReceive, clampMin, clampMax);
@@ -89,10 +94,17 @@ public final class FxMath {
             return null;
         }
         BigDecimal raw = new BigDecimal(quantity).multiply(q, MC).multiply(BigDecimal.ONE.add(feeFraction), MC);
-        BigInteger cost = raw.setScale(0, RoundingMode.CEILING).toBigInteger();
-        if (cost.signum() < 1) {
-            cost = BigInteger.ONE;
+        BigDecimal settled = Money.of(raw);
+        return settled.signum() > 0 ? settled : null;
+    }
+
+    /** Whole units of {@link #settle}, toward the nearest unit. A sub-unit price can be zero here. */
+    public static BigInteger cost(BigInteger quantity, BigDecimal abundancePay, BigDecimal abundanceReceive,
+                                  BigDecimal feeFraction, BigDecimal clampMin, BigDecimal clampMax) {
+        BigDecimal settled = settle(quantity, abundancePay, abundanceReceive, feeFraction, clampMin, clampMax);
+        if (settled == null) {
+            return null;
         }
-        return cost;
+        return settled.setScale(0, RoundingMode.HALF_UP).toBigInteger();
     }
 }

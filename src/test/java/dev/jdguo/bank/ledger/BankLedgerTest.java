@@ -4,6 +4,7 @@ import dev.jdguo.bank.currency.BankConfig;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.UUID;
 
@@ -60,8 +61,9 @@ class BankLedgerTest {
 
         books.deposit(player, "diamond", BigInteger.valueOf(4));
         TxResult over = books.withdraw(player, "diamond", BigInteger.TEN, true);
-        assertTrue(over.success());
-        assertEquals(BigInteger.valueOf(4), over.amount());
+        assertFalse(over.success());
+        assertEquals("insufficient_funds", over.code());
+        assertEquals(BigInteger.valueOf(4), books.balance(player, "diamond"));
         assertEquals(issuance, books.supply("diamond").reserve());
         books.checkInvariants();
     }
@@ -167,13 +169,15 @@ class BankLedgerTest {
         assertEquals(BigInteger.valueOf(4), books.centralM1());
         BigInteger afterBuy = books.supply("diamond").reserve();
         assertEquals(issuanceBefore.add(bought.amount()).subtract(books.interestPool("diamond")), afterBuy);
-        assertTrue(books.interestPool("diamond").signum() > 0);
+        assertTrue(books.interestPoolExact("diamond").signum() > 0);
         assertEquals(books.balance(player, "diamond"), books.supply("diamond").depositVault());
 
-        BigInteger issued = books.centralM1();
+        BigDecimal issued = books.supply("note").liabilityExact();
+        BigDecimal notesBefore = books.balanceExact(player, "note");
         TxResult sold = books.exchange(player, "note", "diamond", BigInteger.ONE);
         assertTrue(sold.success(), sold.code());
-        assertEquals(issued.subtract(sold.amount()), books.centralM1());
+        BigDecimal paid = notesBefore.subtract(books.balanceExact(player, "note"));
+        assertEquals(0, issued.subtract(paid).compareTo(books.supply("note").liabilityExact()));
         assertEquals(afterBuy.subtract(BigInteger.ONE), books.supply("diamond").reserve());
         books.checkInvariants();
     }
@@ -183,7 +187,7 @@ class BankLedgerTest {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         assertEquals(BigInteger.ZERO, books.centralM0());
         assertEquals(BigInteger.ZERO, books.centralM1());
-        assertEquals(new BigInteger("1000"), books.backedRoom(books.currency("note")));
+        assertEquals(new BigInteger("2000"), books.backedRoom(books.currency("note")));
         books.creditUnbacked(player, "note", BigInteger.TEN);
         books.deposit(player, "diamond", BigInteger.TEN);
         assertEquals(BigInteger.TEN, books.centralM1());

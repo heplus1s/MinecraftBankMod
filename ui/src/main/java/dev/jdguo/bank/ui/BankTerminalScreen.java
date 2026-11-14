@@ -164,7 +164,7 @@ public final class BankTerminalScreen extends Screen {
             return 0;
         }
         if ("management".equals(category)) {
-            return 2 + centralCount("savings") + centralCount("reserve");
+            return 2 + centralCount("savings") + centralCount("reserve") + institutionCount();
         }
         if ("issuance".equals(category) && data.has("personal")) {
             return 3;
@@ -194,6 +194,7 @@ public final class BankTerminalScreen extends Screen {
         if ("management".equals(category)) {
             y = line(context, "储蓄总池", x, y, 0xFFB7C7B0);
             y = centralLines(context, x, y, "savings");
+            y = institutionLines(context, x, y);
             y = line(context, "发行准备金", x, y + 4, 0xFFD0B060);
             centralLines(context, x, y, "reserve");
             return;
@@ -215,6 +216,25 @@ public final class BankTerminalScreen extends Screen {
                 y = line(context, row.get("name").getAsString() + "  " + row.get("amount").getAsString(), x, y, 0xFFE8E8E8);
             }
         }
+    }
+
+    private int institutionCount() {
+        if (!data.has("institutions")) {
+            return 0;
+        }
+        return data.getAsJsonArray("institutions").size();
+    }
+
+    private int institutionLines(DrawContext context, int x, int y) {
+        if (!data.has("institutions")) {
+            return y;
+        }
+        JsonArray rows = data.getAsJsonArray("institutions");
+        for (int i = 0; i < rows.size(); i++) {
+            JsonObject row = rows.get(i).getAsJsonObject();
+            y = line(context, row.get("name").getAsString() + "  " + row.get("detail").getAsString(), x, y, 0xFFE8E8E8);
+        }
+        return y;
     }
 
     private int centralLines(DrawContext context, int x, int y, String field) {

@@ -12,6 +12,7 @@ import dev.jdguo.bank.market.NoteRegime;
 import dev.jdguo.bank.market.NoteTrade;
 import dev.jdguo.bank.market.PersonalNote;
 import dev.jdguo.bank.market.Redemption;
+import dev.jdguo.bank.market.RegimePreview;
 import dev.jdguo.bank.market.SwapTrade;
 import dev.jdguo.bank.outlet.OutletPoint;
 import dev.jdguo.bank.persistence.BankRuntime;
@@ -22,6 +23,7 @@ import net.minecraft.registry.Registries;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Identifier;
 
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
@@ -52,6 +54,7 @@ public final class BankUiService {
             case "deposit-held" -> depositHeld(player, books);
             case "deposit-transfer" -> depositTransfer(player, books, parts);
             case "note-create" -> create(player, books, parts);
+            case "note-switch" -> switchRegime(player, books, parts);
             case "note-issue" -> issue(player, books, parts, false);
             case "note-unbacked" -> issue(player, books, parts, true);
             case "note-buy" -> trade(player, books, parts, true);
@@ -72,6 +75,7 @@ public final class BankUiService {
             case "admin-freeze" -> freeze(player, books, session);
             case "admin-unbacked" -> adminCredit(player, books, session, parts, false);
             case "admin-retire" -> adminCredit(player, books, session, parts, true);
+            case "admin-backed" -> adminBacked(player, books, session, parts);
             default -> tell(player, BankPhrases.failure(BankPhrases.Kind.GENERIC, "bad_amount", null, null));
         }
         if (BankUiNetwork.session(player) != null) {
@@ -114,7 +118,12 @@ public final class BankUiService {
         }
         TxResult result = books.withdraw(player.getUuid(), parts[1], amount, all);
         if (!result.success()) {
-            tell(player, BankPhrases.failure(BankPhrases.Kind.WITHDRAW, result.code(), parts[1], null));
+            if ("insufficient_funds".equals(result.code())) {
+                tell(player, BankPhrases.refused("取出", books, parts[1], dev.jdguo.bank.ledger.Money.of(amount),
+                        books.balanceExact(player.getUuid(), parts[1])));
+            } else {
+                tell(player, BankPhrases.failure(BankPhrases.Kind.WITHDRAW, result.code(), parts[1], null));
+            }
             return;
         }
         give(player, parts[1], result.amount());
@@ -135,7 +144,14 @@ public final class BankUiService {
         }
         TxResult result = books.exchange(player.getUuid(), parts[1], parts[2], qty);
         if (!result.success()) {
-            tell(player, BankPhrases.failure(BankPhrases.Kind.EXCHANGE, result.code(), parts[2], parts[1]));
+            if ("insufficient_funds".equals(result.code())) {
+                BigDecimal cost = books.settlementCost(parts[1], parts[2], qty);
+                tell(player, BankPhrases.refused("兑换", books, parts[1],
+                        cost == null ? dev.jdguo.bank.ledger.Money.ZERO : cost,
+                        books.balanceExact(player.getUuid(), parts[1])));
+            } else {
+                tell(player, BankPhrases.failure(BankPhrases.Kind.EXCHANGE, result.code(), parts[2], parts[1]));
+            }
             return;
         }
         BankRuntime.save();
@@ -161,48 +177,61 @@ public final class BankUiService {
         tell(player, BankPhrases.issue(books, parts[1], result.amount(), null));
     }
 
+    /**
+     * {@code deposit-held} redeems only the bill in the main hand.
+     * Copper, diamonds, bank notes, and any other bill stay where they are. 存入 is a separate action.
+     */
     private static void depositHeld(ServerPlayerEntity player, BankBooks books) {
-        var inventory = player.getInventory();
-        for (int slot = 0; slot < inventory.size(); slot++) {
-            ItemStack stack = inventory.getStack(slot);
-            if (stack.isEmpty()) {
-                continue;
-            }
-            if (NotePaper.tagged(stack)) {
-                PresentedNote presented = NotePaper.read(stack);
-                if (presented == null) {
-                    continue;
-                }
-                TxResult result = books.redeemPaper(player.getUuid(), presented, BigInteger.valueOf(stack.getCount()));
-                if (result.success() || "note_spent".equals(result.code()) || "note_tampered".equals(result.code())) {
-                    inventory.setStack(slot, ItemStack.EMPTY);
-                }
-                if (result.success()) {
-                    tell(player, BankPhrases.depositPaper(books, player.getUuid(), "银行券", "bank note", result.amount(), "trimmed".equals(result.code())));
-                }
-                continue;
-            }
-            PresentedCheck check = CheckItems.read(stack);
-            if (check != null) {
-                TxResult result = books.redeemCheck(player.getUuid(), check);
-                if (result.success() || "already_redeemed".equals(result.code()) || "tampered".equals(result.code())) {
-                    inventory.setStack(slot, ItemStack.EMPTY);
-                }
-                tell(player, result.success()
-                        ? BankPhrases.redeem(books, player.getUuid(), check.currency(), result.amount(), result.copperPaid())
-                        : BankPhrases.failure(BankPhrases.Kind.REDEEM, result.code(), check.currency(), null));
-                continue;
-            }
-            var def = books.byItem(Registries.ITEM.getId(stack.getItem()).toString());
-            if (def != null && def.kind() == dev.jdguo.bank.currency.CurrencyKind.COMMODITY) {
-                TxResult result = books.deposit(player.getUuid(), def.id(), BigInteger.valueOf(stack.getCount()));
-                if (result.success()) {
-                    inventory.setStack(slot, ItemStack.EMPTY);
-                    tell(player, BankPhrases.deposit(books, player.getUuid(), def.id(), result.amount()));
-                }
-            }
+        ItemStack hand = player.getMainHandStack();
+        MainHandBill result = redeemMainHandBill(books, player.getUuid(), CheckItems.read(hand));
+        if (result.clearHand()) {
+            hand.setCount(0);
         }
-        BankRuntime.save();
+        if (result.saveLedger()) {
+            BankRuntime.save();
+        }
+        tell(player, result.spoken());
+    }
+
+    /** {@code check} is the bill in the main hand, or null when that hand is empty or is not a bill. */
+    static MainHandBill redeemMainHandBill(BankBooks books, UUID player, PresentedCheck check) {
+        if (check == null) {
+            return MainHandBill.refuse(BankPhrases.failure(BankPhrases.Kind.REDEEM, "hold_bill", null, null));
+        }
+        TxResult result = books.redeemCheck(player, check);
+        boolean clear = result.success() || "already_redeemed".equals(result.code()) || "tampered".equals(result.code());
+        dev.jdguo.bank.text.Spoken spoken = result.success()
+                ? BankPhrases.redeem(books, player, check.currency(), result.amount(), result.copperPaid())
+                : BankPhrases.failure(BankPhrases.Kind.REDEEM, result.code(), check.currency(), null);
+        return new MainHandBill(spoken, clear, result.success());
+    }
+
+    static final class MainHandBill {
+        private final dev.jdguo.bank.text.Spoken spoken;
+        private final boolean clearHand;
+        private final boolean saveLedger;
+
+        private MainHandBill(dev.jdguo.bank.text.Spoken spoken, boolean clearHand, boolean saveLedger) {
+            this.spoken = spoken;
+            this.clearHand = clearHand;
+            this.saveLedger = saveLedger;
+        }
+
+        static MainHandBill refuse(dev.jdguo.bank.text.Spoken spoken) {
+            return new MainHandBill(spoken, false, false);
+        }
+
+        dev.jdguo.bank.text.Spoken spoken() {
+            return spoken;
+        }
+
+        boolean clearHand() {
+            return clearHand;
+        }
+
+        boolean saveLedger() {
+            return saveLedger;
+        }
     }
 
     /** Move a typed quantity of one currency from the backpack into the account. */
@@ -357,6 +386,25 @@ public final class BankUiService {
         return need - left;
     }
 
+    private static void switchRegime(ServerPlayerEntity player, BankBooks books, String[] parts) {
+        if (parts.length < 2) {
+            tell(player, BankPhrases.noteSwitchUsage());
+            return;
+        }
+        NoteRegime regime = switch (parts[1]) {
+            case "float" -> NoteRegime.FLOAT;
+            case "peg" -> NoteRegime.PEG;
+            case "hard" -> NoteRegime.HARD;
+            default -> null;
+        };
+        String anchor = parts.length >= 3 ? parts[2] : null;
+        RegimePreview result = books.switchPersonalRegime(player.getUuid(), regime, anchor);
+        if (result.applied()) {
+            BankRuntime.save();
+        }
+        tell(player, BankPhrases.regimeSwitch(result));
+    }
+
     private static void create(ServerPlayerEntity player, BankBooks books, String[] parts) {
         if (parts.length < 5) {
             return;
@@ -499,6 +547,46 @@ public final class BankUiService {
         books.setFrozen(!books.frozen());
         BankRuntime.save();
         tell(player, BankPhrases.freeze(books.frozen()));
+    }
+
+    /**
+     * {@code admin-backed <currency>} issues the whole remaining reserve room, the same posting as the
+     * chest button {@code ad:backed}. {@code admin-backed <currency> <amount>} issues that amount
+     * through {@link BankBooks#creditBacked}.
+     */
+    private static void adminBacked(ServerPlayerEntity player, BankBooks books, BankUiNetwork.Session session, String[] parts) {
+        if (!session.admin || !player.hasPermissionLevel(2) || parts.length < 2) {
+            tell(player, BankPhrases.failure(BankPhrases.Kind.GENERIC, "denied", null, null));
+            return;
+        }
+        if (books.currency(parts[1]) == null) {
+            tell(player, BankPhrases.failure(BankPhrases.Kind.CREDIT_BACKED, "unknown_currency", parts[1], null));
+            return;
+        }
+        BigInteger amount;
+        if (parts.length >= 3) {
+            amount = amount(player, parts[2], null, null);
+            if (amount == null) {
+                return;
+            }
+        } else {
+            amount = books.backedRoom(books.currency(parts[1]));
+            if (amount.signum() <= 0) {
+                tell(player, BankPhrases.failure(BankPhrases.Kind.CREDIT_BACKED, "over_cap", parts[1], null));
+                return;
+            }
+        }
+        TxResult result = books.creditBacked(player.getUuid(), parts[1], amount);
+        if (!result.success()) {
+            if ("over_cap".equals(result.code())) {
+                tell(player, BankPhrases.backedOverRoom(books, parts[1], amount, books.backedRoom(books.currency(parts[1]))));
+            } else {
+                tell(player, BankPhrases.failure(BankPhrases.Kind.CREDIT_BACKED, result.code(), parts[1], null));
+            }
+            return;
+        }
+        BankRuntime.save();
+        tell(player, BankPhrases.credit(books, "backed", parts[1], result.amount(), player.getName().getString()));
     }
 
     private static void adminCredit(ServerPlayerEntity player, BankBooks books, BankUiNetwork.Session session, String[] parts, boolean retire) {

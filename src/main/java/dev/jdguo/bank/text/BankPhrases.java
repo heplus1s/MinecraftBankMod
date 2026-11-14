@@ -4,9 +4,11 @@ import dev.jdguo.bank.currency.CurrencyDef;
 import dev.jdguo.bank.ledger.BankBooks;
 import dev.jdguo.bank.market.PersonalMarket;
 import dev.jdguo.bank.market.PersonalNote;
+import dev.jdguo.bank.market.RegimePreview;
 import dev.jdguo.bank.market.Redemption;
 import dev.jdguo.bank.market.SwapTrade;
 import dev.jdguo.bank.ledger.CompactFormat;
+import dev.jdguo.bank.ledger.Money;
 import dev.jdguo.bank.ledger.Supply;
 import dev.jdguo.bank.ledger.TxResult;
 
@@ -108,17 +110,31 @@ public final class BankPhrases {
                 "Exchanged for " + shortEn(books, receive) + " ×" + n + changeEn(copper) + balancesEn(books, player));
     }
 
+    /** A complete refusal that names the currency, the amount required, and the balance on the books. */
+    public static Spoken refused(String actionZh, BankBooks books, String currency, BigDecimal need, BigDecimal have) {
+        String name = nameZh(books, currency);
+        String needText = Money.display(need);
+        String haveText = Money.display(have);
+        return line(Tone.RED,
+                "账户里的" + name + "不够" + actionZh + "。需要 " + needText + " " + name
+                        + "，现在只有 " + haveText + " " + name + "，这次已全部拒绝，不会只支付一部分。",
+                "The " + shortEn(books, currency) + " balance is short. " + needText + " is required and "
+                        + haveText + " is on the account, so the whole request was refused.");
+    }
+
     public static Spoken failure(Kind kind, String code, String currency, String other) {
         if ("insufficient_funds".equals(code) && kind == Kind.EXCHANGE) {
             if ("copper".equals(other)) {
-                return line(Tone.RED, "铜锭不足。", "Not enough copper.");
+                return line(Tone.RED, "铜锭余额不足，这次兑换已全部拒绝，不会只换一部分。", "Not enough copper, so none was exchanged.");
             }
             if ("diamond".equals(other)) {
-                return line(Tone.RED, "你的钻石不足。", "You don't have enough diamonds.");
+                return line(Tone.RED, "钻石余额不足，这次兑换已全部拒绝，不会只换一部分。", "Not enough diamonds, so none was exchanged.");
             }
         }
         return switch (code == null ? "" : code) {
-            case "insufficient_funds" -> line(Tone.RED, "你的账户余额不足。", "Your balance isn't enough.");
+            case "insufficient_funds" -> line(Tone.RED,
+                    "账户余额不足，这次已全部拒绝，不会只支付一部分。",
+                    "The balance is short, so the whole request was refused.");
             case "insufficient_reserves" -> line(Tone.RED, "银行准备金不足。", "The vault doesn't have enough reserves.");
             case "unknown_currency" -> line(Tone.RED, "没有这种货币。", "No such currency.");
             case "bad_amount" -> line(Tone.RED, "金额无效。", "That amount isn't valid.");
@@ -131,7 +147,8 @@ public final class BankPhrases {
             case "frozen" -> line(Tone.RED, "已暂停银行券兑付。", "Bank-note redemption is suspended.");
             case "no_market" -> line(Tone.RED, "这种货币无法报价。", "That currency cannot be quoted.");
             case "not_issuable" -> line(Tone.RED, "这种货币不能这样发行。", "This currency can't be issued that way.");
-            case "over_cap" -> line(Tone.RED, "没有剩余的准备金额度。", "No reserve room left.");
+            case "over_cap" -> line(Tone.RED, "尚可按准备金发行的额度不足，这次已全部拒绝。", "Reserve-backed room is short, so the whole issue was refused.");
+            case "hold_bill" -> line(Tone.RED, "请把一张汇票拿在手上。", "Hold one bill in your main hand.");
             case "invalid_check" -> line(Tone.RED, "认不出这张票据。", "Unrecognized bill.");
             case "tampered" -> line(Tone.RED, "票据和存根对不上。", "The bill doesn't match the stub.");
             case "already_redeemed" -> line(Tone.RED, "这张汇票已经兑付过。", "This bill has already been paid.");
@@ -158,6 +175,16 @@ public final class BankPhrases {
         return line(Tone.GREEN,
                 "开出 " + nameZh(books, currency) + " 汇票 ×" + n + tail,
                 "Issued a " + shortEn(books, currency) + " bill ×" + n + tail);
+    }
+
+    public static Spoken backedOverRoom(BankBooks books, String currency, BigInteger requested, BigInteger room) {
+        String name = nameZh(books, currency);
+        String ask = CompactFormat.format(requested);
+        String left = CompactFormat.format(room == null ? BigInteger.ZERO : room);
+        return line(Tone.RED,
+                "按准备金发行" + name + " ×" + ask + " 超过了尚可发行的 ×" + left + "，这次已全部拒绝，不会只发行一部分。",
+                "Reserve-backed " + shortEn(books, currency) + " ×" + ask + " is above the remaining room ×" + left
+                        + ", so the whole issue was refused.");
     }
 
     public static Spoken credit(BankBooks books, String mode, String currency, BigInteger amount, String playerName) {
@@ -207,6 +234,18 @@ public final class BankPhrases {
         return line(Tone.AQUA,
                 playerName + " 的个人准备金：" + personalZh(books, player) + "。这不是存款，也不是央行库存。",
                 playerName + "'s personal reserves: " + personalEn(books, player) + ". Not a deposit, and not central stock.");
+    }
+
+    public static Spoken settlementAccounts(BankBooks books) {
+        CurrencyDef note = books.primaryVirtual();
+        String noteId = note == null ? "note" : note.id();
+        String shopZh = "商店经营账户 " + nameZh(books, noteId) + " ×" + CompactFormat.format(books.shopOperating(noteId));
+        String shopEn = "Shop operating account " + nameEn(books, noteId) + " ×" + CompactFormat.format(books.shopOperating(noteId));
+        return line(Tone.AQUA,
+                shopZh + "。土地出让账户 " + holdingsZh(books, books::landGrant)
+                        + "。两户都是储蓄总池的分户，按活期存款计息，与发行准备金分开。",
+                shopEn + ". Land-grant account " + holdingsEn(books, books::landGrant)
+                        + ". Both are sub-accounts of the savings pool, earn demand-deposit interest, and stay apart from issuance reserves.");
     }
 
     public static List<Spoken> supply(BankBooks books) {
@@ -648,6 +687,20 @@ public final class BankPhrases {
         return parts.isEmpty() ? "0" : String.join(", ", parts);
     }
 
+    public static Spoken noteSwitchUsage() {
+        return line(Tone.RED,
+                "用法是 note-switch float、note-switch peg diamond、note-switch peg copper、note-switch peg note，或 note-switch hard diamond。",
+                "Use note-switch float, note-switch peg diamond, note-switch peg copper, note-switch peg note, or note-switch hard diamond.");
+    }
+
+    public static Spoken regimeSwitch(RegimePreview preview) {
+        String en = preview.applied()
+                ? "The personal note now uses " + preview.regime() + " against " + preview.anchor()
+                + ". Locked collateral stays, and no new notes were issued."
+                : "The regime switch was refused.";
+        return line(preview.applied() ? Tone.GREEN : Tone.RED, preview.reason(), en);
+    }
+
     public static Spoken noteRejected(String code) {
         return switch (code == null ? "" : code) {
             case "name" -> line(Tone.RED, "名字最多三个汉字或英文字母。", "The name can be at most three Chinese characters or English letters.");
@@ -726,6 +779,22 @@ public final class BankPhrases {
 
     private static String personalEn(BankBooks books, UUID player) {
         return figuresEn(books, id -> books.personalReserve(player, id));
+    }
+
+    private static String holdingsZh(BankBooks books, java.util.function.Function<String, BigInteger> amount) {
+        List<String> parts = new ArrayList<>();
+        for (CurrencyDef def : books.currencies()) {
+            parts.add(def.name() + " ×" + CompactFormat.format(amount.apply(def.id())));
+        }
+        return String.join("，", parts);
+    }
+
+    private static String holdingsEn(BankBooks books, java.util.function.Function<String, BigInteger> amount) {
+        List<String> parts = new ArrayList<>();
+        for (CurrencyDef def : books.currencies()) {
+            parts.add(nameEn(books, def.id()) + " ×" + CompactFormat.format(amount.apply(def.id())));
+        }
+        return String.join(", ", parts);
     }
 
     private static String figuresZh(BankBooks books, java.util.function.Function<String, BigInteger> amount) {

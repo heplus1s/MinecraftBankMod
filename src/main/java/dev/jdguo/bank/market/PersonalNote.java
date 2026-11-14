@@ -10,10 +10,16 @@ public final class PersonalNote {
     private final UUID id;
     private final UUID issuer;
     private final String name;
-    private final NoteRegime regime;
+    private NoteRegime regime;
     /** Reserve and payout currency: diamond, copper, or note. */
-    private final String anchor;
+    private String anchor;
     private final BigInteger par;
+    /**
+     * Diamond price captured when the regime last changed.
+     * Float uses it as the opening price. A peg uses it as the official price and ignores later trades.
+     * Null on notes that still follow par.
+     */
+    private java.math.BigDecimal openingDiamonds;
     private BigInteger circulation = BigInteger.ZERO;
     private BigInteger buys = BigInteger.ZERO;
     private BigInteger sells = BigInteger.ZERO;
@@ -85,6 +91,17 @@ public final class PersonalNote {
         this.closedAtEpochMs = closedAtEpochMs;
         this.released = released == null ? BigInteger.ZERO : released;
         this.drawn = drawn == null ? BigInteger.ZERO : drawn;
+    }
+
+    public java.math.BigDecimal openingDiamonds() { return openingDiamonds; }
+
+    /** Posts a new regime without issuing notes or releasing collateral. */
+    public void adopt(NoteRegime regime, String anchor, java.math.BigDecimal openingDiamonds) {
+        this.regime = regime == null ? NoteRegime.FLOAT : regime;
+        if (anchor != null && !anchor.isBlank()) {
+            this.anchor = anchor;
+        }
+        this.openingDiamonds = openingDiamonds;
     }
 
     public void setCirculation(BigInteger circulation) { this.circulation = circulation; }
