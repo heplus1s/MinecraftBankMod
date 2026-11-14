@@ -39,9 +39,6 @@ class PersonalMarketTest {
         BigInteger diamonds = books.supply("diamond").reserve();
 
         assertEquals("reserve", books.issuePersonalNote(issuer, BigInteger.TEN).code());
-        assertEquals("central_reserve", books.issuePersonalNoteUnbacked(issuer, BigInteger.TEN).code());
-        books.creditUnbacked(issuer, "note", BigInteger.ONE);
-        assertTrue(books.depositCentralReserve(issuer, BigInteger.ONE).success());
         assertTrue(books.issuePersonalNoteUnbacked(issuer, BigInteger.TEN).success());
 
         PersonalNote note = books.personalNote(issuer);

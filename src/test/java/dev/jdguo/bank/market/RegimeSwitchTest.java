@@ -27,15 +27,6 @@ class RegimeSwitchTest {
         BigInteger locked = note.locked();
         BigInteger reserve = books.personalReserve(issuer, "diamond");
 
-        RegimePreview early = books.switchPersonalRegime(issuer, NoteRegime.PEG, "diamond");
-        assertFalse(early.allowed());
-        assertTrue(early.reason().contains("联系汇率制"));
-        assertTrue(early.reason().contains("尚缺"));
-        assertTrue(early.reason().contains("央行准备金"));
-        assertEquals(NoteRegime.FLOAT, note.regime());
-
-        books.creditUnbacked(issuer, "note", new BigInteger("10"));
-        assertTrue(books.depositCentralReserve(issuer, new BigInteger("10")).success());
         RegimePreview posted = books.switchPersonalRegime(issuer, NoteRegime.PEG, "diamond");
 
         assertTrue(posted.applied(), posted.reason());
@@ -47,6 +38,33 @@ class RegimeSwitchTest {
         assertEquals(reserve, books.personalReserve(issuer, "diamond"));
         assertEquals(0, BigDecimal.ONE.compareTo(note.openingDiamonds()));
         assertEquals(0, BigDecimal.ONE.compareTo(books.personalDiamondPrice(note)));
+        assertEquals(BigInteger.ZERO, books.requiredCentralReserve(note));
+    }
+
+    @Test
+    void pegToTheCentralNoteStillNeedsFullCoverAndCommodityRegimesDoNot() {
+        BankBooks books = ready(new BigInteger("100"), new BigInteger("10"));
+        PersonalNote note = books.personalNote(issuer);
+
+        RegimePreview shortfall = books.switchPersonalRegime(issuer, NoteRegime.PEG, "note");
+        assertFalse(shortfall.allowed());
+        assertTrue(shortfall.reason().contains("联系汇率制"));
+        assertTrue(shortfall.reason().contains("银行券"));
+        assertTrue(shortfall.reason().contains("尚缺"));
+        assertEquals(NoteRegime.FLOAT, note.regime());
+        assertEquals(new BigInteger("100"), note.locked());
+
+        BankBooks fresh = BankBooks.create(BankConfig.defaults());
+        fresh.setAlpha("note", BigDecimal.ZERO);
+        assertTrue(fresh.createPersonalNote(issuer, "泉", NoteRegime.PEG, "note", BigInteger.ONE).success());
+        assertEquals("central_reserve", fresh.issuePersonalNote(issuer, new BigInteger("100")).code());
+        fresh.creditUnbacked(issuer, "note", new BigInteger("100"));
+        assertTrue(fresh.depositCentralReserve(issuer, new BigInteger("100")).success());
+        assertTrue(fresh.issuePersonalNote(issuer, new BigInteger("100")).success());
+        PersonalNote pegged = fresh.personalNote(issuer);
+        assertEquals(BigInteger.ZERO, pegged.locked());
+        assertEquals(new BigInteger("100"), fresh.requiredCentralReserve(pegged));
+        assertEquals(new BigInteger("100"), fresh.centralReserve(issuer));
     }
 
     @Test

@@ -147,7 +147,7 @@ public final class BankPhrases {
             case "frozen" -> line(Tone.RED, "已暂停银行券兑付。", "Bank-note redemption is suspended.");
             case "no_market" -> line(Tone.RED, "这种货币无法报价。", "That currency cannot be quoted.");
             case "not_issuable" -> line(Tone.RED, "这种货币不能这样发行。", "This currency can't be issued that way.");
-            case "over_cap" -> line(Tone.RED, "没有剩余的准备金额度。", "No reserve room left.");
+            case "over_cap" -> line(Tone.RED, "尚可按准备金发行的额度不足，这次已全部拒绝。", "Reserve-backed room is short, so the whole issue was refused.");
             case "hold_bill" -> line(Tone.RED, "请把一张汇票拿在手上。", "Hold one bill in your main hand.");
             case "invalid_check" -> line(Tone.RED, "认不出这张票据。", "Unrecognized bill.");
             case "tampered" -> line(Tone.RED, "票据和存根对不上。", "The bill doesn't match the stub.");
@@ -175,6 +175,16 @@ public final class BankPhrases {
         return line(Tone.GREEN,
                 "开出 " + nameZh(books, currency) + " 汇票 ×" + n + tail,
                 "Issued a " + shortEn(books, currency) + " bill ×" + n + tail);
+    }
+
+    public static Spoken backedOverRoom(BankBooks books, String currency, BigInteger requested, BigInteger room) {
+        String name = nameZh(books, currency);
+        String ask = CompactFormat.format(requested);
+        String left = CompactFormat.format(room == null ? BigInteger.ZERO : room);
+        return line(Tone.RED,
+                "按准备金发行" + name + " ×" + ask + " 超过了尚可发行的 ×" + left + "，这次已全部拒绝，不会只发行一部分。",
+                "Reserve-backed " + shortEn(books, currency) + " ×" + ask + " is above the remaining room ×" + left
+                        + ", so the whole issue was refused.");
     }
 
     public static Spoken credit(BankBooks books, String mode, String currency, BigInteger amount, String playerName) {

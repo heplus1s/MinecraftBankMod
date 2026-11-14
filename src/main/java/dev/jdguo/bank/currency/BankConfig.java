@@ -41,9 +41,9 @@ public final class BankConfig {
         this.feeFraction = feeFraction;
         this.interestFraction = interestFraction == null ? new BigDecimal("0.02") : interestFraction;
         this.personalInterestFraction = personalInterestFraction == null ? BigDecimal.ZERO : personalInterestFraction;
-        this.floatCentralReserve = floatCentralReserve == null ? new BigDecimal("0.10") : floatCentralReserve;
-        this.pegCentralReserve = pegCentralReserve == null ? new BigDecimal("0.20") : pegCentralReserve;
-        this.hardCentralReserve = hardCentralReserve == null ? new BigDecimal("0.05") : hardCentralReserve;
+        this.floatCentralReserve = floatCentralReserve == null ? BigDecimal.ZERO : floatCentralReserve;
+        this.pegCentralReserve = pegCentralReserve == null ? BigDecimal.ZERO : pegCentralReserve;
+        this.hardCentralReserve = hardCentralReserve == null ? BigDecimal.ZERO : hardCentralReserve;
         this.clampMin = clampMin;
         this.clampMax = clampMax;
         this.outletRadius = outletRadius;
@@ -74,7 +74,7 @@ public final class BankConfig {
                 new BigInteger("1000"), new BigInteger("1000"), alpha,
                 true, "diamond", BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE));
         return new BankConfig("diamond", new BigDecimal("0.02"), new BigDecimal("0.02"), BigDecimal.ZERO,
-                new BigDecimal("0.10"), new BigDecimal("0.20"), new BigDecimal("0.05"), null, null, 4.0,
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null, null, 4.0,
                 true, true, true, true, true, list);
     }
 

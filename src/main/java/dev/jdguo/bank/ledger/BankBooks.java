@@ -74,12 +74,15 @@ public final class BankBooks {
     private BigDecimal interestFraction = new BigDecimal("0.02");
     /** Annual rate on each personal note's circulation. Default is zero. */
     private BigDecimal personalInterestFraction = BigDecimal.ZERO;
-    /** Share of a floating note's M1 that must sit in the issuer's central-bank reserve account. */
-    private BigDecimal floatCentralRatio = new BigDecimal("0.10");
-    /** Share of a pegged note's peg value that must sit in that account. The rest is locked backing. */
-    private BigDecimal pegCentralRatio = new BigDecimal("0.20");
-    /** Clearing buffer, in central notes, on top of a hard note's 100% commodity lock. */
-    private BigDecimal hardCentralRatio = new BigDecimal("0.05");
+    /** Commodity 联系汇率制 locks this share of par. It is not a second central-note reserve. */
+    private static final BigDecimal PEG_COMMODITY_COVERAGE = new BigDecimal("0.80");
+    /**
+     * Retained for older saves and the ratio command. Issuance, switching, and redemption no longer
+     * read them, except that a 联系汇率制 note anchored to 银行券 always covers 100% of par.
+     */
+    private BigDecimal floatCentralRatio = BigDecimal.ZERO;
+    private BigDecimal pegCentralRatio = BigDecimal.ZERO;
+    private BigDecimal hardCentralRatio = BigDecimal.ZERO;
     /** Central 银行券 posted by an issuer. Not savings, not interest-bearing, not issuance reserves. */
     private final Map<UUID, BigInteger> centralReserveAccounts = new LinkedHashMap<>();
     /**
@@ -531,11 +534,10 @@ public final class BankBooks {
             return TxResult.fail("over_cap", "Above the reserve cap. Room left: " + CompactFormat.format(room));
         }
         BigInteger lock = CreditDesk.backingUnitsNeeded(amount, def.parPerBacking(), def.haircut(), def.minReserveRatio());
-        Supply vault = supply(def.backing());
-        if (vault.freeReserve().compareTo(lock) < 0) {
-            return TxResult.fail("insufficient_reserves", "Not enough free reserves to lock");
+        TxResult pledged = lockIssuanceCollateral(def, lock);
+        if (!pledged.success()) {
+            return pledged;
         }
-        vault.addLocked(lock);
         creditBalance(player, currency, amount);
         supply(currency).addLiability(amount);
         supply(currency).addReserve(amount);
@@ -572,21 +574,116 @@ public final class BankBooks {
             }
             self.addReserve(backedBurn.negate());
             BigInteger unlock = CreditDesk.backingUnitsNeeded(backedBurn, def.parPerBacking(), def.haircut(), def.minReserveRatio());
-            Supply vault = supply(def.backing());
-            if (unlock.compareTo(vault.locked()) > 0) {
-                unlock = vault.locked();
-            }
-            vault.addLocked(unlock.negate());
+            unlockIssuanceCollateral(def, unlock);
         }
         return TxResult.ok(amount, "Retired " + label(def) + " " + CompactFormat.format(amount));
     }
 
+    /**
+     * Reserve-backed notes still issuable. The central 银行券 counts free copper, converted at the
+     * live copper-per-diamond rate, plus free diamonds. Metal already locked is omitted, and notes
+     * already issued against that lock are not subtracted a second time.
+     */
     public BigInteger backedRoom(CurrencyDef def) {
         if (def.kind() != CurrencyKind.VIRTUAL || def.backing() == null) {
             return BigInteger.ZERO;
         }
-        BigInteger max = CreditDesk.maxLiabilities(supply(def.backing()).reserve(), def.parPerBacking(), def.haircut(), def.minReserveRatio());
-        return CreditDesk.room(max, supply(def.id()).liability());
+        BigInteger stock = centralNote(def) ? diamondEquivalentFree() : supply(def.backing()).freeReserve();
+        BigInteger max = CreditDesk.maxLiabilities(stock, def.parPerBacking(), def.haircut(), def.minReserveRatio());
+        return CreditDesk.room(max, unbackedOutstanding(def));
+    }
+
+    /** Free diamonds plus free copper divided by the current copper-per-diamond rate. */
+    public BigInteger diamondEquivalentFree() {
+        BigInteger diamonds = supply("diamond").freeReserve();
+        BigInteger rate = copperPerDiamond();
+        if (rate.signum() <= 0) {
+            return diamonds;
+        }
+        return diamonds.add(supply("copper").freeReserve().divide(rate));
+    }
+
+    private boolean centralNote(CurrencyDef def) {
+        CurrencyDef note = primaryVirtual();
+        return note != null && def.id().equals(note.id());
+    }
+
+    /** Notes whose issuance did not lock commodity. The opening seed in the anchor is not one of them. */
+    private BigInteger unbackedOutstanding(CurrencyDef def) {
+        Supply self = supply(def.id());
+        BigInteger backed = self.reserve().subtract(self.anchor());
+        if (backed.signum() < 0) {
+            backed = BigInteger.ZERO;
+        }
+        BigInteger unbacked = self.liability().subtract(backed);
+        return unbacked.signum() < 0 ? BigInteger.ZERO : unbacked;
+    }
+
+    /**
+     * Locks {@code diamondUnits} of diamond-equivalent collateral, diamonds first and then copper
+     * at the current hard-currency rate. Nothing is locked when the free stock is short.
+     */
+    private TxResult lockIssuanceCollateral(CurrencyDef def, BigInteger diamondUnits) {
+        if (diamondUnits.signum() <= 0) {
+            return TxResult.ok(BigInteger.ZERO, "ok");
+        }
+        if (!centralNote(def)) {
+            Supply vault = supply(def.backing());
+            if (vault.freeReserve().compareTo(diamondUnits) < 0) {
+                return TxResult.fail("insufficient_reserves", "Not enough free reserves to lock");
+            }
+            vault.addLocked(diamondUnits);
+            return TxResult.ok(diamondUnits, "ok");
+        }
+        Supply diamonds = supply("diamond");
+        BigInteger fromDiamond = diamondUnits.min(diamonds.freeReserve());
+        BigInteger rest = diamondUnits.subtract(fromDiamond);
+        BigInteger fromCopper = BigInteger.ZERO;
+        BigInteger rate = copperPerDiamond();
+        if (rest.signum() > 0) {
+            if (rate.signum() <= 0) {
+                return TxResult.fail("insufficient_reserves", "Not enough free reserves to lock");
+            }
+            fromCopper = rest.multiply(rate);
+            if (supply("copper").freeReserve().compareTo(fromCopper) < 0) {
+                return TxResult.fail("insufficient_reserves", "Not enough free reserves to lock");
+            }
+        }
+        if (fromDiamond.signum() > 0) {
+            diamonds.addLocked(fromDiamond);
+        }
+        if (fromCopper.signum() > 0) {
+            supply("copper").addLocked(fromCopper);
+        }
+        return TxResult.ok(diamondUnits, "ok");
+    }
+
+    private void unlockIssuanceCollateral(CurrencyDef def, BigInteger diamondUnits) {
+        if (diamondUnits.signum() <= 0) {
+            return;
+        }
+        if (!centralNote(def)) {
+            Supply vault = supply(def.backing());
+            BigInteger unlock = diamondUnits.min(vault.locked());
+            vault.addLocked(unlock.negate());
+            return;
+        }
+        Supply diamonds = supply("diamond");
+        BigInteger fromDiamond = diamondUnits.min(diamonds.locked());
+        diamonds.addLocked(fromDiamond.negate());
+        BigInteger rest = diamondUnits.subtract(fromDiamond);
+        if (rest.signum() <= 0) {
+            return;
+        }
+        BigInteger rate = copperPerDiamond();
+        if (rate.signum() <= 0) {
+            return;
+        }
+        Supply copper = supply("copper");
+        BigInteger fromCopper = rest.multiply(rate).min(copper.locked());
+        if (fromCopper.signum() > 0) {
+            copper.addLocked(fromCopper.negate());
+        }
     }
 
     public BigInteger cost(String payId, String receiveId, BigInteger receiveQty) {
@@ -1472,10 +1569,11 @@ public final class BankBooks {
             return refused(regime, anchor, "「" + name + "」已经实行" + regimeZh(regime) + "，计价货币是"
                     + anchorZh(anchor) + "，无需再切换。");
         }
+        List<String> gaps = new ArrayList<>();
         if (!anchor.equals(note.anchor()) && note.locked().signum() > 0) {
-            return refused(regime, anchor, "「" + name + "」已锁定" + anchorZh(note.anchor()) + " ×"
+            gaps.add("「" + name + "」已锁定" + anchorZh(note.anchor()) + " ×"
                     + CompactFormat.format(note.locked()) + "。已锁定的抵押不能改记到"
-                    + anchorZh(anchor) + "上，也不能在切换时解除。");
+                    + anchorZh(anchor) + "上，也不能在切换时解除");
         }
         BigInteger face = note.par();
         BigInteger personalNeed = personalNeed(regime, anchor, face, note.circulation());
@@ -1483,7 +1581,6 @@ public final class BankBooks {
         BigInteger haveLock = anchor.equals(note.anchor()) ? note.locked() : BigInteger.ZERO;
         BigInteger haveReserve = personalReserve(note.issuer(), anchor);
         BigInteger haveCentral = centralReserve(note.issuer());
-        List<String> gaps = new ArrayList<>();
         if (regime == NoteRegime.HARD) {
             BigDecimal live = personalDiamondPrice(note);
             BigDecimal faceDiamonds = faceDiamonds(anchor, face);
@@ -1586,27 +1683,20 @@ public final class BankBooks {
             return par.multiply(circulation);
         }
         if (regime == NoteRegime.PEG) {
-            BigDecimal share = BigDecimal.ONE.subtract(pegCentralRatio);
-            if (share.signum() < 0) {
-                share = BigDecimal.ZERO;
-            }
-            return ceiling(par.multiply(circulation), share);
+            return ceiling(par.multiply(circulation), PEG_COMMODITY_COVERAGE);
         }
         return ceiling(par.multiply(circulation), personalNoteCoverage);
     }
 
+    /** Central 银行券 are required only when 联系汇率制 is anchored to the note itself. */
     private BigInteger centralNeed(NoteRegime regime, String anchor, BigInteger par, BigInteger circulation) {
-        if (circulation.signum() <= 0) {
+        if (circulation.signum() <= 0 || par.signum() <= 0) {
             return BigInteger.ZERO;
-        }
-        if (regime == NoteRegime.FLOAT) {
-            return share(circulation, floatCentralRatio);
         }
         if (regime == NoteRegime.PEG && "note".equals(anchor)) {
             return par.multiply(circulation);
         }
-        BigDecimal ratio = regime == NoteRegime.HARD ? hardCentralRatio : pegCentralRatio;
-        return share(pegValue(anchor, par, circulation), ratio);
+        return BigInteger.ZERO;
     }
 
     private BigInteger pegValue(String anchor, BigInteger par, BigInteger circulation) {
@@ -1792,7 +1882,7 @@ public final class BankBooks {
         if (personalReserve(issuer, backing).compareTo(required) < 0) {
             return NoteTrade.fail("reserve");
         }
-        if (centralReserve(issuer).compareTo(requiredCentralReserve(note, next)) < 0) {
+        if (shortCentralCover(note, next)) {
             return NoteTrade.fail("central_reserve");
         }
         note.setLocked(required);
@@ -1814,7 +1904,7 @@ public final class BankBooks {
             return NoteTrade.fail("par");
         }
         BigInteger next = note.circulation().add(amount);
-        if (centralReserve(issuer).compareTo(requiredCentralReserve(note, next)) < 0) {
+        if (shortCentralCover(note, next)) {
             return NoteTrade.fail("central_reserve");
         }
         note.setCirculation(next);
@@ -2341,13 +2431,7 @@ public final class BankBooks {
             if ("note".equals(note.reserveCurrency())) {
                 return BigInteger.ZERO;
             }
-            BigDecimal share = BigDecimal.ONE.subtract(pegCentralRatio);
-            if (share.signum() < 0) {
-                share = BigDecimal.ZERO;
-            }
-            BigDecimal raw = new BigDecimal(note.par().multiply(circulation)).multiply(share, FxMath.MC);
-            BigInteger required = raw.setScale(0, RoundingMode.CEILING).toBigInteger();
-            return required.signum() < 0 ? BigInteger.ZERO : required;
+            return ceiling(note.par().multiply(circulation), PEG_COMMODITY_COVERAGE);
         }
         BigDecimal raw = new BigDecimal(note.par().multiply(circulation)).multiply(personalNoteCoverage, FxMath.MC);
         BigInteger required = raw.setScale(0, RoundingMode.CEILING).toBigInteger();
@@ -2539,18 +2623,19 @@ public final class BankBooks {
      * Personal-note M1 is {@code circulation} (book entry plus paper), not those two added twice.
      * Float counts that M1 directly. Peg and hard convert the peg value into central notes.
      */
+    private boolean shortCentralCover(PersonalNote note, BigInteger circulation) {
+        BigInteger need = requiredCentralReserve(note, circulation);
+        return need.signum() > 0 && centralReserve(note.issuer()).compareTo(need) < 0;
+    }
+
     private BigInteger requiredCentralReserve(PersonalNote note, BigInteger circulation) {
-        if (circulation.signum() <= 0) {
+        if (note == null || circulation.signum() <= 0 || note.par().signum() <= 0) {
             return BigInteger.ZERO;
-        }
-        if (note.regime() == NoteRegime.FLOAT) {
-            return share(circulation, floatCentralRatio);
         }
         if (note.regime() == NoteRegime.PEG && "note".equals(note.reserveCurrency())) {
             return circulation.multiply(note.par());
         }
-        BigDecimal ratio = note.regime() == NoteRegime.HARD ? hardCentralRatio : pegCentralRatio;
-        return share(pegValueInNotes(note, circulation), ratio);
+        return BigInteger.ZERO;
     }
 
     private BigInteger pegValueInNotes(PersonalNote note, BigInteger circulation) {

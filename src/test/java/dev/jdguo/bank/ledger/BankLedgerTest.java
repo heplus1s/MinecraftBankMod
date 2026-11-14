@@ -187,7 +187,7 @@ class BankLedgerTest {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         assertEquals(BigInteger.ZERO, books.centralM0());
         assertEquals(BigInteger.ZERO, books.centralM1());
-        assertEquals(new BigInteger("1000"), books.backedRoom(books.currency("note")));
+        assertEquals(new BigInteger("2000"), books.backedRoom(books.currency("note")));
         books.creditUnbacked(player, "note", BigInteger.TEN);
         books.deposit(player, "diamond", BigInteger.TEN);
         assertEquals(BigInteger.TEN, books.centralM1());

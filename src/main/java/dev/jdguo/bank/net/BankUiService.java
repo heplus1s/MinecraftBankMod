@@ -578,7 +578,11 @@ public final class BankUiService {
         }
         TxResult result = books.creditBacked(player.getUuid(), parts[1], amount);
         if (!result.success()) {
-            tell(player, BankPhrases.failure(BankPhrases.Kind.CREDIT_BACKED, result.code(), parts[1], null));
+            if ("over_cap".equals(result.code())) {
+                tell(player, BankPhrases.backedOverRoom(books, parts[1], amount, books.backedRoom(books.currency(parts[1]))));
+            } else {
+                tell(player, BankPhrases.failure(BankPhrases.Kind.CREDIT_BACKED, result.code(), parts[1], null));
+            }
             return;
         }
         BankRuntime.save();

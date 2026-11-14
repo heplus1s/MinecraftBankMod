@@ -400,6 +400,9 @@ public final class BankCommands {
             default -> TxResult.fail("bad_amount", "Unknown action");
         };
         if (!result.success()) {
+            if ("backed".equals(mode) && "over_cap".equals(result.code())) {
+                return fail(source, BankPhrases.backedOverRoom(books(), currency, amount, books().backedRoom(books().currency(currency))));
+            }
             return fail(source, BankPhrases.failure(BankPhrases.Kind.GENERIC, result.code(), currency, null));
         }
         if ("check".equals(mode)) {
