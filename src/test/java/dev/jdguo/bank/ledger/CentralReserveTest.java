@@ -65,17 +65,17 @@ class CentralReserveTest {
         assertTrue(books.depositCentralReserve(issuer, new BigInteger("365")).success());
         books.creditUnbacked(issuer, "note", new BigInteger("367"));
         assertTrue(books.exchange(issuer, "note", "diamond", BigInteger.ONE).success());
-        BigInteger pool = books.interestPool("note");
+        java.math.BigDecimal pool = books.interestPoolExact("note");
         assertTrue(pool.signum() > 0);
         books.accrueInterest(0);
         books.accrueInterest(1);
 
         assertEquals(new BigInteger("365"), books.centralReserve(issuer));
-        assertEquals(new BigInteger("366"), books.balance(issuer, "note"));
-        assertTrue(books.interestPool("note").compareTo(pool) < 0);
-        BigInteger untouched = books.interestPool("note");
+        assertEquals(0, new java.math.BigDecimal("366.0000").compareTo(books.balanceExact(issuer, "note")));
+        assertTrue(books.interestPoolExact("note").compareTo(pool) < 0);
+        java.math.BigDecimal untouched = books.interestPoolExact("note");
         assertEquals("central_reserve", books.issuePersonalNoteUnbacked(issuer, new BigInteger("4000")).code());
-        assertEquals(untouched, books.interestPool("note"));
+        assertEquals(0, untouched.compareTo(books.interestPoolExact("note")));
         assertEquals(new BigInteger("1000").subtract(BigInteger.ONE), books.supply("diamond").reserve());
         books.checkInvariants();
     }

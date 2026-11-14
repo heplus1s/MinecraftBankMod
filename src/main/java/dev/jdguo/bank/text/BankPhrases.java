@@ -8,6 +8,7 @@ import dev.jdguo.bank.market.RegimePreview;
 import dev.jdguo.bank.market.Redemption;
 import dev.jdguo.bank.market.SwapTrade;
 import dev.jdguo.bank.ledger.CompactFormat;
+import dev.jdguo.bank.ledger.Money;
 import dev.jdguo.bank.ledger.Supply;
 import dev.jdguo.bank.ledger.TxResult;
 
@@ -109,17 +110,31 @@ public final class BankPhrases {
                 "Exchanged for " + shortEn(books, receive) + " ×" + n + changeEn(copper) + balancesEn(books, player));
     }
 
+    /** A complete refusal that names the currency, the amount required, and the balance on the books. */
+    public static Spoken refused(String actionZh, BankBooks books, String currency, BigDecimal need, BigDecimal have) {
+        String name = nameZh(books, currency);
+        String needText = Money.display(need);
+        String haveText = Money.display(have);
+        return line(Tone.RED,
+                "账户里的" + name + "不够" + actionZh + "。需要 " + needText + " " + name
+                        + "，现在只有 " + haveText + " " + name + "，这次已全部拒绝，不会只支付一部分。",
+                "The " + shortEn(books, currency) + " balance is short. " + needText + " is required and "
+                        + haveText + " is on the account, so the whole request was refused.");
+    }
+
     public static Spoken failure(Kind kind, String code, String currency, String other) {
         if ("insufficient_funds".equals(code) && kind == Kind.EXCHANGE) {
             if ("copper".equals(other)) {
-                return line(Tone.RED, "铜锭不足。", "Not enough copper.");
+                return line(Tone.RED, "铜锭余额不足，这次兑换已全部拒绝，不会只换一部分。", "Not enough copper, so none was exchanged.");
             }
             if ("diamond".equals(other)) {
-                return line(Tone.RED, "你的钻石不足。", "You don't have enough diamonds.");
+                return line(Tone.RED, "钻石余额不足，这次兑换已全部拒绝，不会只换一部分。", "Not enough diamonds, so none was exchanged.");
             }
         }
         return switch (code == null ? "" : code) {
-            case "insufficient_funds" -> line(Tone.RED, "你的账户余额不足。", "Your balance isn't enough.");
+            case "insufficient_funds" -> line(Tone.RED,
+                    "账户余额不足，这次已全部拒绝，不会只支付一部分。",
+                    "The balance is short, so the whole request was refused.");
             case "insufficient_reserves" -> line(Tone.RED, "银行准备金不足。", "The vault doesn't have enough reserves.");
             case "unknown_currency" -> line(Tone.RED, "没有这种货币。", "No such currency.");
             case "bad_amount" -> line(Tone.RED, "金额无效。", "That amount isn't valid.");

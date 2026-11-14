@@ -109,10 +109,10 @@ class InterestTest {
         books.accrueInterest(0);
         books.accrueInterest(1);
 
-        assertEquals(new BigInteger("36501"), books.balance(saver, "note"));
-        assertEquals(new BigInteger("36501"), books.balance(other, "note"));
-        assertEquals(m1.add(BigInteger.TWO), books.centralM1());
-        assertEquals(BigInteger.ONE, books.interestPool("note"));
+        assertEquals(0, new BigDecimal("36501.5000").compareTo(books.balanceExact(saver, "note")));
+        assertEquals(0, new BigDecimal("36501.5000").compareTo(books.balanceExact(other, "note")));
+        assertEquals(m1.add(new BigInteger("3")), books.centralM1());
+        assertEquals(0, BigDecimal.ZERO.compareTo(books.interestPoolExact("note")));
         assertEquals(diamondIssuance, books.supply("diamond").reserve());
         books.checkInvariants();
     }

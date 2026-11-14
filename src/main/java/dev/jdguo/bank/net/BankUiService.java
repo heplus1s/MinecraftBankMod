@@ -23,6 +23,7 @@ import net.minecraft.registry.Registries;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Identifier;
 
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
@@ -117,7 +118,12 @@ public final class BankUiService {
         }
         TxResult result = books.withdraw(player.getUuid(), parts[1], amount, all);
         if (!result.success()) {
-            tell(player, BankPhrases.failure(BankPhrases.Kind.WITHDRAW, result.code(), parts[1], null));
+            if ("insufficient_funds".equals(result.code())) {
+                tell(player, BankPhrases.refused("取出", books, parts[1], dev.jdguo.bank.ledger.Money.of(amount),
+                        books.balanceExact(player.getUuid(), parts[1])));
+            } else {
+                tell(player, BankPhrases.failure(BankPhrases.Kind.WITHDRAW, result.code(), parts[1], null));
+            }
             return;
         }
         give(player, parts[1], result.amount());
@@ -138,7 +144,14 @@ public final class BankUiService {
         }
         TxResult result = books.exchange(player.getUuid(), parts[1], parts[2], qty);
         if (!result.success()) {
-            tell(player, BankPhrases.failure(BankPhrases.Kind.EXCHANGE, result.code(), parts[2], parts[1]));
+            if ("insufficient_funds".equals(result.code())) {
+                BigDecimal cost = books.settlementCost(parts[1], parts[2], qty);
+                tell(player, BankPhrases.refused("兑换", books, parts[1],
+                        cost == null ? dev.jdguo.bank.ledger.Money.ZERO : cost,
+                        books.balanceExact(player.getUuid(), parts[1])));
+            } else {
+                tell(player, BankPhrases.failure(BankPhrases.Kind.EXCHANGE, result.code(), parts[2], parts[1]));
+            }
             return;
         }
         BankRuntime.save();

@@ -7,6 +7,7 @@ import dev.jdguo.bank.currency.CurrencyKind;
 import dev.jdguo.bank.fx.FxMath;
 import dev.jdguo.bank.ledger.BankBooks;
 import dev.jdguo.bank.ledger.CompactFormat;
+import dev.jdguo.bank.ledger.Money;
 import dev.jdguo.bank.ledger.Supply;
 import dev.jdguo.bank.market.PersonalNote;
 import dev.jdguo.bank.market.RegimePreview;
@@ -28,12 +29,12 @@ public final class BankUiSnapshot {
         o.addProperty("m1", CompactFormat.formatAggregate(books.centralM1()));
         o.addProperty("m2", CompactFormat.formatAggregate(books.centralM2()));
         o.addProperty("status", books.statusLabel());
-        o.addProperty("copper", books.balance(player, "copper").toString());
-        o.addProperty("diamond", books.balance(player, "diamond").toString());
-        o.addProperty("note", books.balance(player, "note").toString());
-        o.addProperty("savings", books.savingsPool("note").toString());
-        o.addProperty("issuanceDiamond", books.supply("diamond").reserve().toString());
-        o.addProperty("vaultDiamond", books.supply("diamond").depositVault().toString());
+        o.addProperty("copper", Money.stored(books.balanceExact(player, "copper")));
+        o.addProperty("diamond", Money.stored(books.balanceExact(player, "diamond")));
+        o.addProperty("note", Money.stored(books.balanceExact(player, "note")));
+        o.addProperty("savings", Money.stored(books.savingsPoolExact("note")));
+        o.addProperty("issuanceDiamond", Money.stored(books.supply("diamond").reserveExact()));
+        o.addProperty("vaultDiamond", Money.stored(books.supply("diamond").depositVaultExact()));
         putQuote(o, "copperPerDiamond", quoted(books, "copper", "diamond"));
         CurrencyDef centralNote = books.primaryVirtual();
         if (centralNote != null) {
@@ -43,7 +44,7 @@ public final class BankUiSnapshot {
         JsonArray accounts = new JsonArray();
         JsonArray central = new JsonArray();
         for (CurrencyDef def : books.currencies()) {
-            String shown = CompactFormat.format(books.balance(player, def.id()));
+            String shown = Money.display(books.balanceExact(player, def.id()));
             JsonObject row = new JsonObject();
             row.addProperty("id", def.id());
             row.addProperty("name", def.name());
@@ -64,13 +65,13 @@ public final class BankUiSnapshot {
             JsonObject book = new JsonObject();
             book.addProperty("id", def.id());
             book.addProperty("name", def.name());
-            book.addProperty("savings", CompactFormat.format(books.savingsPool(def.id())));
-            book.addProperty("reserve", CompactFormat.format(supply.reserve()));
-            book.addProperty("liability", CompactFormat.format(supply.liability()));
-            book.addProperty("locked", CompactFormat.format(supply.locked()));
+            book.addProperty("savings", Money.display(books.savingsPoolExact(def.id())));
+            book.addProperty("reserve", Money.display(supply.reserveExact()));
+            book.addProperty("liability", Money.display(supply.liabilityExact()));
+            book.addProperty("locked", Money.display(supply.lockedExact()));
             book.addProperty("backedRoom", CompactFormat.format(books.backedRoom(def)));
             if (def.kind() == CurrencyKind.COMMODITY) {
-                book.addProperty("vault", CompactFormat.format(supply.depositVault()));
+                book.addProperty("vault", Money.display(supply.depositVaultExact()));
             }
             central.add(book);
         }
@@ -86,9 +87,9 @@ public final class BankUiSnapshot {
                     o.addProperty("tightness", CompactFormat.formatRatio(tight));
                 }
             }
-            putWhole(o, "copperReserve", books.currency("copper") == null ? null : books.supply("copper").reserve());
-            putWhole(o, "diamondReserve", books.currency("diamond") == null ? null : books.supply("diamond").reserve());
-            putWhole(o, "noteReserve", centralNote == null ? null : books.supply(centralNote.id()).reserve());
+            putMoney(o, "copperReserve", books.currency("copper") == null ? null : books.supply("copper").reserveExact());
+            putMoney(o, "diamondReserve", books.currency("diamond") == null ? null : books.supply("diamond").reserveExact());
+            putMoney(o, "noteReserve", centralNote == null ? null : books.supply(centralNote.id()).reserveExact());
             JsonArray institutions = new JsonArray();
             CurrencyDef note = books.primaryVirtual();
             String noteId = note == null ? "note" : note.id();
@@ -227,6 +228,13 @@ public final class BankUiSnapshot {
             return "0";
         }
         return CompactFormat.format(amount);
+    }
+
+    private static void putMoney(JsonObject row, String key, BigDecimal amount) {
+        if (amount == null) {
+            return;
+        }
+        row.addProperty(key, Money.display(amount));
     }
 
     private static void putWhole(JsonObject row, String key, BigInteger amount) {

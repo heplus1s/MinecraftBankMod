@@ -139,8 +139,8 @@ class NoteRegimeTest {
     }
 
     private static BigInteger[] cash(BankBooks books, BigDecimal diamondEach) {
-        BigDecimal exact = diamondEach.multiply(books.unitsPer("note", "diamond"), dev.jdguo.bank.fx.FxMath.MC);
-        BigInteger central = exact.setScale(0, java.math.RoundingMode.FLOOR).toBigInteger();
+        BigDecimal exact = dev.jdguo.bank.ledger.Money.of(diamondEach.multiply(books.unitsPer("note", "diamond"), dev.jdguo.bank.fx.FxMath.MC));
+        BigInteger central = exact.setScale(0, java.math.RoundingMode.DOWN).toBigInteger();
         BigInteger copper = exact.subtract(new BigDecimal(central))
                 .multiply(new BigDecimal(books.copperPerDiamond()), dev.jdguo.bank.fx.FxMath.MC)
                 .setScale(0, java.math.RoundingMode.HALF_UP).toBigInteger();

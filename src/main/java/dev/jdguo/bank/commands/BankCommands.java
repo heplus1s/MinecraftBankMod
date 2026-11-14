@@ -559,6 +559,10 @@ public final class BankCommands {
         }
         TxResult result = books().withdraw(player.getUuid(), currency, amount, false);
         if (!result.success()) {
+            if ("insufficient_funds".equals(result.code())) {
+                return fail(source, BankPhrases.refused("取出", books(), currency,
+                        dev.jdguo.bank.ledger.Money.of(amount), books().balanceExact(player.getUuid(), currency)));
+            }
             return fail(source, BankPhrases.failure(BankPhrases.Kind.WITHDRAW, result.code(), currency, null));
         }
         giveCommodity(player, def, result.amount());

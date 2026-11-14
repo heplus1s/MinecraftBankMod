@@ -45,7 +45,7 @@ public final class CompactFormat {
         if (value == null) {
             return "0";
         }
-        BigDecimal scaled = value.setScale(6, RoundingMode.HALF_UP).stripTrailingZeros();
+        BigDecimal scaled = value.setScale(Money.SCALE, RoundingMode.HALF_UP).stripTrailingZeros();
         if (scaled.scale() < 0) {
             scaled = scaled.setScale(0);
         }
