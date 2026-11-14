@@ -69,7 +69,9 @@ public final class BankCommands {
                                         .then(toggle("tab", (src, on) -> global(src, "tab", on)))
                                         .then(toggle("hologram", (src, on) -> global(src, "hologram", on)))
                                         .then(toggle("join", (src, on) -> global(src, "join", on)))))
-                        .then(literal("admin").requires(BankCommands::op).executes(ctx -> openAdmin(ctx.getSource())))
+                        .then(literal("admin").requires(BankCommands::op)
+                                .executes(ctx -> openAdmin(ctx.getSource()))
+                                .then(literal("accounts").executes(ctx -> accounts(ctx.getSource()))))
                         .then(literal("outlet").requires(BankCommands::op)
                                 .then(literal("set").then(argument("name", StringArgumentType.string()).executes(ctx -> setOutlet(ctx.getSource(), displays, StringArgumentType.getString(ctx, "name"), false))))
                                 .then(literal("move").then(argument("name", StringArgumentType.string()).executes(ctx -> setOutlet(ctx.getSource(), displays, StringArgumentType.getString(ctx, "name"), true))))
@@ -795,6 +797,10 @@ public final class BankCommands {
         }
         BankRuntime.save();
         return ok(source, BankPhrases.noteCoverage(books().personalNoteCoverage()));
+    }
+
+    private static int accounts(ServerCommandSource source) {
+        return ok(source, BankPhrases.settlementAccounts(books()));
     }
 
     private static int supply(ServerCommandSource source) {

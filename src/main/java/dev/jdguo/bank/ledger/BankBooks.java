@@ -89,6 +89,20 @@ public final class BankBooks {
     private final Map<String, BigInteger> interestPool = new LinkedHashMap<>();
     /** Sub-note remainder carried until it becomes a whole bank note. */
     private final Map<UUID, BigDecimal> interestDust = new LinkedHashMap<>();
+    /**
+     * 商店经营账户. One sub-ledger of the note savings pool, beside personal demand deposits.
+     * Absent from older snapshots, which therefore keep a zero balance here.
+     */
+    private final Map<String, BigInteger> shopOperating = new LinkedHashMap<>();
+    /**
+     * 土地出让账户. Another sub-ledger of the same savings pool, not a third pool.
+     * Keyed by currency. Older snapshots omit it and load as zero.
+     */
+    private final Map<String, BigInteger> landGrant = new LinkedHashMap<>();
+    /** Fractional note carried for the shop operating account until it becomes a whole unit. */
+    private final Map<String, BigDecimal> shopInterestDust = new LinkedHashMap<>();
+    /** Fractional note carried for the land-grant account until it becomes a whole unit. */
+    private final Map<String, BigDecimal> landInterestDust = new LinkedHashMap<>();
     /** Per personal-note series, then per holder: the fractional note carried forward. */
     private final Map<UUID, Map<UUID, BigDecimal>> personalInterestDust = new LinkedHashMap<>();
     /** World day last settled. -1 until the first tick anchors it, so old worlds do not pay retroactively. */
@@ -804,8 +818,9 @@ public final class BankBooks {
     }
 
     /**
-     * 储蓄总池. Player savings plus retained central fees.
-     * Commodities: deposit vault + retained fees. Notes: book-entry deposits + retained fees.
+     * 储蓄总池. Notes: personal book-entry deposits, outstanding checks, the shop operating
+     * account, the land-grant account, and retained fees. Commodities: the deposit vault
+     * (personal deposits and the land-grant claim on that same vault) plus retained fees.
      * Paper (M0) is public cash, not part of this pool. Issuance reserves are not included.
      */
     public BigInteger savingsPool(String currency) {
@@ -815,8 +830,112 @@ public final class BankBooks {
         }
         BigInteger custody = def.kind() == CurrencyKind.COMMODITY
                 ? supply(currency).depositVault()
-                : claimsOf(currency);
+                : bookSavings(currency);
         return custody.add(interestPool(currency));
+    }
+
+    /** Shop operating balance in {@code currency}. Zero when that slice has never been posted. */
+    public BigInteger shopOperating(String currency) {
+        return aggregate(shopOperating, currency);
+    }
+
+    /** Land-grant balance in {@code currency}. Zero when that slice has never been posted. */
+    public BigInteger landGrant(String currency) {
+        return aggregate(landGrant, currency);
+    }
+
+    /**
+     * Moves savings from one player to another inside the pool. Issuance reserves, the shop
+     * operating account, the land-grant account, paper, and the retained-fee slice stay put.
+     * A failure changes nothing.
+     */
+    public TxResult transferSavings(UUID from, UUID to, String currency, BigInteger amount) {
+        TxResult rejected = rejectSavings(from, currency, amount);
+        if (rejected != null) {
+            return rejected;
+        }
+        if (to == null || from.equals(to)) {
+            return TxResult.fail("bad_account", "Savings can only move between two different accounts");
+        }
+        if (balance(from, currency).compareTo(amount) < 0) {
+            return TxResult.fail("insufficient_funds", "Not enough balance");
+        }
+        debitBalance(from, currency, amount);
+        creditBalance(to, currency, amount);
+        return TxResult.ok(amount, "Transferred savings");
+    }
+
+    /**
+     * Shop purchase ({@code playerPaysShop}) or sale. Both legs are the central note inside the
+     * savings pool. A failure changes nothing.
+     */
+    public TxResult transferShopOperating(UUID player, BigInteger amount, boolean playerPaysShop) {
+        CurrencyDef note = primaryVirtual();
+        if (note == null) {
+            return TxResult.fail("unknown_currency", "No central note");
+        }
+        TxResult rejected = rejectSavings(player, note.id(), amount);
+        if (rejected != null) {
+            return rejected;
+        }
+        if (playerPaysShop) {
+            if (balance(player, note.id()).compareTo(amount) < 0) {
+                return TxResult.fail("insufficient_funds", "Not enough balance");
+            }
+            debitBalance(player, note.id(), amount);
+            addAggregate(shopOperating, note.id(), amount);
+        } else {
+            if (shopOperating(note.id()).compareTo(amount) < 0) {
+                return TxResult.fail("insufficient_shop", "Shop operating account is short");
+            }
+            addAggregate(shopOperating, note.id(), amount.negate());
+            creditBalance(player, note.id(), amount);
+        }
+        return TxResult.ok(amount, playerPaysShop ? "Shop purchase" : "Shop sale");
+    }
+
+    /**
+     * Server land sale. Debits the payer's savings and credits 土地出让账户.
+     * A player-to-player land trade must use {@link #transferSavings} instead.
+     */
+    public TxResult creditLandGrant(UUID payer, String currency, BigInteger amount) {
+        TxResult rejected = rejectSavings(payer, currency, amount);
+        if (rejected != null) {
+            return rejected;
+        }
+        if (balance(payer, currency).compareTo(amount) < 0) {
+            return TxResult.fail("insufficient_funds", "Not enough balance");
+        }
+        debitBalance(payer, currency, amount);
+        addAggregate(landGrant, currency, amount);
+        return TxResult.ok(amount, "Land-grant credit");
+    }
+
+    /** Reverses {@link #creditLandGrant}. A short land-grant balance pays nothing. */
+    public TxResult refundLandGrant(UUID payer, String currency, BigInteger amount) {
+        TxResult rejected = rejectSavings(payer, currency, amount);
+        if (rejected != null) {
+            return rejected;
+        }
+        if (landGrant(currency).compareTo(amount) < 0) {
+            return TxResult.fail("insufficient_funds", "Land-grant account is short");
+        }
+        addAggregate(landGrant, currency, amount.negate());
+        creditBalance(payer, currency, amount);
+        return TxResult.ok(amount, "Land-grant refund");
+    }
+
+    private TxResult rejectSavings(UUID player, String currency, BigInteger amount) {
+        if (player == null) {
+            return TxResult.fail("bad_amount", "Invalid amount");
+        }
+        if (currency == null || need(currency) == null) {
+            return TxResult.fail("unknown_currency", "Unknown currency");
+        }
+        if (amount == null || amount.signum() <= 0) {
+            return TxResult.fail("bad_amount", "Invalid amount");
+        }
+        return null;
     }
 
     public long lastInterestDay() { return lastInterestDay; }
@@ -890,6 +1009,9 @@ public final class BankBooks {
                 total = total.add(whole);
             }
         }
+        BigInteger shopDue = demandDue(shopOperating(note.id()), shopInterestDust, note.id());
+        BigInteger landDue = demandDue(landGrant(note.id()), landInterestDust, note.id());
+        total = total.add(shopDue).add(landDue);
         BigInteger pool = interestPool(note.id());
         if (total.signum() <= 0 || pool.signum() <= 0) {
             return List.of();
@@ -907,8 +1029,43 @@ public final class BankBooks {
             paid.add(new InterestCredit(entry.getKey(), share, null));
             spent = spent.add(share);
         }
+        spent = spent.add(paySavingsInterest(note.id(), shopOperating, shopDue, full, pool, total));
+        spent = spent.add(paySavingsInterest(note.id(), landGrant, landDue, full, pool, total));
         addPool(note.id(), spent.negate());
         return paid;
+    }
+
+    /** Same daily fraction as a personal demand deposit. Dust is kept until it becomes a whole note. */
+    private BigInteger demandDue(BigInteger balance, Map<String, BigDecimal> dust, String currency) {
+        BigDecimal carried = dust.getOrDefault(currency, BigDecimal.ZERO);
+        BigDecimal raw = new BigDecimal(balance).multiply(interestFraction, FxMath.MC)
+                .divide(new BigDecimal("365"), FxMath.MC)
+                .add(carried, FxMath.MC);
+        BigInteger whole = raw.setScale(0, RoundingMode.FLOOR).toBigInteger();
+        if (whole.signum() < 0) {
+            whole = BigInteger.ZERO;
+        }
+        BigDecimal remain = raw.subtract(new BigDecimal(whole), FxMath.MC);
+        if (remain.signum() == 0) {
+            dust.remove(currency);
+        } else {
+            dust.put(currency, remain);
+        }
+        return whole;
+    }
+
+    private BigInteger paySavingsInterest(String currency, Map<String, BigInteger> book, BigInteger due,
+                                          boolean full, BigInteger pool, BigInteger total) {
+        if (due.signum() <= 0) {
+            return BigInteger.ZERO;
+        }
+        BigInteger share = full ? due : due.multiply(pool).divide(total);
+        if (share.signum() <= 0) {
+            return BigInteger.ZERO;
+        }
+        addAggregate(book, currency, share);
+        supply(currency).addLiability(share);
+        return share;
     }
 
     private List<InterestCredit> settlePersonalDay(PersonalNote series) {
@@ -2019,7 +2176,7 @@ public final class BankBooks {
 
     public BigInteger centralDeposits() {
         CurrencyDef note = primaryVirtual();
-        return note == null ? BigInteger.ZERO : claimsOf(note.id());
+        return note == null ? BigInteger.ZERO : bookSavings(note.id());
     }
 
     public BigInteger centralM1() {
@@ -2040,11 +2197,11 @@ public final class BankBooks {
             }
             BigInteger rate = copperPerDiamond();
             if (rate.signum() > 0) {
-                BigDecimal copperNotes = new BigDecimal(claimsOf("copper")).multiply(notesPerDiamond, FxMath.MC)
+                BigDecimal copperNotes = new BigDecimal(bookSavings("copper")).multiply(notesPerDiamond, FxMath.MC)
                         .divide(new BigDecimal(rate), FxMath.MC);
                 quasi = quasi.add(copperNotes, FxMath.MC);
             }
-            quasi = quasi.add(new BigDecimal(claimsOf("diamond")).multiply(notesPerDiamond, FxMath.MC), FxMath.MC);
+            quasi = quasi.add(new BigDecimal(bookSavings("diamond")).multiply(notesPerDiamond, FxMath.MC), FxMath.MC);
         }
         return new BigDecimal(centralM1()).add(quasi, FxMath.MC);
     }
@@ -2059,7 +2216,7 @@ public final class BankBooks {
     }
 
     private BigInteger publicM1(String currency) {
-        return claimsOf(currency).add(paperValue(currency));
+        return bookSavings(currency).add(paperValue(currency));
     }
 
     /**
@@ -2134,6 +2291,7 @@ public final class BankBooks {
      * the opening note seed as a liability. Split them without changing player balances.
      * If subtracting deposits would push issuance reserves below the locked amount, issuance
      * stays at the lock and the savings vault still matches deposits.
+     * Sub-accounts are zero on those old snapshots, so this split does not move them.
      */
     private void migrateMixedVaults() {
         for (CurrencyDef def : currencies.values()) {
@@ -2142,7 +2300,7 @@ public final class BankBooks {
                 continue;
             }
             if (def.kind() == CurrencyKind.COMMODITY) {
-                BigInteger claims = claimsOf(def.id());
+                BigInteger claims = bookSavings(def.id());
                 BigInteger issuance = self.reserve().subtract(claims);
                 if (issuance.compareTo(self.locked()) < 0) {
                     issuance = self.locked();
@@ -2173,7 +2331,7 @@ public final class BankBooks {
                 throw new AssertionError(def.id() + " locked exceeds issuance reserve");
             }
             if (def.kind() == CurrencyKind.COMMODITY) {
-                BigInteger claims = claimsOf(def.id());
+                BigInteger claims = bookSavings(def.id());
                 if (supply.depositVault().compareTo(claims) != 0) {
                     throw new AssertionError(def.id() + " savings vault " + supply.depositVault() + " != deposits " + claims);
                 }
@@ -2184,6 +2342,16 @@ public final class BankBooks {
         for (BigInteger pooled : interestPool.values()) {
             if (pooled.signum() < 0) {
                 throw new AssertionError("negative interest pool");
+            }
+        }
+        for (BigInteger amount : shopOperating.values()) {
+            if (amount.signum() < 0) {
+                throw new AssertionError("negative shop operating account");
+            }
+        }
+        for (BigInteger amount : landGrant.values()) {
+            if (amount.signum() < 0) {
+                throw new AssertionError("negative land-grant account");
             }
         }
         for (Map<String, BigInteger> bals : accounts.values()) {
@@ -2220,6 +2388,10 @@ public final class BankBooks {
                     .append(" ok=").append(expected.equals(supply.liability()))
                     .append('\n');
         }
+        CurrencyDef note = primaryVirtual();
+        String noteId = note == null ? "note" : note.id();
+        sb.append("shopOperating ").append(noteId).append('=').append(shopOperating(noteId)).append('\n');
+        sb.append("landGrant ").append(noteId).append('=').append(landGrant(noteId)).append('\n');
         return sb.toString();
     }
 
@@ -2243,6 +2415,10 @@ public final class BankBooks {
         JsonObject dust = new JsonObject();
         interestDust.forEach((id, amount) -> dust.addProperty(id.toString(), amount.toPlainString()));
         root.add("interestDust", dust);
+        writeAggregate(root, "shopOperating", shopOperating);
+        writeAggregate(root, "landGrant", landGrant);
+        writeDust(root, "shopInterestDust", shopInterestDust);
+        writeDust(root, "landInterestDust", landInterestDust);
         JsonObject personalDust = new JsonObject();
         personalInterestDust.forEach((noteId, row) -> {
             JsonObject holders = new JsonObject();
@@ -2462,6 +2638,10 @@ public final class BankBooks {
             root.getAsJsonObject("interestDust").entrySet()
                     .forEach(e -> books.interestDust.put(UUID.fromString(e.getKey()), new BigDecimal(e.getValue().getAsString())));
         }
+        readAggregate(root, "shopOperating", books.shopOperating);
+        readAggregate(root, "landGrant", books.landGrant);
+        readDust(root, "shopInterestDust", books.shopInterestDust);
+        readDust(root, "landInterestDust", books.landInterestDust);
         if (root.has("personalInterestDust")) {
             for (Map.Entry<String, JsonElement> entry : root.getAsJsonObject("personalInterestDust").entrySet()) {
                 UUID noteId = UUID.fromString(entry.getKey());
@@ -2717,6 +2897,78 @@ public final class BankBooks {
 
     private BigInteger claimsOf(String currency) {
         return claimMap().getOrDefault(currency, BigInteger.ZERO);
+    }
+
+    /** Personal savings claims plus the shop operating account and the land-grant account. */
+    private BigInteger bookSavings(String currency) {
+        return claimsOf(currency).add(aggregate(shopOperating, currency)).add(aggregate(landGrant, currency));
+    }
+
+    private static BigInteger aggregate(Map<String, BigInteger> book, String currency) {
+        if (currency == null) {
+            return BigInteger.ZERO;
+        }
+        return book.getOrDefault(currency, BigInteger.ZERO);
+    }
+
+    private static void addAggregate(Map<String, BigInteger> book, String currency, BigInteger delta) {
+        BigInteger next = aggregate(book, currency).add(delta);
+        if (next.signum() < 0) {
+            throw new IllegalStateException("sub-account underflow");
+        }
+        if (next.signum() == 0) {
+            book.remove(currency);
+        } else {
+            book.put(currency, next);
+        }
+    }
+
+    private static void writeAggregate(JsonObject root, String name, Map<String, BigInteger> book) {
+        JsonObject o = new JsonObject();
+        book.forEach((id, amount) -> {
+            if (amount.signum() > 0) {
+                o.addProperty(id, amount.toString());
+            }
+        });
+        if (o.size() > 0) {
+            root.add(name, o);
+        }
+    }
+
+    private static void writeDust(JsonObject root, String name, Map<String, BigDecimal> dust) {
+        JsonObject o = new JsonObject();
+        dust.forEach((id, amount) -> {
+            if (amount.signum() != 0) {
+                o.addProperty(id, amount.toPlainString());
+            }
+        });
+        if (o.size() > 0) {
+            root.add(name, o);
+        }
+    }
+
+    private static void readAggregate(JsonObject root, String name, Map<String, BigInteger> into) {
+        if (!root.has(name) || !root.get(name).isJsonObject()) {
+            return;
+        }
+        root.getAsJsonObject(name).entrySet().forEach(entry -> {
+            BigInteger amount = new BigInteger(entry.getValue().getAsString());
+            if (amount.signum() > 0) {
+                into.put(entry.getKey(), amount);
+            }
+        });
+    }
+
+    private static void readDust(JsonObject root, String name, Map<String, BigDecimal> into) {
+        if (!root.has(name) || !root.get(name).isJsonObject()) {
+            return;
+        }
+        root.getAsJsonObject(name).entrySet().forEach(entry -> {
+            BigDecimal amount = new BigDecimal(entry.getValue().getAsString());
+            if (amount.signum() != 0) {
+                into.put(entry.getKey(), amount);
+            }
+        });
     }
 
     private Map<String, BigInteger> claimMap() {

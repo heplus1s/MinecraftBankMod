@@ -8,6 +8,7 @@ import dev.jdguo.bank.ledger.BankBooks;
 import dev.jdguo.bank.ledger.CompactFormat;
 import dev.jdguo.bank.market.PersonalNote;
 
+import java.math.BigInteger;
 import java.util.UUID;
 
 /** Dashboard the optional client UI renders. The server builds it; the client never calculates money. */
@@ -55,6 +56,24 @@ public final class BankUiSnapshot {
         o.add("currencies", currencies);
         o.add("accounts", accounts);
         o.add("central", central);
+        if (admin) {
+            JsonArray institutions = new JsonArray();
+            CurrencyDef note = books.primaryVirtual();
+            String noteId = note == null ? "note" : note.id();
+            String noteName = note == null || note.name() == null || note.name().isBlank() ? "银行券" : note.name();
+            institutions.add(institution("商店经营账户", noteName, books.shopOperating(noteId)));
+            institutions.add(institution("土地出让账户", noteName, books.landGrant(noteId)));
+            for (CurrencyDef def : books.currencies()) {
+                if (def.id().equals(noteId)) {
+                    continue;
+                }
+                BigInteger held = books.landGrant(def.id());
+                if (held.signum() > 0) {
+                    institutions.add(institution("土地出让账户", def.name(), held));
+                }
+            }
+            o.add("institutions", institutions);
+        }
         JsonArray notes = new JsonArray();
         for (PersonalNote note : books.personalNotes()) {
             JsonObject row = new JsonObject();
@@ -81,5 +100,12 @@ public final class BankUiSnapshot {
             o.addProperty("bankrupt", own.bankrupt());
         }
         return o.toString();
+    }
+
+    private static JsonObject institution(String account, String currency, BigInteger amount) {
+        JsonObject row = new JsonObject();
+        row.addProperty("name", account);
+        row.addProperty("detail", currency + "  " + CompactFormat.format(amount));
+        return row;
     }
 }

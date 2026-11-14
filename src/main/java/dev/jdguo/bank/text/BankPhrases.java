@@ -209,6 +209,18 @@ public final class BankPhrases {
                 playerName + "'s personal reserves: " + personalEn(books, player) + ". Not a deposit, and not central stock.");
     }
 
+    public static Spoken settlementAccounts(BankBooks books) {
+        CurrencyDef note = books.primaryVirtual();
+        String noteId = note == null ? "note" : note.id();
+        String shopZh = "商店经营账户 " + nameZh(books, noteId) + " ×" + CompactFormat.format(books.shopOperating(noteId));
+        String shopEn = "Shop operating account " + nameEn(books, noteId) + " ×" + CompactFormat.format(books.shopOperating(noteId));
+        return line(Tone.AQUA,
+                shopZh + "。土地出让账户 " + holdingsZh(books, books::landGrant)
+                        + "。两户都是储蓄总池的分户，按活期存款计息，与发行准备金分开。",
+                shopEn + ". Land-grant account " + holdingsEn(books, books::landGrant)
+                        + ". Both are sub-accounts of the savings pool, earn demand-deposit interest, and stay apart from issuance reserves.");
+    }
+
     public static List<Spoken> supply(BankBooks books) {
         List<Spoken> lines = new ArrayList<>();
         String fee = books.feeFraction().movePointRight(2).stripTrailingZeros().toPlainString();
@@ -726,6 +738,22 @@ public final class BankPhrases {
 
     private static String personalEn(BankBooks books, UUID player) {
         return figuresEn(books, id -> books.personalReserve(player, id));
+    }
+
+    private static String holdingsZh(BankBooks books, java.util.function.Function<String, BigInteger> amount) {
+        List<String> parts = new ArrayList<>();
+        for (CurrencyDef def : books.currencies()) {
+            parts.add(def.name() + " ×" + CompactFormat.format(amount.apply(def.id())));
+        }
+        return String.join("，", parts);
+    }
+
+    private static String holdingsEn(BankBooks books, java.util.function.Function<String, BigInteger> amount) {
+        List<String> parts = new ArrayList<>();
+        for (CurrencyDef def : books.currencies()) {
+            parts.add(nameEn(books, def.id()) + " ×" + CompactFormat.format(amount.apply(def.id())));
+        }
+        return String.join(", ", parts);
     }
 
     private static String figuresZh(BankBooks books, java.util.function.Function<String, BigInteger> amount) {

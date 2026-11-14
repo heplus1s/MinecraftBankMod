@@ -35,6 +35,7 @@ class BankUiSnapshotTest {
         assertEquals(0, exactM2.setScale(6, RoundingMode.HALF_UP)
                 .compareTo(new BigDecimal(o.get("m2").getAsString().replace(",", ""))));
         assertEquals(exactM2, books.centralM2());
+        assertFalse(o.has("institutions"));
         assertEquals("10", o.get("vaultDiamond").getAsString());
         assertEquals("1000", o.get("issuanceDiamond").getAsString());
         assertFalse(o.get("savings").getAsString().equals(o.get("issuanceDiamond").getAsString()));

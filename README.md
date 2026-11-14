@@ -243,6 +243,12 @@ V = R + (L - R) × α / 1000
 
 实物货币的物品 id 不能重复。纸币必须指定一种实物货币作为准备金。
 
+## 商店与市场怎么记账
+
+玩家在商店买东西，钱从活期存款划进商店经营账户；卖东西则按相反方向划回。市场里玩家付给玩家，只是储蓄账户之间过户，不记成中央银行的收入。服务器出让土地的货款进入土地出让账户。这两个账户都是储蓄总池里的分户，银行券余额按活期存款计息，不占用发行准备金。银行自己的银行券买卖仍在本模组里。
+
+管理员用 `/bank admin accounts` 查看这两户。接口说明在 `docs/settlement-hooks.md`。
+
 ## 还没有的功能
 
 现在还没有股市。以后如果要做，会另开模块，不会把行情写进这本银行账里。
@@ -502,6 +508,12 @@ The part of `config/bank.json` that matches the default economy looks like this:
 ```
 
 Commodity item ids can't be reused. A paper currency has to name a commodity as its backing.
+
+## Shop and market settlement
+
+A shop purchase moves notes from a player's demand deposit into the shop operating account. A sale moves them back. A market sale between players is a savings transfer, not income of the central bank. Money from server land sales is credited to the land-grant account. Both accounts are sub-ledgers of the savings pool. Note balances earn demand-deposit interest. Issuance reserves stay separate. Bank-note trading remains in this mod.
+
+An operator can read both balances with `/bank admin accounts`. The method list is in `docs/settlement-hooks.md`.
 
 ## What's not here yet
 
