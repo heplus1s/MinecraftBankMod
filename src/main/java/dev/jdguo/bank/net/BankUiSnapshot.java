@@ -7,6 +7,7 @@ import dev.jdguo.bank.currency.CurrencyKind;
 import dev.jdguo.bank.fx.FxMath;
 import dev.jdguo.bank.ledger.BankBooks;
 import dev.jdguo.bank.ledger.CompactFormat;
+import dev.jdguo.bank.ledger.Supply;
 import dev.jdguo.bank.market.PersonalNote;
 
 import java.math.BigDecimal;
@@ -58,12 +59,17 @@ public final class BankUiSnapshot {
             account.addProperty("name", def.name());
             account.addProperty("amount", shown);
             accounts.add(account);
+            Supply supply = books.supply(def.id());
             JsonObject book = new JsonObject();
+            book.addProperty("id", def.id());
             book.addProperty("name", def.name());
             book.addProperty("savings", CompactFormat.format(books.savingsPool(def.id())));
+            book.addProperty("reserve", CompactFormat.format(supply.reserve()));
+            book.addProperty("liability", CompactFormat.format(supply.liability()));
+            book.addProperty("locked", CompactFormat.format(supply.locked()));
+            book.addProperty("backedRoom", CompactFormat.format(books.backedRoom(def)));
             if (def.kind() == CurrencyKind.COMMODITY) {
-                book.addProperty("reserve", CompactFormat.format(books.supply(def.id()).reserve()));
-                book.addProperty("vault", CompactFormat.format(books.supply(def.id()).depositVault()));
+                book.addProperty("vault", CompactFormat.format(supply.depositVault()));
             }
             central.add(book);
         }
@@ -71,6 +77,14 @@ public final class BankUiSnapshot {
         o.add("accounts", accounts);
         o.add("central", central);
         if (admin) {
+            o.addProperty("frozen", books.frozen());
+            o.addProperty("feePercent", percent(books.feeFraction()));
+            if (centralNote != null) {
+                BigDecimal tight = books.tightness(centralNote.id());
+                if (tight != null) {
+                    o.addProperty("tightness", CompactFormat.formatRatio(tight));
+                }
+            }
             JsonArray institutions = new JsonArray();
             CurrencyDef note = books.primaryVirtual();
             String noteId = note == null ? "note" : note.id();
@@ -160,6 +174,14 @@ public final class BankUiSnapshot {
             return;
         }
         row.addProperty(key, shown);
+    }
+
+    /** Same percent string the chest prints, for example {@code 2%}. */
+    private static String percent(BigDecimal fraction) {
+        if (fraction == null) {
+            return null;
+        }
+        return fraction.multiply(new BigDecimal("100")).stripTrailingZeros().toPlainString() + "%";
     }
 
     private static JsonObject institution(String account, String currency, BigInteger amount) {

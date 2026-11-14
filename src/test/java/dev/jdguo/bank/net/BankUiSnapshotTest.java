@@ -39,6 +39,9 @@ class BankUiSnapshotTest {
                 .compareTo(new BigDecimal(o.get("m2").getAsString().replace(",", ""))));
         assertEquals(exactM2, books.centralM2());
         assertFalse(o.has("institutions"));
+        assertFalse(o.has("frozen"));
+        assertFalse(o.has("feePercent"));
+        assertFalse(o.has("tightness"));
         assertEquals("10", o.get("vaultDiamond").getAsString());
         assertEquals("1000", o.get("issuanceDiamond").getAsString());
         assertFalse(o.get("savings").getAsString().equals(o.get("issuanceDiamond").getAsString()));
@@ -80,6 +83,50 @@ class BankUiSnapshotTest {
         assertFalse(currency(o, "copper").has("diamondsPerNote"));
     }
 
+    @Test
+    void adminBookListsEveryCurrencyReserveLiabilityAndIssuanceRoom() {
+        BankBooks books = BankBooks.create(BankConfig.defaults());
+        UUID player = UUID.randomUUID();
+        assertEquals(new BigInteger("1000000"), books.supply("copper").reserve());
+        assertEquals(new BigInteger("1000"), books.supply("diamond").reserve());
+        JsonObject snapshot = JsonParser.parseString(
+                BankUiSnapshot.json(books, player, true, "management", false)).getAsJsonObject();
+
+        assertTrue(snapshot.get("admin").getAsBoolean());
+        assertFalse(snapshot.get("frozen").getAsBoolean());
+        assertEquals("2%", snapshot.get("feePercent").getAsString());
+        assertEquals(CompactFormat.formatRatio(books.tightness("note")), snapshot.get("tightness").getAsString());
+        assertTrue(snapshot.has("institutions"));
+        assertEquals("0", snapshot.get("m0").getAsString());
+        assertEquals("0", snapshot.get("m1").getAsString());
+
+        JsonObject copper = central(snapshot, "copper");
+        JsonObject diamond = central(snapshot, "diamond");
+        JsonObject note = central(snapshot, "note");
+        assertEquals("铜锭", copper.get("name").getAsString());
+        assertEquals(CompactFormat.format(new BigInteger("1000000")), copper.get("reserve").getAsString());
+        assertEquals(CompactFormat.format(books.supply("copper").liability()), copper.get("liability").getAsString());
+        assertEquals(CompactFormat.format(books.supply("copper").locked()), copper.get("locked").getAsString());
+        assertEquals(CompactFormat.format(books.supply("copper").depositVault()), copper.get("vault").getAsString());
+        assertEquals(CompactFormat.format(books.savingsPool("copper")), copper.get("savings").getAsString());
+        assertEquals(CompactFormat.format(books.backedRoom(books.currency("copper"))), copper.get("backedRoom").getAsString());
+
+        assertEquals(CompactFormat.format(new BigInteger("1000")), diamond.get("reserve").getAsString());
+        assertEquals(CompactFormat.format(books.supply("diamond").depositVault()), diamond.get("vault").getAsString());
+        assertTrue(diamond.has("liability"));
+        assertTrue(diamond.has("locked"));
+
+        assertEquals("银行券", note.get("name").getAsString());
+        assertEquals(CompactFormat.format(books.supply("note").reserve()), note.get("reserve").getAsString());
+        assertEquals(CompactFormat.format(books.supply("note").liability()), note.get("liability").getAsString());
+        assertEquals(CompactFormat.format(books.supply("note").locked()), note.get("locked").getAsString());
+        assertEquals(CompactFormat.format(books.backedRoom(books.currency("note"))), note.get("backedRoom").getAsString());
+        assertEquals(CompactFormat.format(books.savingsPool("note")), note.get("savings").getAsString());
+        assertFalse(note.has("vault"));
+        assertEquals(new BigInteger("1000"), books.supply("note").reserve());
+        assertEquals(BigInteger.ZERO, books.supply("note").liability());
+    }
+
     /**
      * {@code price} is central 银行券 for one personal note: {@code personalDiamondPrice}
      * times the live 银行券-per-diamond quote. At the opening peg that is 1, so one personal
@@ -116,6 +163,15 @@ class BankUiSnapshotTest {
         assertFalse(personal(collapsed, "泉").has("price"));
         assertFalse(personal(collapsed, "泉").has("diamondPrice"));
         assertFalse(personal(collapsed, "泉").has("rate"));
+    }
+
+    private static JsonObject central(JsonObject snapshot, String id) {
+        for (var row : snapshot.getAsJsonArray("central")) {
+            if (id.equals(row.getAsJsonObject().get("id").getAsString())) {
+                return row.getAsJsonObject();
+            }
+        }
+        throw new AssertionError(id);
     }
 
     private static JsonObject currency(JsonObject snapshot, String id) {

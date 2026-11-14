@@ -72,6 +72,7 @@ public final class BankUiService {
             case "admin-freeze" -> freeze(player, books, session);
             case "admin-unbacked" -> adminCredit(player, books, session, parts, false);
             case "admin-retire" -> adminCredit(player, books, session, parts, true);
+            case "admin-backed" -> adminBacked(player, books, session, parts);
             default -> tell(player, BankPhrases.failure(BankPhrases.Kind.GENERIC, "bad_amount", null, null));
         }
         if (BankUiNetwork.session(player) != null) {
@@ -499,6 +500,42 @@ public final class BankUiService {
         books.setFrozen(!books.frozen());
         BankRuntime.save();
         tell(player, BankPhrases.freeze(books.frozen()));
+    }
+
+    /**
+     * {@code admin-backed <currency>} issues the whole remaining reserve room, the same posting as the
+     * chest button {@code ad:backed}. {@code admin-backed <currency> <amount>} issues that amount
+     * through {@link BankBooks#creditBacked}.
+     */
+    private static void adminBacked(ServerPlayerEntity player, BankBooks books, BankUiNetwork.Session session, String[] parts) {
+        if (!session.admin || !player.hasPermissionLevel(2) || parts.length < 2) {
+            tell(player, BankPhrases.failure(BankPhrases.Kind.GENERIC, "denied", null, null));
+            return;
+        }
+        if (books.currency(parts[1]) == null) {
+            tell(player, BankPhrases.failure(BankPhrases.Kind.CREDIT_BACKED, "unknown_currency", parts[1], null));
+            return;
+        }
+        BigInteger amount;
+        if (parts.length >= 3) {
+            amount = amount(player, parts[2], null, null);
+            if (amount == null) {
+                return;
+            }
+        } else {
+            amount = books.backedRoom(books.currency(parts[1]));
+            if (amount.signum() <= 0) {
+                tell(player, BankPhrases.failure(BankPhrases.Kind.CREDIT_BACKED, "over_cap", parts[1], null));
+                return;
+            }
+        }
+        TxResult result = books.creditBacked(player.getUuid(), parts[1], amount);
+        if (!result.success()) {
+            tell(player, BankPhrases.failure(BankPhrases.Kind.CREDIT_BACKED, result.code(), parts[1], null));
+            return;
+        }
+        BankRuntime.save();
+        tell(player, BankPhrases.credit(books, "backed", parts[1], result.amount(), player.getName().getString()));
     }
 
     private static void adminCredit(ServerPlayerEntity player, BankBooks books, BankUiNetwork.Session session, String[] parts, boolean retire) {
