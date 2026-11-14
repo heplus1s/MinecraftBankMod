@@ -132,6 +132,7 @@ public final class BankPhrases {
             case "no_market" -> line(Tone.RED, "这种货币无法报价。", "That currency cannot be quoted.");
             case "not_issuable" -> line(Tone.RED, "这种货币不能这样发行。", "This currency can't be issued that way.");
             case "over_cap" -> line(Tone.RED, "没有剩余的准备金额度。", "No reserve room left.");
+            case "hold_bill" -> line(Tone.RED, "请把一张汇票拿在手上。", "Hold one bill in your main hand.");
             case "invalid_check" -> line(Tone.RED, "认不出这张票据。", "Unrecognized bill.");
             case "tampered" -> line(Tone.RED, "票据和存根对不上。", "The bill doesn't match the stub.");
             case "already_redeemed" -> line(Tone.RED, "这张汇票已经兑付过。", "This bill has already been paid.");
