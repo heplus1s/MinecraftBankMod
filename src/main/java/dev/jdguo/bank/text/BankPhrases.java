@@ -626,7 +626,7 @@ public final class BankPhrases {
                 ? BigInteger.ZERO
                 : books.personalReserve(note.issuer(), note.reserveCurrency()).subtract(note.locked()).max(BigInteger.ZERO)
                         .divide(note.par());
-        String price = CompactFormat.formatRate(diamonds);
+        String price = CompactFormat.formatPersonalQuote(diamonds);
         String kind = switch (note.regime()) {
             case PEG -> "钉住价 ";
             case HARD -> "面额 ";

@@ -192,8 +192,8 @@ public final class BankUiSnapshot {
         if (diamonds == null || diamonds.signum() <= 0 || notesPerDiamond == null) {
             return;
         }
-        putQuote(row, "price", diamonds.multiply(notesPerDiamond, FxMath.MC));
-        putQuote(row, "diamondPrice", diamonds);
+        row.addProperty("price", CompactFormat.formatPersonalQuote(diamonds.multiply(notesPerDiamond, FxMath.MC)));
+        row.addProperty("diamondPrice", CompactFormat.formatPersonalQuote(diamonds));
     }
 
     /** Units of {@code pay} for one unit of {@code receive}, or null when the books cannot quote. */
@@ -253,13 +253,13 @@ public final class BankUiSnapshot {
         row.addProperty("face", whole(note.par()));
         BigDecimal live = books.personalDiamondPrice(note);
         if (live != null && live.signum() > 0) {
-            row.addProperty("live", CompactFormat.formatRate(live));
-            row.addProperty("diamondPrice", CompactFormat.formatRate(live));
+            row.addProperty("live", CompactFormat.formatPersonalQuote(live));
+            row.addProperty("diamondPrice", CompactFormat.formatPersonalQuote(live));
         }
         if (note.openingDiamonds() != null && note.openingDiamonds().signum() > 0) {
-            row.addProperty("official", CompactFormat.formatRate(note.openingDiamonds()));
+            row.addProperty("official", CompactFormat.formatPersonalQuote(note.openingDiamonds()));
         } else if (live != null && live.signum() > 0 && note.regime() != dev.jdguo.bank.market.NoteRegime.FLOAT) {
-            row.addProperty("official", CompactFormat.formatRate(live));
+            row.addProperty("official", CompactFormat.formatPersonalQuote(live));
         }
         JsonArray switches = new JsonArray();
         for (RegimePreview option : books.regimePreviews(note)) {

@@ -5,6 +5,7 @@ import com.google.gson.JsonParser;
 import dev.jdguo.bank.currency.BankConfig;
 import dev.jdguo.bank.fx.FxMath;
 import dev.jdguo.bank.ledger.BankBooks;
+import dev.jdguo.bank.market.NoteRegime;
 import dev.jdguo.bank.market.PersonalNote;
 import dev.jdguo.bank.text.BankPhrases;
 import org.junit.jupiter.api.Test;
@@ -166,6 +167,36 @@ class BankUiSnapshotTest {
         assertFalse(unbacked.has("diamondsPerNote"));
         assertFalse(currency(unbacked, "note").has("rate"));
         assertEquals(0, new BigDecimal(books.centralM1()).compareTo(books.centralM2()));
+    }
+
+    @Test
+    void floatingQuoteUnderDisplayLimitRecoversWhenReservesIncrease() {
+        BankBooks books = BankBooks.create(BankConfig.defaults());
+        UUID issuer = UUID.randomUUID();
+        books.creditHeld(issuer, "note", BigInteger.valueOf(2000));
+        assertTrue(books.createPersonalNote(issuer, "泉", NoteRegime.FLOAT, "diamond", BigInteger.ONE).success());
+        assertTrue(books.deposit(issuer, "diamond", BigInteger.TWO).success());
+        assertTrue(books.depositPersonalReserve(issuer, BigInteger.ONE).success());
+        assertTrue(books.issuePersonalNoteUnbacked(issuer, BigInteger.valueOf(1000)).success());
+        assertEquals("0.001", diamondQuote(books, issuer));
+
+        assertTrue(books.issuePersonalNoteUnbacked(issuer, BigInteger.valueOf(999000)).success());
+        assertEquals("0.000001", diamondQuote(books, issuer));
+
+        assertTrue(books.issuePersonalNoteUnbacked(issuer, BigInteger.valueOf(1000000)).success());
+        assertEquals("0", diamondQuote(books, issuer));
+        assertEquals(0, new BigDecimal("0.0000005").compareTo(books.personalDiamondPrice(books.personalNote(issuer))));
+
+        assertTrue(books.depositPersonalReserve(issuer, BigInteger.ONE).success());
+        assertEquals("0.000001", diamondQuote(books, issuer));
+    }
+
+    private static String diamondQuote(BankBooks books, UUID issuer) {
+        JsonObject snapshot = JsonParser.parseString(BankUiSnapshot.json(books, issuer, false, "issuance", false))
+                .getAsJsonObject();
+        String quote = personal(snapshot, "泉").get("diamondPrice").getAsString();
+        assertEquals(quote, snapshot.getAsJsonObject("ownNote").get("live").getAsString());
+        return quote;
     }
 
     private static JsonObject central(JsonObject snapshot, String id) {

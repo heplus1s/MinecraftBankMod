@@ -552,7 +552,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                 Text.literal("「" + own.name() + "」流通额 " + CompactFormat.formatAggregate(own.circulation()))
                         .formatted(Formatting.YELLOW),
                 List.of(Text.literal(regimeLabel(own)).formatted(Formatting.GRAY),
-                        Text.literal("现行价格 " + CompactFormat.formatRate(books.personalDiamondPrice(own)) + " 钻石").formatted(Formatting.WHITE),
+                        Text.literal("现行价格 " + CompactFormat.formatPersonalQuote(books.personalDiamondPrice(own)) + " 钻石").formatted(Formatting.WHITE),
                         Text.literal("持有 " + CompactFormat.format(books.personalHolding(own.id(), uuid))).formatted(Formatting.WHITE),
                         Text.literal("M1 " + CompactFormat.formatAggregate(own.circulation())).formatted(Formatting.WHITE),
                         Text.literal("利息池 " + CompactFormat.format(own.interestPool())).formatted(Formatting.GOLD),
@@ -688,7 +688,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         inventory.setStack(28, marker(Items.EMERALD,
                 Text.literal((marketMode == 1 ? "换入个人银行券「" : "个人银行券「") + listed.name() + "」").formatted(Formatting.GREEN),
                 List.of(Text.literal("Trade").formatted(Formatting.GRAY),
-                        Text.literal("现行价格 " + CompactFormat.formatRate(books.personalDiamondPrice(listed)) + " 钻石").formatted(Formatting.WHITE),
+                        Text.literal("现行价格 " + CompactFormat.formatPersonalQuote(books.personalDiamondPrice(listed)) + " 钻石").formatted(Formatting.WHITE),
                         Text.literal("点击切换").formatted(Formatting.DARK_GRAY)),
                 "pn:cycle", 1));
         if (marketMode == 1) {
@@ -700,7 +700,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
             inventory.setStack(19, marker(Items.PAPER,
                     Text.literal("付出个人银行券「" + pay.name() + "」").formatted(Formatting.GOLD),
                     List.of(Text.literal("Pay with this note").formatted(Formatting.GRAY),
-                            Text.literal("现行价格 " + CompactFormat.formatRate(books.personalDiamondPrice(pay)) + " 钻石").formatted(Formatting.WHITE)),
+                            Text.literal("现行价格 " + CompactFormat.formatPersonalQuote(books.personalDiamondPrice(pay)) + " 钻石").formatted(Formatting.WHITE)),
                     "pn:pay", 1));
             for (int i = 0; i < NOTE_BUTTONS.length; i++) {
                 BigInteger amount = NOTE_BUTTONS[i];
@@ -986,7 +986,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                     Text.literal((note.bankrupt() ? "已经宣告破产 " : "个人银行券 ") + note.name() + "  " + CompactFormat.format(held))
                             .formatted(note.bankrupt() ? Formatting.DARK_GRAY : Formatting.YELLOW),
                     List.of(Text.literal(note.bankrupt() ? "Void record" : "Book entry").formatted(Formatting.GRAY),
-                            Text.literal("现行价格 " + CompactFormat.formatRate(books.personalDiamondPrice(note)) + " 钻石").formatted(Formatting.WHITE),
+                            Text.literal("现行价格 " + CompactFormat.formatPersonalQuote(books.personalDiamondPrice(note)) + " 钻石").formatted(Formatting.WHITE),
                             Text.literal("Held " + CompactFormat.format(held)).formatted(Formatting.DARK_GRAY)),
                     "noop", 1));
             holdSlot += 2;

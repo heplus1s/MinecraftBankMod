@@ -90,6 +90,14 @@ public final class CompactFormat {
         return plain(pct) + "%";
     }
 
+    /** Display only: six decimal places at most, with sub-micro quotes shown as zero. */
+    public static String formatPersonalQuote(BigDecimal value) {
+        if (value == null) {
+            return "无法报价";
+        }
+        return plain(value.setScale(6, RoundingMode.DOWN));
+    }
+
     private static String plain(BigDecimal value) {
         BigDecimal stripped = value.stripTrailingZeros();
         if (stripped.scale() < 0) {
