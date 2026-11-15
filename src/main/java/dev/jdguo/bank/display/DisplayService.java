@@ -301,23 +301,13 @@ public final class DisplayService {
     }
 
     private void refreshBossBar(MinecraftServer server, BankBooks books) {
-        CurrencyDef note = books.primaryVirtual();
-        BigDecimal tight = note == null ? null : books.tightness(note.id());
         BigDecimal copperPerDiamond = books.currency("copper") == null || books.currency("diamond") == null
                 ? null : books.unitsPer("copper", "diamond");
         String rateText = BankPhrases.copperPerDiamond(books);
-        bossBar.setName(Text.literal("汇率：" + rateText + " 铜锭/钻石    银行券兑付能力 " + CompactFormat.formatRatio(tight))
-                .formatted(Formatting.WHITE));
-        float percent = 1.0f;
-        if (tight != null) {
-            percent = tight.max(BigDecimal.ZERO).min(BigDecimal.ONE).floatValue();
-        }
-        if (copperPerDiamond == null) {
-            percent = 0.0f;
-        }
+        bossBar.setName(Text.literal("汇率：" + rateText + " 铜锭/钻石").formatted(Formatting.WHITE));
+        float percent = copperPerDiamond == null ? 0.0f : 1.0f;
         bossBar.setPercent(percent);
-        bossBar.setColor(percent < 0.05f || books.frozen() ? BossBar.Color.RED
-                : percent < 0.25f ? BossBar.Color.YELLOW : BossBar.Color.GREEN);
+        bossBar.setColor(books.frozen() || copperPerDiamond == null ? BossBar.Color.RED : BossBar.Color.GREEN);
         Set<ServerPlayerEntity> online = new HashSet<>(server.getPlayerManager().getPlayerList());
         for (ServerPlayerEntity watching : List.copyOf(bossBar.getPlayers())) {
             if (!online.contains(watching) || !books.showBossbar(watching.getUuid())) {
@@ -335,6 +325,11 @@ public final class DisplayService {
     }
 
     private Text hologramText(BankBooks books) {
+        return outletSign(books, frame);
+    }
+
+    /** Public outlet board: title, the two official quotes, and the right-click hint. */
+    static Text outletSign(BankBooks books, int frame) {
         MutableText text = Text.empty();
         text.append(Text.literal("✦ 中央银行 ✦\n").formatted(TITLE_COLORS[frame % TITLE_COLORS.length], Formatting.BOLD));
         text.append(Text.literal("汇率\n").formatted(Formatting.GOLD));
@@ -347,11 +342,6 @@ public final class DisplayService {
             text.append(Text.literal("1 " + baseName + " = ").formatted(Formatting.GRAY))
                     .append(Text.literal(CompactFormat.formatRate(books.unitsPer(def.id(), books.numeraire()))).formatted(color(def)))
                     .append(Text.literal(" " + def.name() + "\n").formatted(color(def)));
-        }
-        CurrencyDef note = books.primaryVirtual();
-        if (note != null) {
-            text.append(Text.literal("银行券兑付能力 ").formatted(Formatting.DARK_AQUA))
-                    .append(Text.literal(CompactFormat.formatRatio(books.tightness(note.id())) + "\n").formatted(Formatting.WHITE));
         }
         text.append(Text.literal("右键此方块开启柜台").formatted(Formatting.DARK_GRAY));
         return text;

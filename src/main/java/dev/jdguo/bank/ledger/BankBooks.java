@@ -409,6 +409,42 @@ public final class BankBooks {
         return TxResult.ok(metalQty, "Redeemed notes for " + CompactFormat.format(metalQty) + " " + metal);
     }
 
+    /**
+     * Sells already-issued 银行券 that are not yet in any account. Liability stays put.
+     * The metal paid is booked into the deposit vault, not into issuance reserves.
+     */
+    private TxResult buyIssuedNotes(UUID player, String metal, BigInteger notes) {
+        CurrencyDef note = primaryVirtual();
+        if (note == null) {
+            return TxResult.fail("unknown_currency", "No central note");
+        }
+        if (!"copper".equals(metal) && !"diamond".equals(metal)) {
+            return TxResult.fail("no_market", "No live quote");
+        }
+        BigDecimal price = quoteCost(metal, note.id(), notes);
+        if (price == null) {
+            return TxResult.fail("no_quote", "No live quote");
+        }
+        if (balanceExact(player, metal).compareTo(price) < 0) {
+            return TxResult.fail("insufficient_funds", "Not enough balance");
+        }
+        BigDecimal unallocated = supply(note.id()).liabilityExact().subtract(publicM1Exact(note.id()));
+        if (unallocated.compareTo(Money.of(notes)) < 0) {
+            return TxResult.fail("no_unallocated", "No unallocated notes");
+        }
+        BigDecimal liability = supply(note.id()).liabilityExact();
+        BigDecimal reserve = supply(metal).reserveExact();
+        debitBalance(player, metal, price);
+        addSavings(metal, price);
+        creditBalance(player, note.id(), notes);
+        if (supply(note.id()).liabilityExact().compareTo(liability) != 0
+                || supply(metal).reserveExact().compareTo(reserve) != 0) {
+            throw new IllegalStateException("issued-note sale moved liability or issuance reserves");
+        }
+        recomputeOfficialNoteQuote();
+        return TxResult.ok(Money.units(price), "Bought issued notes");
+    }
+
     public TxResult exchange(UUID player, String payId, String receiveId, BigInteger receiveQty) {
         if (payId.equals(receiveId)) {
             return TxResult.fail("bad_amount", "Can't exchange a currency for itself");
@@ -428,6 +464,9 @@ public final class BankBooks {
             return TxResult.fail("frozen", "Note redemption is halted");
         }
         if (pay.kind() == CurrencyKind.COMMODITY && recv.kind() == CurrencyKind.VIRTUAL) {
+            if (centralNote(recv)) {
+                return buyIssuedNotes(player, payId, receiveQty);
+            }
             return TxResult.fail("manual_issue", "Bank notes are issued only by an operator");
         }
         if (pay.kind() == CurrencyKind.VIRTUAL && recv.kind() == CurrencyKind.COMMODITY) {

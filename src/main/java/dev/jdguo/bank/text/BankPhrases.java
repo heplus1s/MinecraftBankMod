@@ -146,6 +146,8 @@ public final class BankPhrases {
             case "too_many_items" -> line(Tone.RED, "一次取太多了。大额请开汇票。", "That's too many items at once. Issue a bill for a large amount.");
             case "frozen" -> line(Tone.RED, "已暂停银行券兑付。", "Bank-note redemption is suspended.");
             case "no_market" -> line(Tone.RED, "这种货币无法报价。", "That currency cannot be quoted.");
+            case "no_quote" -> line(Tone.RED, "暂无牌价，这次兑换已全部拒绝。", "There is no quote, so nothing was exchanged.");
+            case "no_unallocated" -> line(Tone.RED, "没有尚未入账的已发行银行券，这次已全部拒绝，不会新发。", "There are no unallocated issued notes to sell.");
             case "manual_issue" -> line(Tone.RED, "银行券只能由管理员发行或注销，不能用兑换增加。", "Bank notes change only when an operator issues or retires them.");
             case "insufficient_deposits" -> line(Tone.RED, "中央银行存款不足，这次已全部拒绝，不会凭空增加准备金。", "Central-bank deposits are short, so nothing was posted.");
             case "not_issuable" -> line(Tone.RED, "这种货币不能这样发行。", "This currency can't be issued that way.");

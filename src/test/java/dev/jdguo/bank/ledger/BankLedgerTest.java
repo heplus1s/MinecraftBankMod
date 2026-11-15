@@ -117,7 +117,7 @@ class BankLedgerTest {
         books.setFrozen(true);
 
         assertEquals("frozen", books.exchange(player, "note", "diamond", BigInteger.ONE).code());
-        assertEquals("manual_issue", books.exchange(player, "diamond", "note", BigInteger.ONE).code());
+        assertEquals("no_unallocated", books.exchange(player, "diamond", "note", BigInteger.ONE).code());
         assertTrue(books.withdraw(player, "diamond", BigInteger.ONE, false).success());
         books.checkInvariants();
     }
@@ -165,7 +165,7 @@ class BankLedgerTest {
         BigInteger issuanceBefore = books.supply("diamond").reserve();
         assertEquals(BigInteger.ZERO, books.centralM1());
 
-        assertEquals("manual_issue", books.exchange(player, "diamond", "note", BigInteger.valueOf(4)).code());
+        assertEquals("no_quote", books.exchange(player, "diamond", "note", BigInteger.valueOf(4)).code());
         books.creditHeld(player, "note", BigInteger.valueOf(4));
         BigInteger afterIssue = books.supply("diamond").reserve();
         assertEquals(issuanceBefore, afterIssue);
