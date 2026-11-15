@@ -160,7 +160,7 @@ public final class BankBooks {
             books.alphas.put(def.id(), def.alphaPermille());
             books.supplies.put(def.id(), openingSupply(def));
         }
-        books.seedOpeningQuotes();
+        books.fillMissingQuotes();
         return books;
     }
 
@@ -811,16 +811,33 @@ public final class BankBooks {
         return note == null || note.id() == null ? "note" : note.id();
     }
 
-    private void seedOpeningQuotes() {
-        if (supply("copper") != null && supply("diamond") != null
-                && supply("copper").reserve().signum() > 0 && supply("diamond").reserve().signum() > 0) {
-            liveCopperPerDiamond = Money.of(new BigDecimal(supply("copper").reserve())
-                    .divide(new BigDecimal(supply("diamond").reserve()), 8, RoundingMode.HALF_UP));
+    /**
+     * Fills a missing official quote from the rate the books already imply.
+     * That is the same units-per figure the old reserve formula would have shown.
+     * A book with no positive basis keeps the quote absent. Personal-note prices are not touched.
+     */
+    private void fillMissingQuotes() {
+        if (liveCopperPerDiamond == null || liveCopperPerDiamond.signum() <= 0) {
+            BigDecimal implied = impliedUnitsPer("copper", "diamond");
+            if (implied != null && implied.signum() > 0) {
+                liveCopperPerDiamond = Money.of(implied);
+            }
         }
-        if (supply(centralNoteId()) != null && supply(centralNoteId()).reserve().signum() > 0
-                && supply("diamond") != null && supply("diamond").reserve().signum() > 0) {
-            liveNotesPerDiamond = BigDecimal.ONE.setScale(Money.SCALE);
+        String noteId = centralNoteId();
+        if (need(noteId) != null && (liveNotesPerDiamond == null || liveNotesPerDiamond.signum() <= 0)) {
+            BigDecimal implied = impliedUnitsPer(noteId, "diamond");
+            if (implied != null && implied.signum() > 0) {
+                liveNotesPerDiamond = Money.of(implied);
+            }
         }
+    }
+
+    /** The quote the reserve books already imply. Null when either side has no positive basis. */
+    private BigDecimal impliedUnitsPer(String pay, String receive) {
+        if (need(pay) == null || need(receive) == null) {
+            return null;
+        }
+        return FxMath.quote(abundance(pay), abundance(receive), null, null);
     }
 
     private void nudgeCopperQuote(BigDecimal diamondDemand) {
@@ -3566,6 +3583,7 @@ public final class BankBooks {
         if (books.migrateVaults) {
             books.migrateMixedVaults();
         }
+        books.fillMissingQuotes();
         return books;
     }
 

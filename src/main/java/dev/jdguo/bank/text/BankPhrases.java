@@ -483,6 +483,19 @@ public final class BankPhrases {
         return "/bank note create " + kind + " ";
     }
 
+    /** Told when the server is asked to open name entry after a regime has been chosen. */
+    public static Spoken noteNameAfterRegime(String regime) {
+        String chosen = switch (regime == null ? "" : regime) {
+            case "peg" -> "联系汇率制";
+            case "hard" -> "固定汇率制";
+            case "float" -> "浮动汇率制";
+            default -> "汇率制度";
+        };
+        return line(Tone.AQUA,
+                "已选定" + chosen + "。请接着输入个人银行券的名称，最多三个汉字或英文字母。",
+                "Type the personal-note name after the regime. At most three Chinese characters or English letters.");
+    }
+
     public static Spoken noteCreateFill(String regime) {
         String command = noteCreateCommand(regime);
         return line(Tone.AQUA,

@@ -90,6 +90,7 @@ public final class BankUiNetwork {
         Session(String outlet, boolean admin) {
             this.outlet = outlet;
             this.admin = admin;
+            this.page = admin ? "management" : "savings";
         }
     }
 }

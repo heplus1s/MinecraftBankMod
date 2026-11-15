@@ -1,6 +1,9 @@
 package dev.jdguo.bank.ledger;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import dev.jdguo.bank.currency.BankConfig;
+import dev.jdguo.bank.net.BankUiSnapshot;
 import dev.jdguo.bank.currency.CurrencyDef;
 import dev.jdguo.bank.currency.CurrencyKind;
 import dev.jdguo.bank.fx.QuoteElasticity;
@@ -151,5 +154,41 @@ class QuoteAndReserveTest {
         assertNull(books.unitsPer("copper", "diamond"));
         assertNull(books.unitsPer("note", "diamond"));
         assertNull(books.copperPerDiamond());
+    }
+
+    @Test
+    void aSavedBookWithoutStoredQuotesRecoversTheRateTheBooksAlreadyImplied() {
+        BankBooks books = BankBooks.create(BankConfig.defaults());
+        JsonObject root = JsonParser.parseString(books.toJson()).getAsJsonObject();
+        root.remove("liveCopperPerDiamond");
+        root.remove("liveNotesPerDiamond");
+
+        BankBooks loaded = BankBooks.fromJson(root.toString(), BankConfig.defaults());
+
+        assertEquals(0, new BigDecimal("1000").compareTo(loaded.unitsPer("copper", "diamond")));
+        assertEquals(0, BigDecimal.ONE.compareTo(loaded.unitsPer("note", "diamond")));
+        JsonObject plain = JsonParser.parseString(BankUiSnapshot.json(loaded, player, false, "savings", false)).getAsJsonObject();
+        JsonObject admin = JsonParser.parseString(BankUiSnapshot.json(loaded, player, true, "management", false)).getAsJsonObject();
+        assertEquals("1000", plain.get("copperPerDiamond").getAsString());
+        assertEquals("1", plain.get("diamondsPerNote").getAsString());
+        assertEquals("1000", admin.get("copperPerDiamond").getAsString());
+        assertEquals("1", admin.get("diamondsPerNote").getAsString());
+        assertEquals("management", admin.get("page").getAsString());
+        assertTrue(admin.get("admin").getAsBoolean());
+        assertFalse(plain.get("admin").getAsBoolean());
+    }
+
+    @Test
+    void printedNotesKeepTheOldImpliedNoteQuoteWhenTheStoredQuoteIsMissing() {
+        BankBooks books = BankBooks.create(BankConfig.defaults());
+        books.creditUnbacked(player, "note", new BigInteger("1000"));
+        JsonObject root = JsonParser.parseString(books.toJson()).getAsJsonObject();
+        root.remove("liveCopperPerDiamond");
+        root.remove("liveNotesPerDiamond");
+
+        BankBooks loaded = BankBooks.fromJson(root.toString(), BankConfig.defaults());
+
+        assertEquals(0, new BigDecimal("2").compareTo(loaded.unitsPer("note", "diamond")));
+        assertEquals(0, new BigDecimal("1000").compareTo(loaded.unitsPer("copper", "diamond")));
     }
 }

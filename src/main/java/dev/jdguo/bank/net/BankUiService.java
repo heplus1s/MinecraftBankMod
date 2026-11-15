@@ -409,6 +409,9 @@ public final class BankUiService {
 
     private static void create(ServerPlayerEntity player, BankBooks books, String[] parts) {
         if (parts.length < 5) {
+            if (parts.length >= 2) {
+                tell(player, BankPhrases.noteNameAfterRegime(parts[1]));
+            }
             return;
         }
         NoteRegime regime = switch (parts[1]) {
