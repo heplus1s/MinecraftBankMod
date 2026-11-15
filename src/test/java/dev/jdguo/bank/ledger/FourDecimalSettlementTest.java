@@ -63,7 +63,7 @@ class FourDecimalSettlementTest {
     @Test
     void shopTransferRefusesAShortFourDecimalBalance() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
-        assertTrue(books.creditUnbacked(player, "note", new BigDecimal("0.009")).success());
+        assertTrue(books.creditHeld(player, "note", new BigDecimal("0.009")).success());
         BigDecimal before = books.balanceExact(player, "note");
 
         TxResult refused = books.transferShopOperating(player, BigInteger.ONE, true);
@@ -77,7 +77,7 @@ class FourDecimalSettlementTest {
     @Test
     void integerZeroStaysPlainAndAFractionRoundTrips() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
-        assertTrue(books.creditUnbacked(player, "note", new BigDecimal("0.009")).success());
+        assertTrue(books.creditHeld(player, "note", new BigDecimal("0.009")).success());
         assertEquals("0", Money.stored(Money.ZERO));
         assertEquals("0", Money.display(Money.ZERO));
         assertEquals("0.009", Money.stored(books.balanceExact(player, "note")));
@@ -100,8 +100,8 @@ class FourDecimalSettlementTest {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         books.setFeeFraction(BigDecimal.ZERO);
         UUID others = UUID.fromString("55555555-5555-5555-5555-555555555555");
-        assertTrue(books.creditUnbacked(player, "note", playerNotes).success());
-        assertTrue(books.creditUnbacked(others, "note", new BigDecimal("3636.3636").subtract(playerNotes)).success());
+        assertTrue(books.creditHeld(player, "note", playerNotes).success());
+        assertTrue(books.creditHeld(others, "note", new BigDecimal("3636.3636").subtract(playerNotes)).success());
         return books;
     }
 }

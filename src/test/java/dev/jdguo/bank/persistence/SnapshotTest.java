@@ -17,7 +17,7 @@ class SnapshotTest {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         UUID player = UUID.randomUUID();
         BigInteger huge = new BigInteger("123456789012345678901234567890");
-        books.creditUnbacked(player, "note", huge);
+        books.creditHeld(player, "note", huge);
         var issued = books.issueCheck(player, "note", new BigInteger("999"), "Ada", null, true);
         books.addOutlet(new OutletPoint("主楼", "minecraft:overworld", 10, 64, -3, 4.5, 2.4, true, null));
         books.setFrozen(true);

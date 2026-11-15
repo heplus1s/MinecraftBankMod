@@ -58,7 +58,7 @@ class RegimeSwitchTest {
         fresh.setAlpha("note", BigDecimal.ZERO);
         assertTrue(fresh.createPersonalNote(issuer, "泉", NoteRegime.PEG, "note", BigInteger.ONE).success());
         assertEquals("central_reserve", fresh.issuePersonalNote(issuer, new BigInteger("100")).code());
-        fresh.creditUnbacked(issuer, "note", new BigInteger("100"));
+        fresh.creditHeld(issuer, "note", new BigInteger("100"));
         assertTrue(fresh.depositCentralReserve(issuer, new BigInteger("100")).success());
         assertTrue(fresh.issuePersonalNote(issuer, new BigInteger("100")).success());
         PersonalNote pegged = fresh.personalNote(issuer);
@@ -88,7 +88,7 @@ class RegimeSwitchTest {
     void hardSwitchIsRefusedWhenTheLiveQuoteHasLeftFace() {
         BankBooks books = ready(new BigInteger("100"), new BigInteger("20"));
         books.deposit(buyer, "copper", new BigInteger("20000"));
-        books.creditUnbacked(buyer, "note", new BigInteger("500"));
+        books.creditHeld(buyer, "note", new BigInteger("500"));
         books.deposit(buyer, "copper", new BigInteger("5000"));
         var bought = books.buyPersonalNote(buyer, "泉", new BigInteger("20"));
         assertTrue(bought.success(), bought.code());
@@ -144,7 +144,7 @@ class RegimeSwitchTest {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         assertTrue(books.createPersonalNote(issuer, "泉", false, BigInteger.ONE).success());
         books.setPersonalReserve(issuer, "diamond", circulation);
-        books.creditUnbacked(issuer, "note", central);
+        books.creditHeld(issuer, "note", central);
         assertTrue(books.depositCentralReserve(issuer, central).success());
         assertTrue(books.issuePersonalNote(issuer, circulation).success());
         return books;

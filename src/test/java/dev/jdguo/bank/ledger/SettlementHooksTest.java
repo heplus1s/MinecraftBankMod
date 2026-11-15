@@ -35,7 +35,7 @@ class SettlementHooksTest {
     @Test
     void savingsTransferPaysTheSellerInsideThePool() {
         BankBooks books = funded();
-        books.creditUnbacked(buyer, "note", new BigInteger("80"));
+        books.creditHeld(buyer, "note", new BigInteger("80"));
         books.deposit(buyer, "copper", new BigInteger("50"));
         books.setPersonalReserve(buyer, "diamond", new BigInteger("25"));
         Issuance before = Issuance.capture(books, buyer);
@@ -63,8 +63,8 @@ class SettlementHooksTest {
     @Test
     void shopPurchaseAndSaleStayInsideTheSavingsPool() {
         BankBooks books = funded();
-        books.creditUnbacked(buyer, "note", new BigInteger("80"));
-        books.creditUnbacked(seller, "note", new BigInteger("5"));
+        books.creditHeld(buyer, "note", new BigInteger("80"));
+        books.creditHeld(seller, "note", new BigInteger("5"));
         books.setPersonalReserve(buyer, "diamond", new BigInteger("25"));
         Issuance before = Issuance.capture(books, buyer);
         BigInteger pool = books.savingsPool("note");
@@ -87,7 +87,7 @@ class SettlementHooksTest {
     @Test
     void landGrantCreditAndRefundDoNotTouchTheShopOrIssuance() {
         BankBooks books = funded();
-        books.creditUnbacked(buyer, "note", new BigInteger("80"));
+        books.creditHeld(buyer, "note", new BigInteger("80"));
         books.deposit(buyer, "diamond", new BigInteger("9"));
         books.transferShopOperating(buyer, new BigInteger("10"), true);
         Issuance before = Issuance.capture(books, buyer);
@@ -129,7 +129,7 @@ class SettlementHooksTest {
     @Test
     void aShortBalancePaysNothing() {
         BankBooks books = funded();
-        books.creditUnbacked(buyer, "note", new BigInteger("5"));
+        books.creditHeld(buyer, "note", new BigInteger("5"));
         books.deposit(buyer, "diamond", BigInteger.TEN);
         String before = books.toJson();
 
@@ -150,8 +150,8 @@ class SettlementHooksTest {
     void shopAndLandNotesEarnTheSameDemandDepositInterest() {
         BankBooks books = fundFees(new BigInteger("20"));
         Issuance before = Issuance.capture(books, buyer);
-        books.creditUnbacked(buyer, "note", new BigInteger("36500"));
-        books.creditUnbacked(seller, "note", new BigInteger("36500"));
+        books.creditHeld(buyer, "note", new BigInteger("36500"));
+        books.creditHeld(seller, "note", new BigInteger("36500"));
         assertTrue(books.transferShopOperating(seller, new BigInteger("36500"), true).success());
         assertTrue(books.creditLandGrant(buyer, "note", new BigInteger("36500")).success());
         BigInteger pool = books.savingsPool("note");
@@ -172,8 +172,8 @@ class SettlementHooksTest {
     void aShortFeePoolSharesInterestAndDoesNotMintTheRest() {
         BankBooks books = fundFees(new BigInteger("2"));
         BigInteger diamondIssuance = books.supply("diamond").reserve();
-        books.creditUnbacked(buyer, "note", new BigInteger("36500"));
-        books.creditUnbacked(seller, "note", new BigInteger("36500"));
+        books.creditHeld(buyer, "note", new BigInteger("36500"));
+        books.creditHeld(seller, "note", new BigInteger("36500"));
         assertTrue(books.transferShopOperating(seller, new BigInteger("36500"), true).success());
         books.accrueInterest(0);
         books.accrueInterest(1);
@@ -208,7 +208,7 @@ class SettlementHooksTest {
     void anOlderSnapshotKeepsBalancesWhenTheNewAccountsAreAbsent() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         books.deposit(buyer, "diamond", BigInteger.TEN);
-        books.creditUnbacked(buyer, "note", new BigInteger("40"));
+        books.creditHeld(buyer, "note", new BigInteger("40"));
         books.setPersonalReserve(buyer, "copper", new BigInteger("7"));
         JsonObject root = JsonParser.parseString(books.toJson()).getAsJsonObject();
         root.remove("shopOperating");
@@ -234,7 +234,7 @@ class SettlementHooksTest {
     @Test
     void postedAccountsAndInterestDustRoundTrip() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
-        books.creditUnbacked(buyer, "note", new BigInteger("80"));
+        books.creditHeld(buyer, "note", new BigInteger("80"));
         books.deposit(buyer, "diamond", new BigInteger("9"));
         assertTrue(books.transferShopOperating(buyer, new BigInteger("30"), true).success());
         assertTrue(books.creditLandGrant(buyer, "note", new BigInteger("20")).success());
@@ -266,7 +266,7 @@ class SettlementHooksTest {
         assertEquals("bad_reference", MarketSettlement.creditLandGrant(buyer, "note", BigInteger.ONE, " ").code());
 
         BankBooks books = funded();
-        books.creditUnbacked(buyer, "note", new BigInteger("40"));
+        books.creditHeld(buyer, "note", new BigInteger("40"));
         books.deposit(buyer, "diamond", new BigInteger("6"));
         BankRuntime.state = new BankWorldState(books);
         try {
@@ -311,7 +311,7 @@ class SettlementHooksTest {
     @Test
     void adminSnapshotUsesTheFullAccountNames() {
         BankBooks books = funded();
-        books.creditUnbacked(buyer, "note", new BigInteger("12"));
+        books.creditHeld(buyer, "note", new BigInteger("12"));
         books.transferShopOperating(buyer, new BigInteger("3"), true);
         books.deposit(buyer, "diamond", new BigInteger("2"));
         books.creditLandGrant(buyer, "diamond", BigInteger.ONE);

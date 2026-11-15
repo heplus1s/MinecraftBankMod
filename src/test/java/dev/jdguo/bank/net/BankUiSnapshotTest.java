@@ -28,7 +28,7 @@ class BankUiSnapshotTest {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         UUID player = UUID.randomUUID();
         books.deposit(player, "diamond", BigInteger.TEN);
-        books.creditUnbacked(player, "note", new BigInteger("4"));
+        books.creditHeld(player, "note", new BigInteger("4"));
         String json = BankUiSnapshot.json(books, player, false, "savings", false);
         var o = JsonParser.parseString(json).getAsJsonObject();
         assertFalse(o.has("m0"));
@@ -140,7 +140,7 @@ class BankUiSnapshotTest {
         UUID player = UUID.randomUUID();
         assertFalse(JsonParser.parseString(BankUiSnapshot.json(books, player, false, "savings", false))
                 .getAsJsonObject().has("diamondsPerNote"));
-        books.creditUnbacked(player, "note", new BigInteger("2000"));
+        books.creditHeld(player, "note", new BigInteger("2000"));
         assertTrue(books.createPersonalNote(player, "泉", false, BigInteger.ONE).success());
         PersonalNote note = books.personalNote(player);
         BigDecimal central = books.personalDiamondPrice(note).multiply(books.unitsPer("note", "diamond"), FxMath.MC);
@@ -153,7 +153,7 @@ class BankUiSnapshotTest {
         assertEquals("1000", quoted.get("copperPerDiamond").getAsString());
         assertEquals("1", quoted.get("diamondsPerNote").getAsString());
 
-        books.creditUnbacked(player, "note", new BigInteger("1000"));
+        books.creditHeld(player, "note", new BigInteger("1000"));
         JsonObject weak = JsonParser.parseString(BankUiSnapshot.json(books, player, false, "savings", false)).getAsJsonObject();
         assertEquals(Money.stored(books.unitsPer("note", "diamond")), currency(weak, "note").get("rate").getAsString());
         assertEquals(Money.stored(books.unitsPer("diamond", "note")), weak.get("diamondsPerNote").getAsString());

@@ -112,7 +112,7 @@ class BankLedgerTest {
     @Test
     void frozenConvertibilityBlocksPaperIntoHardCurrencyOnly() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
-        books.creditUnbacked(player, "note", new BigInteger("1000"));
+        books.creditHeld(player, "note", new BigInteger("1000"));
         books.deposit(player, "diamond", BigInteger.TEN);
         books.setFrozen(true);
 
@@ -126,7 +126,7 @@ class BankLedgerTest {
     void hugeBalanceDoesNotOverflow() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         BigInteger huge = BigInteger.TEN.pow(100);
-        TxResult result = books.creditUnbacked(player, "note", huge);
+        TxResult result = books.creditHeld(player, "note", huge);
 
         assertTrue(result.success());
         assertEquals(huge, books.balance(player, "note"));
@@ -140,7 +140,7 @@ class BankLedgerTest {
     @Test
     void paperMovesBetweenM0AndDepositsWithoutChangingM1() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
-        books.creditUnbacked(player, "note", BigInteger.valueOf(100));
+        books.creditHeld(player, "note", BigInteger.valueOf(100));
         BigInteger m1 = books.centralM1();
         assertEquals(BigInteger.ZERO, books.centralM0());
         assertEquals(BigInteger.valueOf(100), m1);
@@ -166,7 +166,7 @@ class BankLedgerTest {
         assertEquals(BigInteger.ZERO, books.centralM1());
 
         assertEquals("manual_issue", books.exchange(player, "diamond", "note", BigInteger.valueOf(4)).code());
-        books.creditUnbacked(player, "note", BigInteger.valueOf(4));
+        books.creditHeld(player, "note", BigInteger.valueOf(4));
         BigInteger afterIssue = books.supply("diamond").reserve();
         assertEquals(issuanceBefore, afterIssue);
         BigDecimal notesBefore = books.balanceExact(player, "note");
@@ -184,7 +184,7 @@ class BankLedgerTest {
         assertEquals(BigInteger.ZERO, books.centralM0());
         assertEquals(BigInteger.ZERO, books.centralM1());
         assertEquals(new BigInteger("2000"), books.backedRoom(books.currency("note")));
-        books.creditUnbacked(player, "note", BigInteger.TEN);
+        books.creditHeld(player, "note", BigInteger.TEN);
         books.deposit(player, "diamond", BigInteger.TEN);
         assertEquals(BigInteger.TEN, books.centralM1());
         assertEquals(BigInteger.ZERO, books.centralM0());
@@ -197,7 +197,7 @@ class BankLedgerTest {
     void mixedOldLedgerSplitsSavingsFromIssuanceWithoutTouchingBalances() {
         BankBooks modern = BankBooks.create(BankConfig.defaults());
         modern.deposit(player, "copper", BigInteger.valueOf(64));
-        modern.creditUnbacked(player, "note", BigInteger.valueOf(5));
+        modern.creditHeld(player, "note", BigInteger.valueOf(5));
         com.google.gson.JsonObject root = com.google.gson.JsonParser.parseString(modern.toJson()).getAsJsonObject();
         com.google.gson.JsonObject copper = root.getAsJsonObject("supplies").getAsJsonObject("copper");
         copper.remove("depositVault");

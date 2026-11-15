@@ -58,7 +58,7 @@ class PersonalMarketTest {
         books.createPersonalNote(issuer, "泉", false, BigInteger.ONE);
         assertEquals("reserve", books.issuePersonalNote(issuer, BigInteger.TEN).code());
         books.setPersonalReserve(issuer, "diamond", BigInteger.TEN);
-        books.creditUnbacked(issuer, "note", BigInteger.ONE);
+        books.creditHeld(issuer, "note", BigInteger.ONE);
         assertTrue(books.depositCentralReserve(issuer, BigInteger.ONE).success());
         assertTrue(books.issuePersonalNote(issuer, BigInteger.TEN).success());
         assertEquals(BigInteger.TEN, books.personalHolding(books.personalNote(issuer).id(), issuer));
@@ -72,11 +72,11 @@ class PersonalMarketTest {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         books.createPersonalNote(issuer, "泉", false, BigInteger.ONE);
         books.setPersonalReserve(issuer, "diamond", BigInteger.TEN);
-        books.creditUnbacked(issuer, "note", BigInteger.ONE);
+        books.creditHeld(issuer, "note", BigInteger.ONE);
         books.depositCentralReserve(issuer, BigInteger.ONE);
         books.issuePersonalNote(issuer, BigInteger.TEN);
         books.deposit(buyer, "copper", new BigInteger("20000"));
-        books.creditUnbacked(buyer, "note", BigInteger.TEN);
+        books.creditHeld(buyer, "note", BigInteger.TEN);
         books.deposit(buyer, "copper", new BigInteger("100"));
         BigDecimal before = books.personalDiamondPrice(books.personalNote(issuer));
         NoteTrade bought = books.buyPersonalNote(buyer, "泉", BigInteger.ONE);
@@ -94,7 +94,7 @@ class PersonalMarketTest {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         books.createPersonalNote(issuer, "Cu", true, new BigInteger("1000"));
         books.setPersonalReserve(issuer, "copper", new BigInteger("1000"));
-        books.creditUnbacked(issuer, "note", BigInteger.ONE);
+        books.creditHeld(issuer, "note", BigInteger.ONE);
         assertTrue(books.depositCentralReserve(issuer, BigInteger.ONE).success());
         assertTrue(books.issuePersonalNote(issuer, BigInteger.ONE).success());
         assertEquals(0, BigDecimal.ONE.compareTo(books.personalDiamondPrice(books.personalNote(issuer))));
@@ -105,7 +105,7 @@ class PersonalMarketTest {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         books.createPersonalNote(issuer, "泉", false, BigInteger.ONE);
         books.setPersonalReserve(issuer, "diamond", BigInteger.ONE);
-        books.creditUnbacked(issuer, "note", BigInteger.ONE);
+        books.creditHeld(issuer, "note", BigInteger.ONE);
         books.depositCentralReserve(issuer, BigInteger.ONE);
         books.issuePersonalNote(issuer, BigInteger.ONE);
         BankBooks loaded = BankBooks.fromJson(books.toJson(), BankConfig.defaults());

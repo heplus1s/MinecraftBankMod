@@ -534,7 +534,6 @@ public final class BankBooks {
         if (amount == null || amount.signum() <= 0) {
             return TxResult.fail("bad_amount", "Invalid amount");
         }
-        creditBalance(player, currency, amount);
         supply(currency).addLiability(amount);
         if (centralNote(def)) {
             recomputeOfficialNoteQuote();
@@ -555,12 +554,48 @@ public final class BankBooks {
         if (posted.signum() <= 0) {
             return TxResult.fail("bad_amount", "Invalid amount");
         }
-        creditBalance(player, currency, posted);
         supply(currency).addLiability(posted);
         if (centralNote(def)) {
             recomputeOfficialNoteQuote();
         }
         return TxResult.ok(Money.units(posted), "Issued unbacked " + label(def) + " " + Money.stored(posted));
+    }
+
+    /**
+     * Credits a player's own savings and the matching liability. Not an issuance action:
+     * admin issue and retire never call this.
+     */
+    public TxResult creditHeld(UUID player, String currency, BigInteger amount) {
+        CurrencyDef def = need(currency);
+        if (player == null || def == null || def.kind() != CurrencyKind.VIRTUAL) {
+            return TxResult.fail("bad_amount", "Invalid amount");
+        }
+        if (amount == null || amount.signum() <= 0) {
+            return TxResult.fail("bad_amount", "Invalid amount");
+        }
+        creditBalance(player, currency, amount);
+        supply(currency).addLiability(amount);
+        if (centralNote(def)) {
+            recomputeOfficialNoteQuote();
+        }
+        return TxResult.ok(amount, "Credited savings");
+    }
+
+    public TxResult creditHeld(UUID player, String currency, BigDecimal amount) {
+        CurrencyDef def = need(currency);
+        if (player == null || def == null || def.kind() != CurrencyKind.VIRTUAL) {
+            return TxResult.fail("bad_amount", "Invalid amount");
+        }
+        BigDecimal posted = amount == null ? Money.ZERO : Money.of(amount);
+        if (posted.signum() <= 0) {
+            return TxResult.fail("bad_amount", "Invalid amount");
+        }
+        creditBalance(player, currency, posted);
+        supply(currency).addLiability(posted);
+        if (centralNote(def)) {
+            recomputeOfficialNoteQuote();
+        }
+        return TxResult.ok(Money.units(posted), "Credited savings");
     }
 
     public TxResult creditBacked(UUID player, String currency, BigInteger amount) {
@@ -583,7 +618,6 @@ public final class BankBooks {
         if (!pledged.success()) {
             return pledged;
         }
-        creditBalance(player, currency, amount);
         supply(currency).addLiability(amount);
         supply(currency).addReserve(amount);
         if (centralNote(def)) {
@@ -601,10 +635,11 @@ public final class BankBooks {
         if (amount == null || amount.signum() <= 0) {
             return TxResult.fail("bad_amount", "Invalid amount");
         }
-        if (balance(player, currency).compareTo(amount) < 0) {
-            return TxResult.fail("insufficient_funds", "Not enough balance");
-        }
         Supply self = supply(currency);
+        BigDecimal unallocated = self.liabilityExact().subtract(publicM1Exact(currency));
+        if (unallocated.compareTo(Money.of(amount)) < 0) {
+            return TxResult.fail("insufficient_issue", "Issued notes outside personal savings cannot cover this retirement");
+        }
         BigInteger backedOutstanding = self.reserve().subtract(self.anchor());
         if (backedOutstanding.signum() < 0) {
             backedOutstanding = BigInteger.ZERO;
@@ -613,7 +648,6 @@ public final class BankBooks {
         if (unbacked.signum() < 0) {
             unbacked = BigInteger.ZERO;
         }
-        debitBalance(player, currency, amount);
         self.addLiability(amount.negate());
         if (def.kind() == CurrencyKind.VIRTUAL && amount.compareTo(unbacked) > 0 && def.backing() != null) {
             BigInteger backedBurn = amount.subtract(unbacked);
@@ -3115,8 +3149,8 @@ public final class BankBooks {
             if (supply.lockedExact().compareTo(supply.reserveExact()) > 0) {
                 throw new AssertionError(def.id() + " locked exceeds issuance reserve");
             }
-            if (def.kind() != CurrencyKind.COMMODITY && supply.liabilityExact().compareTo(publicM1Exact(def.id())) != 0) {
-                throw new AssertionError(def.id() + " M1 " + supply.liabilityExact() + " != " + publicM1Exact(def.id()));
+            if (def.kind() != CurrencyKind.COMMODITY && supply.liabilityExact().compareTo(publicM1Exact(def.id())) < 0) {
+                throw new AssertionError(def.id() + " claims " + publicM1Exact(def.id()) + " exceed 发行额 " + supply.liabilityExact());
             }
         }
         for (BigDecimal pooled : interestPool.values()) {

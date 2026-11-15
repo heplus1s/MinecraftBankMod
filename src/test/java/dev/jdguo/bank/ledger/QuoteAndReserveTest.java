@@ -26,7 +26,7 @@ class QuoteAndReserveTest {
     void noteRedemptionCancelsCirculationAndPaysFromReservesNotOtherDeposits() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         books.deposit(other, "diamond", new BigInteger("7"));
-        books.creditUnbacked(player, "note", new BigInteger("4"));
+        books.creditHeld(player, "note", new BigInteger("4"));
         BigInteger otherDiamonds = books.balance(other, "diamond");
         BigInteger reserve = books.supply("diamond").reserve();
         BigDecimal vault = books.supply("diamond").depositVaultExact();
@@ -89,7 +89,7 @@ class QuoteAndReserveTest {
     @Test
     void shopTransferAcceptsFourDecimalsAndRefusesAShortBalance() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
-        books.creditUnbacked(player, "note", new BigDecimal("1.5000"));
+        books.creditHeld(player, "note", new BigDecimal("1.5000"));
         TxResult paid = books.transferShop(player, "note", new BigDecimal("1.2500"), true);
         assertTrue(paid.success(), paid.code());
         assertEquals(0, new BigDecimal("0.2500").compareTo(books.balanceExact(player, "note")));
@@ -158,7 +158,7 @@ class QuoteAndReserveTest {
     @Test
     void aStoredVolumeNudgeIsNotKeptWhenTheBooksAreReadAgain() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
-        books.creditUnbacked(player, "note", new BigInteger("1000"));
+        books.creditHeld(player, "note", new BigInteger("1000"));
         JsonObject root = JsonParser.parseString(books.toJson()).getAsJsonObject();
         root.addProperty("liveNotesPerDiamond", "9");
         root.addProperty("diamondsPerNote", "9");

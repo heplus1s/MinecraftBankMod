@@ -30,7 +30,8 @@ class IssuanceCollateralTest {
         assertEquals(new BigInteger("1000"), books.supply("diamond").locked());
         assertEquals(BigInteger.ZERO, books.supply("copper").locked());
         assertEquals(new BigInteger("199000"), books.backedRoom(books.currency("note")));
-        assertEquals(new BigInteger("1000"), books.balance(player, "note"));
+        assertEquals(BigInteger.ZERO, books.balance(player, "note"));
+        assertEquals(new BigInteger("1000"), books.supply("note").liability());
     }
 
     @Test
