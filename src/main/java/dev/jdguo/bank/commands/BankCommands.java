@@ -180,6 +180,9 @@ public final class BankCommands {
                                                 .then(literal("note").executes(ctx -> switchNote(ctx.getSource(), NoteRegime.HARD, "note")))))
                                 .then(literal("issue").then(argument("amount", StringArgumentType.word()).executes(ctx -> issueNote(ctx.getSource(), StringArgumentType.getString(ctx, "amount")))))
                                 .then(literal("unbacked").then(argument("amount", StringArgumentType.word()).executes(ctx -> unbackedNote(ctx.getSource(), StringArgumentType.getString(ctx, "amount")))))
+                                .then(literal("retire").then(argument("amount", StringArgumentType.word()).executes(ctx -> retireNote(ctx.getSource(), StringArgumentType.getString(ctx, "amount")))))
+                                .then(literal("freeze").executes(ctx -> pauseNote(ctx.getSource(), true)))
+                                .then(literal("unfreeze").executes(ctx -> pauseNote(ctx.getSource(), false)))
                                 .then(literal("reserve").executes(ctx -> showCentralReserve(ctx.getSource()))
                                         .then(literal("deposit").then(argument("amount", StringArgumentType.word()).executes(ctx -> moveCentralReserve(ctx.getSource(), true, StringArgumentType.getString(ctx, "amount")))))
                                         .then(literal("withdraw").then(argument("amount", StringArgumentType.word()).executes(ctx -> moveCentralReserve(ctx.getSource(), false, StringArgumentType.getString(ctx, "amount"))))))
@@ -698,6 +701,33 @@ public final class BankCommands {
         return ok(source, BankPhrases.noteUnbacked(books(), result.note(), amount));
     }
 
+    private static int retireNote(ServerCommandSource source, String raw) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        BigInteger amount;
+        try {
+            amount = Amounts.parse(raw);
+        } catch (RuntimeException error) {
+            return fail(source, BankPhrases.amountProblem(error.getMessage()));
+        }
+        UUID player = source.getPlayerOrThrow().getUuid();
+        NoteTrade result = books().retirePersonalNote(player, amount);
+        if (!result.success()) {
+            return fail(source, BankPhrases.noteRejected(result.code()));
+        }
+        BankRuntime.save();
+        return ok(source, BankPhrases.noteRetired(result.note(), amount));
+    }
+
+    private static int pauseNote(ServerCommandSource source, boolean paused) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        NoteTrade result = books().setPersonalRedemptionPaused(source.getPlayerOrThrow().getUuid(), paused);
+        if (!result.success()) {
+            return fail(source, BankPhrases.noteRejected(result.code()));
+        }
+        BankRuntime.save();
+        return ok(source, paused
+                ? BankPhrases.noteRedemptionPaused(result.note())
+                : BankPhrases.noteRedemptionResumed(result.note()));
+    }
+
     private static int showCentralReserve(ServerCommandSource source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         UUID player = source.getPlayerOrThrow().getUuid();
         return ok(source, BankPhrases.centralReserve(books(), player));
@@ -758,7 +788,7 @@ public final class BankCommands {
         UUID player = source.getPlayerOrThrow().getUuid();
         Redemption result = books().redeemPersonal(player, name, amount, currency);
         if (!result.success()) {
-            return fail(source, BankPhrases.noteRejected(result.code()));
+            return fail(source, BankPhrases.redeemRefusal(result));
         }
         BankRuntime.save();
         return ok(source, BankPhrases.noteRedeem(result, books(), player));
@@ -793,7 +823,7 @@ public final class BankCommands {
         if (!result.success()) {
             return fail(source, "note_spent".equals(result.code()) || "note_tampered".equals(result.code())
                     ? BankPhrases.failure(BankPhrases.Kind.DEPOSIT, result.code(), null, null)
-                    : BankPhrases.noteRejected(result.code()));
+                    : BankPhrases.redeemRefusal(result));
         }
         BankRuntime.save();
         return ok(source, BankPhrases.noteRedeem(result, books(), player.getUuid()));

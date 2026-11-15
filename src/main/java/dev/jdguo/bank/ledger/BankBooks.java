@@ -1938,8 +1938,20 @@ public final class BankBooks {
         };
     }
 
+    /**
+     * Deposited issuance reserve that prices and redeems this note.
+     * Copper and diamond use {@code personalReserves}. A 银行券 anchor uses the issuer's
+     * 银行券 reserve account. The displayed lock is not subtracted.
+     */
     public BigInteger effectiveBacking(PersonalNote note) {
-        return personalReserve(note.issuer(), note.reserveCurrency()).min(note.locked());
+        if (note == null) {
+            return BigInteger.ZERO;
+        }
+        if ("note".equals(note.reserveCurrency())) {
+            return centralReserve(note.issuer());
+        }
+        BigInteger held = personalReserve(note.issuer(), note.reserveCurrency());
+        return held.signum() < 0 ? BigInteger.ZERO : held;
     }
 
     public NoteTrade createPersonalNote(UUID issuer, String name, boolean copperPar, BigInteger par) {
@@ -2351,7 +2363,10 @@ public final class BankBooks {
         return NoteTrade.ok(note, BigInteger.ZERO, BigInteger.ZERO);
     }
 
-    /** Adds circulation with no reserve lock. Personal and central commodity stocks stay put. */
+    /**
+     * Adds circulation and credits only the issuer's book holding. Reserves are not locked
+     * and no other account is credited. A non-positive amount is refused in full.
+     */
     public NoteTrade issuePersonalNoteUnbacked(UUID issuer, BigInteger amount) {
         PersonalNote note = personalNote(issuer);
         if (note == null) {
@@ -2363,12 +2378,50 @@ public final class BankBooks {
         if (amount == null || amount.signum() <= 0) {
             return NoteTrade.fail("par");
         }
-        BigInteger next = note.circulation().add(amount);
-        if (shortCentralCover(note, next)) {
-            return NoteTrade.fail("central_reserve");
-        }
-        note.setCirculation(next);
+        note.setCirculation(note.circulation().add(amount));
         addHolding(note.id(), issuer, amount);
+        return NoteTrade.ok(note, BigInteger.ZERO, BigInteger.ZERO);
+    }
+
+    /**
+     * Retires circulation from the issuer's own book holding only. Other holders stay put.
+     * A short holding refuses the whole amount. The lock is lowered when it would keep
+     * deposited reserves that this circulation no longer requires.
+     */
+    public NoteTrade retirePersonalNote(UUID issuer, BigInteger amount) {
+        PersonalNote note = personalNote(issuer);
+        if (note == null) {
+            return NoteTrade.fail("none");
+        }
+        if (note.bankrupt()) {
+            return NoteTrade.fail("bankrupt");
+        }
+        if (amount == null || amount.signum() <= 0) {
+            return NoteTrade.fail("par");
+        }
+        if (personalHolding(note.id(), issuer).compareTo(amount) < 0) {
+            return NoteTrade.fail("funds");
+        }
+        BigInteger centralLiability = supply("note") == null ? BigInteger.ZERO : supply("note").liability();
+        addHolding(note.id(), issuer, amount.negate());
+        note.setCirculation(note.circulation().subtract(amount));
+        relaxLock(note);
+        if (supply("note") != null && supply("note").liability().compareTo(centralLiability) != 0) {
+            throw new IllegalStateException("personal-note retirement changed central 发行额");
+        }
+        return NoteTrade.ok(note, BigInteger.ZERO, BigInteger.ZERO);
+    }
+
+    /** Pauses or resumes redemption of the issuer's own note. Does not move balances. */
+    public NoteTrade setPersonalRedemptionPaused(UUID issuer, boolean paused) {
+        PersonalNote note = personalNote(issuer);
+        if (note == null) {
+            return NoteTrade.fail("none");
+        }
+        if (note.bankrupt()) {
+            return NoteTrade.fail("bankrupt");
+        }
+        note.setRedemptionPaused(paused);
         return NoteTrade.ok(note, BigInteger.ZERO, BigInteger.ZERO);
     }
 
@@ -2652,6 +2705,9 @@ public final class BankBooks {
         if (note.bankrupt()) {
             return Redemption.fail("bankrupt");
         }
+        if (note.redemptionPaused()) {
+            return Redemption.fail("paused", note);
+        }
         if (amount == null || amount.signum() <= 0) {
             return Redemption.fail("par");
         }
@@ -2679,6 +2735,9 @@ public final class BankBooks {
         }
         if (note.bankrupt()) {
             return Redemption.fail("bankrupt");
+        }
+        if (note.redemptionPaused()) {
+            return Redemption.fail("paused", note);
         }
         if (!validPayout(payout)) {
             return Redemption.fail("payout");
@@ -2804,24 +2863,14 @@ public final class BankBooks {
 
     private void applyRedemption(UUID player, PersonalNote note, BigInteger amount, Redemption priced) {
         if (note.regime() != NoteRegime.FLOAT) {
-            String currency = note.reserveCurrency();
             BigInteger consumed = amount.multiply(note.par());
             note.setCirculation(note.circulation().subtract(amount));
-            BigInteger nextReserve = personalReserve(note.issuer(), currency).subtract(consumed);
-            if (nextReserve.signum() < 0) {
-                nextReserve = BigInteger.ZERO;
-            }
-            setPersonalReserve(note.issuer(), currency, nextReserve);
-            BigInteger relock = requiredLock(note, note.circulation());
-            if (relock.compareTo(nextReserve) > 0) {
-                relock = nextReserve;
-            }
-            note.setLocked(relock);
+            releaseBacking(note, consumed);
+            relaxLock(note);
             note.addDrawn(consumed);
             payRedemption(player, priced);
             return;
         }
-        String parCurrency = note.reserveCurrency();
         BigInteger available = effectiveBacking(note);
         BigInteger consumed = priced.discounted()
                 ? available
@@ -2830,18 +2879,43 @@ public final class BankBooks {
             consumed = available;
         }
         note.setCirculation(note.circulation().subtract(amount));
-        BigInteger nextReserve = personalReserve(note.issuer(), parCurrency).subtract(consumed);
-        if (nextReserve.signum() < 0) {
-            nextReserve = BigInteger.ZERO;
-        }
-        setPersonalReserve(note.issuer(), parCurrency, nextReserve);
-        BigInteger relock = requiredLock(note, note.circulation());
-        if (relock.compareTo(nextReserve) > 0) {
-            relock = nextReserve;
-        }
-        note.setLocked(relock);
+        releaseBacking(note, consumed);
+        relaxLock(note);
         note.addDrawn(consumed);
         payRedemption(player, priced);
+    }
+
+    /** Pays redemption out of the deposited reserve, not out of a forced lock. */
+    private void releaseBacking(PersonalNote note, BigInteger consumed) {
+        if (consumed == null || consumed.signum() <= 0) {
+            return;
+        }
+        if ("note".equals(note.reserveCurrency())) {
+            BigInteger take = consumed.min(centralReserve(note.issuer()));
+            if (take.signum() > 0) {
+                addCentralReserve(note.issuer(), take.negate());
+            }
+            return;
+        }
+        BigInteger next = personalReserve(note.issuer(), note.reserveCurrency()).subtract(consumed);
+        if (next.signum() < 0) {
+            next = BigInteger.ZERO;
+        }
+        setPersonalReserve(note.issuer(), note.reserveCurrency(), next);
+    }
+
+    /** Drops a lock that would pin reserves this circulation no longer requires. Never raises it. */
+    private void relaxLock(PersonalNote note) {
+        BigInteger reserve = "note".equals(note.reserveCurrency())
+                ? centralReserve(note.issuer())
+                : personalReserve(note.issuer(), note.reserveCurrency());
+        BigInteger cap = requiredLock(note, note.circulation());
+        if (cap.compareTo(reserve) > 0) {
+            cap = reserve.signum() < 0 ? BigInteger.ZERO : reserve;
+        }
+        if (note.locked().compareTo(cap) > 0) {
+            note.setLocked(cap);
+        }
     }
 
     private BigInteger parConsumed(PersonalNote note, BigInteger amount, BigInteger available) {
@@ -3451,6 +3525,7 @@ public final class BankBooks {
             o.addProperty("buys", note.buys().toString());
             o.addProperty("sells", note.sells().toString());
             o.addProperty("locked", note.locked().toString());
+            o.addProperty("redemptionPaused", note.redemptionPaused());
             o.addProperty("drawn", note.drawn().toString());
             o.addProperty("bankrupt", note.bankrupt());
             o.addProperty("closedAt", note.closedAtEpochMs());
@@ -3689,6 +3764,9 @@ public final class BankBooks {
                 note.setBuys(new BigInteger(o.get("buys").getAsString()));
                 note.setSells(new BigInteger(o.get("sells").getAsString()));
                 note.setLocked(new BigInteger(o.get("locked").getAsString()));
+                if (o.has("redemptionPaused") && !o.get("redemptionPaused").isJsonNull()) {
+                    note.setRedemptionPaused(o.get("redemptionPaused").getAsBoolean());
+                }
                 if (o.has("openingDiamonds") && !o.get("openingDiamonds").isJsonNull()) {
                     note.adopt(note.regime(), note.anchor(), new BigDecimal(o.get("openingDiamonds").getAsString()));
                 }

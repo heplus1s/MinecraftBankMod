@@ -141,6 +141,8 @@ public final class BankUiSnapshot {
             row.addProperty("name", note.name());
             String shown = CompactFormat.format(books.personalHolding(note.id(), player));
             row.addProperty("balance", shown);
+            row.addProperty("redemptionPaused", note.redemptionPaused());
+            row.addProperty("circulation", whole(note.circulation()));
             putPersonalNotePrice(row, books, note);
             notes.add(row);
             if (books.personalHolding(note.id(), player).signum() > 0) {
@@ -164,6 +166,8 @@ public final class BankUiSnapshot {
             o.addProperty("centralReserve", whole(books.centralReserve(player)));
             o.addProperty("centralRequired", whole(books.requiredCentralReserve(own)));
             putIssuanceReserve(o, books, player, own);
+            o.addProperty("holding", whole(books.personalHolding(own.id(), player)));
+            o.addProperty("redemptionPaused", own.redemptionPaused());
             o.addProperty("bankrupt", own.bankrupt());
             o.add("ownNote", ownNote(books, player, own));
         }
@@ -244,6 +248,8 @@ public final class BankUiSnapshot {
         row.addProperty("centralRequired", whole(books.requiredCentralReserve(note)));
         putIssuanceReserve(row, books, player, note);
         row.addProperty("circulation", whole(note.circulation()));
+        row.addProperty("holding", whole(books.personalHolding(note.id(), player)));
+        row.addProperty("redemptionPaused", note.redemptionPaused());
         row.addProperty("face", whole(note.par()));
         BigDecimal live = books.personalDiamondPrice(note);
         if (live != null && live.signum() > 0) {
@@ -295,7 +301,9 @@ public final class BankUiSnapshot {
     private static void putIssuanceReserve(JsonObject row, BankBooks books, UUID player, PersonalNote note) {
         String currency = note.reserveCurrency();
         CurrencyDef def = books.currency(currency);
-        BigInteger held = books.personalReserve(player, currency);
+        BigInteger held = "note".equals(currency)
+                ? books.centralReserve(player)
+                : books.personalReserve(player, currency);
         BigInteger locked = note.locked();
         BigInteger free = held.subtract(locked == null ? BigInteger.ZERO : locked);
         if (free.signum() < 0) {

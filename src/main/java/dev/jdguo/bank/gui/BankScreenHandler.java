@@ -829,7 +829,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
             BigInteger amount = new BigInteger(parts[3]);
             Redemption result = books.redeemPersonal(uuid, notes.get(marketIndex).name(), amount, parts[2]);
             if (!result.success()) {
-                tell(player, BankPhrases.noteRejected(result.code()));
+                tell(player, BankPhrases.redeemRefusal(result));
                 return;
             }
             BankRuntime.save();
@@ -1383,7 +1383,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         if (!result.success()) {
             tell(player, "note_spent".equals(result.code()) || "note_tampered".equals(result.code())
                     ? BankPhrases.failure(BankPhrases.Kind.DEPOSIT, result.code(), null, null)
-                    : BankPhrases.noteRejected(result.code()));
+                    : BankPhrases.redeemRefusal(result));
             return;
         }
         int taken = result.sheetsTaken().intValue();

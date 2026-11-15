@@ -752,6 +752,31 @@ public final class BankPhrases {
         return line(preview.applied() ? Tone.GREEN : Tone.RED, preview.reason(), en);
     }
 
+    public static Spoken noteRedemptionPaused(PersonalNote note) {
+        String name = note == null ? "这张个人银行券" : "「" + note.name() + "」";
+        return line(Tone.RED, name + "已暂停兑付。", "Redemption of this personal note is paused.");
+    }
+
+    public static Spoken noteRedemptionResumed(PersonalNote note) {
+        String name = note == null ? "这张个人银行券" : "「" + note.name() + "」";
+        return line(Tone.GREEN, name + "已恢复兑付。", "Redemption of this personal note is open again.");
+    }
+
+    public static Spoken noteRetired(PersonalNote note, BigInteger amount) {
+        return line(Tone.GREEN,
+                "已注销「" + note.name() + "」×" + CompactFormat.format(amount)
+                        + "。流通 M1 " + CompactFormat.formatAggregate(note.circulation()) + "。只减少了你自己的持有。",
+                "Retired \"" + note.name() + "\" ×" + CompactFormat.format(amount)
+                        + ". M1 " + CompactFormat.formatAggregate(note.circulation()) + ". Only your own holding was reduced.");
+    }
+
+    public static Spoken redeemRefusal(Redemption redemption) {
+        if (redemption != null && "paused".equals(redemption.code())) {
+            return noteRedemptionPaused(redemption.note());
+        }
+        return noteRejected(redemption == null ? "" : redemption.code());
+    }
+
     public static Spoken noteRejected(String code) {
         return switch (code == null ? "" : code) {
             case "name" -> line(Tone.RED, "名字最多三个汉字或英文字母。", "The name can be at most three Chinese characters or English letters.");
@@ -766,6 +791,7 @@ public final class BankPhrases {
             case "quote" -> line(Tone.RED, "这个数量换不成整张，换一个数量。", "That amount doesn't buy a whole note. Try another amount.");
             case "payout" -> line(Tone.RED, "这种券不能兑成那种货币。", "That note cannot be redeemed into that currency.");
             case "anchor" -> line(Tone.RED, "这种汇率不能用这种货币。", "That regime cannot use that currency.");
+            case "paused" -> line(Tone.RED, "这张个人银行券已暂停兑付。", "Redemption of this personal note is paused.");
             case "suspended" -> line(Tone.RED, "准备金不够按原价兑付，通兑暂停。", "Reserves cannot honor the official rate, so redemption is suspended.");
             case "bankrupt" -> line(Tone.RED, "这张个人银行券已经破产，不能再交易或兑付。", "This personal note is bankrupt and cannot be traded or redeemed.");
             case "closed" -> line(Tone.RED, "这张个人银行券已经破产过了。", "This personal note is already bankrupt.");

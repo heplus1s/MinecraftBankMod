@@ -29,7 +29,16 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-/** Server-side actions for the optional UI. Every amount is checked here, not on the client. */
+/**
+ * Server-side actions for the optional UI. Every amount is checked here, not on the client.
+ *
+ * <p>Personal-note circulation, typed by the issuer:
+ * {@code issue-unbacked <amount>} (also {@code note-unbacked <amount>}) credits only the issuer
+ * and does not lock reserves. {@code note-retire <amount>} reduces that holding and circulation,
+ * or refuses the whole amount with 你的账户余额不足. {@code note-freeze} and {@code note-unfreeze}
+ * pause and resume redemption of that note only. The snapshot fields {@code redemptionPaused},
+ * {@code issuanceReserve}, {@code circulation}, and {@code holding} describe the same page.
+ */
 public final class BankUiService {
     private BankUiService() {}
 
@@ -56,7 +65,10 @@ public final class BankUiService {
             case "note-create" -> create(player, books, parts);
             case "note-switch" -> switchRegime(player, books, parts);
             case "note-issue" -> issue(player, books, parts, false);
-            case "note-unbacked" -> issue(player, books, parts, true);
+            case "note-unbacked", "issue-unbacked" -> issue(player, books, parts, true);
+            case "note-retire" -> retire(player, books, parts);
+            case "note-freeze" -> pauseRedemption(player, books, true);
+            case "note-unfreeze" -> pauseRedemption(player, books, false);
             case "note-buy" -> trade(player, books, parts, true);
             case "note-sell" -> trade(player, books, parts, false);
             case "note-swap" -> swap(player, books, parts);
@@ -460,6 +472,35 @@ public final class BankUiService {
                 : BankPhrases.noteIssued(books, result.note(), amount));
     }
 
+    private static void retire(ServerPlayerEntity player, BankBooks books, String[] parts) {
+        if (parts.length < 2) {
+            return;
+        }
+        BigInteger amount = amount(player, parts[1], null, null);
+        if (amount == null) {
+            return;
+        }
+        NoteTrade result = books.retirePersonalNote(player.getUuid(), amount);
+        if (!result.success()) {
+            tell(player, BankPhrases.noteRejected(result.code()));
+            return;
+        }
+        BankRuntime.save();
+        tell(player, BankPhrases.noteRetired(result.note(), amount));
+    }
+
+    private static void pauseRedemption(ServerPlayerEntity player, BankBooks books, boolean paused) {
+        NoteTrade result = books.setPersonalRedemptionPaused(player.getUuid(), paused);
+        if (!result.success()) {
+            tell(player, BankPhrases.noteRejected(result.code()));
+            return;
+        }
+        BankRuntime.save();
+        tell(player, paused
+                ? BankPhrases.noteRedemptionPaused(result.note())
+                : BankPhrases.noteRedemptionResumed(result.note()));
+    }
+
     private static void trade(ServerPlayerEntity player, BankBooks books, String[] parts, boolean buy) {
         if (parts.length < 3) {
             return;
@@ -506,7 +547,7 @@ public final class BankUiService {
         }
         Redemption result = books.redeemPersonal(player.getUuid(), parts[1], amount, parts[2]);
         if (!result.success()) {
-            tell(player, BankPhrases.noteRejected(result.code()));
+            tell(player, BankPhrases.redeemRefusal(result));
             return;
         }
         BankRuntime.save();

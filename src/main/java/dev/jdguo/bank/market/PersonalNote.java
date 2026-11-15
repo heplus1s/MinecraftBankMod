@@ -34,6 +34,8 @@ public final class PersonalNote {
     private BigInteger interestPool = BigInteger.ZERO;
     /** Last Minecraft day this series was settled. -1 until the first tick anchors it. */
     private long interestDay = -1L;
+    /** Issuer-controlled halt of this series only. Absent on older saves, which stay open. */
+    private boolean redemptionPaused;
 
     /** Floating note. {@code copperPar} chooses whether par is copper or diamonds. */
     public PersonalNote(UUID id, UUID issuer, String name, boolean copperPar, BigInteger par) {
@@ -68,6 +70,7 @@ public final class PersonalNote {
     public long closedAtEpochMs() { return closedAtEpochMs; }
     public BigInteger interestPool() { return interestPool; }
     public long interestDay() { return interestDay; }
+    public boolean redemptionPaused() { return redemptionPaused; }
 
     public void addDrawn(BigInteger amount) {
         if (amount != null && amount.signum() > 0) {
@@ -108,6 +111,7 @@ public final class PersonalNote {
     public void setBuys(BigInteger buys) { this.buys = buys; }
     public void setSells(BigInteger sells) { this.sells = sells; }
     public void setLocked(BigInteger locked) { this.locked = locked; }
+    public void setRedemptionPaused(boolean redemptionPaused) { this.redemptionPaused = redemptionPaused; }
     public void setInterestDay(long interestDay) { this.interestDay = interestDay; }
 
     public void addInterestPool(BigInteger delta) {
