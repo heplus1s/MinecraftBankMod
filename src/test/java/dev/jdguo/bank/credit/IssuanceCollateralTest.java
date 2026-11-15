@@ -1,11 +1,15 @@
 package dev.jdguo.bank.credit;
 
 import dev.jdguo.bank.currency.BankConfig;
+import dev.jdguo.bank.currency.CurrencyDef;
+import dev.jdguo.bank.currency.CurrencyKind;
 import dev.jdguo.bank.ledger.BankBooks;
 import dev.jdguo.bank.ledger.TxResult;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -17,9 +21,7 @@ class IssuanceCollateralTest {
 
     @Test
     void copperAndDiamondsBothCountAndALockedPledgeIsNotCountedTwice() {
-        BankBooks books = BankBooks.create(BankConfig.defaults());
-        books.setReserve("copper", new BigInteger("10000000"));
-        books.setReserve("diamond", new BigInteger("100000"));
+        BankBooks books = wideBook();
         assertEquals(new BigInteger("100"), books.copperPerDiamond());
         assertEquals(new BigInteger("200000"), books.backedRoom(books.currency("note")));
 
@@ -59,5 +61,22 @@ class IssuanceCollateralTest {
         assertEquals(new BigInteger("1000"), books.supply("diamond").locked());
         assertEquals(new BigInteger("5000"), books.supply("copper").locked());
         assertEquals(new BigInteger("995"), books.backedRoom(books.currency("note")));
+    }
+
+    private static BankBooks wideBook() {
+        BigDecimal alpha = new BigDecimal("1000");
+        List<CurrencyDef> list = List.of(
+                new CurrencyDef("copper", CurrencyKind.COMMODITY, "minecraft:copper_ingot",
+                        "铜锭", "Copper", "gold", new BigInteger("10000000"), new BigInteger("10000000"), alpha,
+                        false, null, null, null, null),
+                new CurrencyDef("diamond", CurrencyKind.COMMODITY, "minecraft:diamond",
+                        "钻石", "Diamond", "aqua", new BigInteger("100000"), new BigInteger("100000"), alpha,
+                        false, null, null, null, null),
+                new CurrencyDef("note", CurrencyKind.VIRTUAL, "minecraft:paper",
+                        "银行券", "bank note", "yellow", new BigInteger("1000"), new BigInteger("1000"), alpha,
+                        true, "diamond", BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE));
+        return BankBooks.create(new BankConfig("diamond", new BigDecimal("0.02"), new BigDecimal("0.02"),
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null, null, 4.0,
+                true, true, true, true, true, list));
     }
 }

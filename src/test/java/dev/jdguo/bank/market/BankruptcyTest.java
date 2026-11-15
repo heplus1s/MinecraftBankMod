@@ -29,6 +29,7 @@ class BankruptcyTest {
         books.creditUnbacked(issuer, "note", BigInteger.ONE);
         assertTrue(books.depositCentralReserve(issuer, BigInteger.ONE).success());
         assertTrue(books.issuePersonalNote(issuer, BigInteger.TEN).success());
+        books.deposit(buyer, "copper", new BigInteger("20000"));
         books.creditUnbacked(buyer, "note", new BigInteger("20"));
         books.deposit(buyer, "copper", new BigInteger("1000"));
         assertTrue(books.buyPersonalNote(buyer, "Aa", new BigInteger("4")).success());

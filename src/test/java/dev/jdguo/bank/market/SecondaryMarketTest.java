@@ -72,6 +72,7 @@ class SecondaryMarketTest {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         PersonalNote pay = issue(books, issuerA, "Aa", BigInteger.ONE, BigInteger.TEN, BigInteger.TEN);
         PersonalNote receive = issue(books, issuerB, "Bb", BigInteger.ONE, BigInteger.TEN, BigInteger.TEN);
+        books.deposit(buyer, "copper", new BigInteger("20000"));
         books.creditUnbacked(buyer, "note", new BigInteger("100"));
         assertTrue(books.buyPersonalNote(buyer, "Bb", BigInteger.TEN).success());
         assertEquals(0, new BigDecimal("1.1").compareTo(books.personalDiamondPrice(receive)));
@@ -83,6 +84,7 @@ class SecondaryMarketTest {
         BigInteger lockedB = receive.locked();
         BigInteger diamondStock = books.supply("diamond").reserve();
         BigInteger buyerNotes = books.balance(buyer, "note");
+        BigInteger buyerCopper = books.balance(buyer, "copper");
         SecondaryClearing.Quote quote = SecondaryClearing.priceSwap(
                 books.personalDiamondPrice(pay), books.personalDiamondPrice(receive), BigInteger.ONE,
                 books.unitsPer("note", "diamond"), books.copperPerDiamond());
@@ -103,7 +105,7 @@ class SecondaryMarketTest {
         assertEquals(new BigInteger("20").subtract(quote.central()), books.balance(issuerA, "note"));
         assertEquals(new BigInteger("9"), books.personalHolding(receive.id(), buyer));
         assertEquals(BigInteger.ONE, books.personalHolding(pay.id(), buyer));
-        assertEquals(quote.copper(), books.balance(buyer, "copper"));
+        assertEquals(buyerCopper.add(quote.copper()), books.balance(buyer, "copper"));
         assertEquals(buyerNotes.add(quote.central()), books.balance(buyer, "note"));
         assertEquals(reserveA, books.personalReserve(issuerA, "diamond"));
         assertEquals(reserveB, books.personalReserve(issuerB, "diamond"));
@@ -141,6 +143,7 @@ class SecondaryMarketTest {
     void shortReserveRedeemsAtADiscountAndDoesNotPayMoreThanPosted() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         PersonalNote note = issue(books, issuerB, "Bb", BigInteger.ONE, BigInteger.TEN, BigInteger.TEN);
+        books.deposit(buyer, "copper", new BigInteger("20000"));
         books.creditUnbacked(buyer, "note", new BigInteger("100"));
         assertTrue(books.buyPersonalNote(buyer, "Bb", BigInteger.TEN).success());
         assertEquals(0, new BigDecimal("1.1").compareTo(books.personalDiamondPrice(note)));

@@ -14,7 +14,10 @@ public String currencyId()
 public BigInteger balance()
 public BigInteger playerBalance(UUID player)
 public TxResult transfer(UUID player, BigInteger amount, boolean playerPaysShop)
+public TxResult transfer(UUID player, String currency, BigDecimal amount, boolean playerPaysShop)
 ```
+
+四位小数的过户见 `docs/bank-hooks.md`。`currency` 为 `note` 或 `personal:<uuid>`。余额不够则整笔拒绝。
 
 `get()` 在世界账本还没装好时返回 null。`currencyId()` 是中央虚拟货币，默认 `note`。`playerPaysShop` 为 true 时，玩家购买，借记玩家活期存款，贷记商店经营账户。为 false 时方向相反。失败代码是 `insufficient_funds`、`insufficient_shop`、`bad_amount`。失败时不改任何余额。
 

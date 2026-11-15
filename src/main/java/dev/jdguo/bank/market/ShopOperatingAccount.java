@@ -5,6 +5,7 @@ import dev.jdguo.bank.ledger.BankBooks;
 import dev.jdguo.bank.ledger.TxResult;
 import dev.jdguo.bank.persistence.BankRuntime;
 
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.UUID;
 
@@ -54,10 +55,21 @@ public final class ShopOperatingAccount {
      * @return success, or {@code insufficient_funds}, {@code insufficient_shop}, or {@code bad_amount}
      */
     public TxResult transfer(UUID player, BigInteger amount, boolean playerPaysShop) {
+        return transfer(player, currencyId(), amount == null ? null : new BigDecimal(amount), playerPaysShop);
+    }
+
+    /**
+     * Moves a four-decimal amount. {@code currency} is {@code note} or {@code personal:<uuid>}.
+     * A short balance refuses the whole transfer.
+     *
+     * @param playerPaysShop {@code true} when the player buys from the server
+     * @return success, or {@code insufficient_funds}, {@code insufficient_shop}, or {@code bad_amount}
+     */
+    public TxResult transfer(UUID player, String currency, BigDecimal amount, boolean playerPaysShop) {
         if (BankRuntime.state == null) {
             return TxResult.fail("bank_not_ready", "Ledger is not loaded");
         }
-        TxResult result = BankRuntime.books().transferShopOperating(player, amount, playerPaysShop);
+        TxResult result = BankRuntime.books().transferShop(player, currency, amount, playerPaysShop);
         if (result.success()) {
             BankRuntime.save();
         }

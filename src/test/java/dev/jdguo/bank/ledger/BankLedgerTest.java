@@ -82,9 +82,9 @@ class BankLedgerTest {
         assertEquals(expected, result.amount());
         assertEquals(new BigInteger("5000").subtract(expected), books.balance(player, "copper"));
         assertEquals(qty, books.balance(player, "diamond"));
-        assertEquals(new BigInteger("1001000"), books.supply("copper").reserve());
+        assertEquals(new BigInteger("1000000"), books.supply("copper").reserve());
         assertEquals(new BigInteger("20"), books.interestPool("copper"));
-        assertEquals(new BigInteger("999"), books.supply("diamond").reserve());
+        assertEquals(new BigInteger("1000"), books.supply("diamond").reserve());
         assertEquals(books.balance(player, "copper"), books.supply("copper").depositVault());
         assertEquals(qty, books.supply("diamond").depositVault());
         assertEquals(noteM1, books.centralM1());
@@ -97,14 +97,14 @@ class BankLedgerTest {
         books.deposit(player, "copper", new BigInteger("50000000"));
         books.setReserve("diamond", BigInteger.valueOf(2));
 
-        BigInteger rate = books.copperPerDiamond();
+        BigInteger reserve = books.supply("diamond").reserve();
         TxResult result = books.exchange(player, "copper", "diamond", BigInteger.TEN);
 
-        assertTrue(result.success());
-        assertEquals(rate.multiply(BigInteger.valueOf(8)), result.copperPaid());
-        assertEquals(BigInteger.TWO, books.balance(player, "diamond"));
-        assertEquals(new BigInteger("50000000").subtract(result.amount()).add(result.copperPaid()),
-                books.balance(player, "copper"));
+        assertTrue(result.success(), result.code());
+        assertEquals(BigInteger.ZERO, result.copperPaid());
+        assertEquals(BigInteger.TEN, books.balance(player, "diamond"));
+        assertEquals(reserve, books.supply("diamond").reserve());
+        assertEquals(new BigInteger("50000000").subtract(result.amount()), books.balance(player, "copper"));
         books.checkInvariants();
     }
 
@@ -116,7 +116,7 @@ class BankLedgerTest {
         books.setFrozen(true);
 
         assertEquals("frozen", books.exchange(player, "note", "diamond", BigInteger.ONE).code());
-        assertTrue(books.exchange(player, "diamond", "note", BigInteger.ONE).success());
+        assertEquals("manual_issue", books.exchange(player, "diamond", "note", BigInteger.ONE).code());
         assertTrue(books.withdraw(player, "diamond", BigInteger.ONE, false).success());
         books.checkInvariants();
     }
@@ -164,21 +164,16 @@ class BankLedgerTest {
         BigInteger issuanceBefore = books.supply("diamond").reserve();
         assertEquals(BigInteger.ZERO, books.centralM1());
 
-        TxResult bought = books.exchange(player, "diamond", "note", BigInteger.valueOf(4));
-        assertTrue(bought.success(), bought.code());
-        assertEquals(BigInteger.valueOf(4), books.centralM1());
-        BigInteger afterBuy = books.supply("diamond").reserve();
-        assertEquals(issuanceBefore.add(bought.amount()).subtract(books.interestPool("diamond")), afterBuy);
-        assertTrue(books.interestPoolExact("diamond").signum() > 0);
-        assertEquals(books.balance(player, "diamond"), books.supply("diamond").depositVault());
-
-        BigDecimal issued = books.supply("note").liabilityExact();
+        assertEquals("manual_issue", books.exchange(player, "diamond", "note", BigInteger.valueOf(4)).code());
+        books.creditUnbacked(player, "note", BigInteger.valueOf(4));
+        BigInteger afterIssue = books.supply("diamond").reserve();
+        assertEquals(issuanceBefore, afterIssue);
         BigDecimal notesBefore = books.balanceExact(player, "note");
         TxResult sold = books.exchange(player, "note", "diamond", BigInteger.ONE);
         assertTrue(sold.success(), sold.code());
-        BigDecimal paid = notesBefore.subtract(books.balanceExact(player, "note"));
-        assertEquals(0, issued.subtract(paid).compareTo(books.supply("note").liabilityExact()));
-        assertEquals(afterBuy.subtract(BigInteger.ONE), books.supply("diamond").reserve());
+        assertTrue(books.balanceExact(player, "note").compareTo(notesBefore) < 0);
+        assertEquals(afterIssue.subtract(BigInteger.ONE), books.supply("diamond").reserve());
+        assertEquals(new BigInteger("11"), books.balance(player, "diamond"));
         books.checkInvariants();
     }
 

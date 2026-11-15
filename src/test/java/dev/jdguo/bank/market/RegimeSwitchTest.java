@@ -87,6 +87,7 @@ class RegimeSwitchTest {
     @Test
     void hardSwitchIsRefusedWhenTheLiveQuoteHasLeftFace() {
         BankBooks books = ready(new BigInteger("100"), new BigInteger("20"));
+        books.deposit(buyer, "copper", new BigInteger("20000"));
         books.creditUnbacked(buyer, "note", new BigInteger("500"));
         books.deposit(buyer, "copper", new BigInteger("5000"));
         var bought = books.buyPersonalNote(buyer, "泉", new BigInteger("20"));

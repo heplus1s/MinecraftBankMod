@@ -18,6 +18,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -30,13 +31,16 @@ class BankUiSnapshotTest {
         books.creditUnbacked(player, "note", new BigInteger("4"));
         String json = BankUiSnapshot.json(books, player, false, "savings", false);
         var o = JsonParser.parseString(json).getAsJsonObject();
-
-        assertEquals("4", o.get("m1").getAsString());
-        assertEquals("0", o.get("m0").getAsString());
+        assertFalse(o.has("m0"));
+        assertFalse(o.has("m1"));
+        assertFalse(o.has("m2"));
+        JsonObject admin = JsonParser.parseString(BankUiSnapshot.json(books, player, true, "savings", false)).getAsJsonObject();
+        assertEquals("4", admin.get("m1").getAsString());
+        assertEquals("0", admin.get("m0").getAsString());
         BigDecimal exactM2 = books.centralM2();
-        assertEquals(CompactFormat.formatAggregate(exactM2), o.get("m2").getAsString());
+        assertEquals(CompactFormat.formatAggregate(exactM2), admin.get("m2").getAsString());
         assertEquals(0, exactM2.setScale(4, RoundingMode.HALF_UP)
-                .compareTo(new BigDecimal(o.get("m2").getAsString().replace(",", ""))));
+                .compareTo(new BigDecimal(admin.get("m2").getAsString().replace(",", ""))));
         assertEquals(exactM2, books.centralM2());
         assertFalse(o.has("institutions"));
         assertFalse(o.has("frozen"));
@@ -45,7 +49,6 @@ class BankUiSnapshotTest {
         assertEquals("10", o.get("vaultDiamond").getAsString());
         assertEquals("1000", o.get("issuanceDiamond").getAsString());
         assertFalse(o.get("savings").getAsString().equals(o.get("issuanceDiamond").getAsString()));
-        assertTrue(o.get("m2").getAsString().length() > 0);
         var names = new java.util.ArrayList<String>();
         o.getAsJsonArray("currencies").forEach(row -> names.add(row.getAsJsonObject().get("name").getAsString()));
         assertTrue(names.contains("钻石"));
@@ -149,20 +152,14 @@ class BankUiSnapshotTest {
 
         books.creditUnbacked(player, "note", new BigInteger("1000"));
         JsonObject weak = JsonParser.parseString(BankUiSnapshot.json(books, player, false, "savings", false)).getAsJsonObject();
-        assertEquals("2", currency(weak, "note").get("rate").getAsString());
-        assertEquals("0.5", weak.get("diamondsPerNote").getAsString());
-        assertEquals("0.5", currency(weak, "note").get("diamondsPerNote").getAsString());
+        assertEquals(CompactFormat.formatRate(books.unitsPer("note", "diamond")), currency(weak, "note").get("rate").getAsString());
         assertEquals(CompactFormat.formatRate(books.unitsPer("diamond", "note")), weak.get("diamondsPerNote").getAsString());
+        assertNotEquals("2", currency(weak, "note").get("rate").getAsString());
 
         books.setReserve("diamond", BigInteger.ZERO);
-        JsonObject collapsed = JsonParser.parseString(BankUiSnapshot.json(books, player, false, "savings", false)).getAsJsonObject();
-        assertFalse(collapsed.has("copperPerDiamond"));
-        assertFalse(collapsed.has("diamondsPerNote"));
-        assertFalse(currency(collapsed, "note").has("rate"));
-        assertFalse(currency(collapsed, "note").has("diamondsPerNote"));
-        assertFalse(personal(collapsed, "泉").has("price"));
-        assertFalse(personal(collapsed, "泉").has("diamondPrice"));
-        assertFalse(personal(collapsed, "泉").has("rate"));
+        JsonObject stillQuoted = JsonParser.parseString(BankUiSnapshot.json(books, player, false, "savings", false)).getAsJsonObject();
+        assertTrue(stillQuoted.has("copperPerDiamond"));
+        assertTrue(stillQuoted.has("diamondsPerNote"));
     }
 
     private static JsonObject central(JsonObject snapshot, String id) {

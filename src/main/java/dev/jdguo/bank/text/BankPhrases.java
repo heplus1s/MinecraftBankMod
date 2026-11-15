@@ -146,6 +146,8 @@ public final class BankPhrases {
             case "too_many_items" -> line(Tone.RED, "一次取太多了。大额请开汇票。", "That's too many items at once. Issue a bill for a large amount.");
             case "frozen" -> line(Tone.RED, "已暂停银行券兑付。", "Bank-note redemption is suspended.");
             case "no_market" -> line(Tone.RED, "这种货币无法报价。", "That currency cannot be quoted.");
+            case "manual_issue" -> line(Tone.RED, "银行券只能由管理员发行或注销，不能用兑换增加。", "Bank notes change only when an operator issues or retires them.");
+            case "insufficient_deposits" -> line(Tone.RED, "中央银行存款不足，这次已全部拒绝，不会凭空增加准备金。", "Central-bank deposits are short, so nothing was posted.");
             case "not_issuable" -> line(Tone.RED, "这种货币不能这样发行。", "This currency can't be issued that way.");
             case "over_cap" -> line(Tone.RED, "尚可按准备金发行的额度不足，这次已全部拒绝。", "Reserve-backed room is short, so the whole issue was refused.");
             case "hold_bill" -> line(Tone.RED, "请把一张汇票拿在手上。", "Hold one bill in your main hand.");
@@ -175,6 +177,24 @@ public final class BankPhrases {
         return line(Tone.GREEN,
                 "开出 " + nameZh(books, currency) + " 汇票 ×" + n + tail,
                 "Issued a " + shortEn(books, currency) + " bill ×" + n + tail);
+    }
+
+    public static Spoken reserveTransfer(boolean fromDeposits, String currency, String code, BigDecimal amount, BankBooks books) {
+        String label = fromDeposits ? "从存款转入准备金" : "从准备金转回存款";
+        String name = nameZh(books, currency);
+        String n = Money.display(amount);
+        if ("ok".equals(code)) {
+            return line(Tone.GREEN, label + "：" + name + " ×" + n + "。", label + ": " + n);
+        }
+        if ("insufficient_deposits".equals(code)) {
+            return line(Tone.RED, "中央银行存款里的" + name + "不够转出 ×" + n + "，这次已全部拒绝，不会凭空增加准备金。",
+                    "Deposits cannot cover " + n + ".");
+        }
+        if ("insufficient_reserves".equals(code)) {
+            return line(Tone.RED, "发行准备金里的" + name + "不够转回存款 ×" + n + "，这次已全部拒绝。",
+                    "Issuance reserves cannot cover " + n + ".");
+        }
+        return line(Tone.RED, label + "办不到。", "That reserve transfer did not post.");
     }
 
     public static Spoken backedOverRoom(BankBooks books, String currency, BigInteger requested, BigInteger room) {

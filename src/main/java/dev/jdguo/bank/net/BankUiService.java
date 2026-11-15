@@ -76,6 +76,8 @@ public final class BankUiService {
             case "admin-unbacked" -> adminCredit(player, books, session, parts, false);
             case "admin-retire" -> adminCredit(player, books, session, parts, true);
             case "admin-backed" -> adminBacked(player, books, session, parts);
+            case "admin-reserve-from-deposits" -> reserveTransfer(player, books, session, parts, true);
+            case "admin-reserve-to-deposits" -> reserveTransfer(player, books, session, parts, false);
             default -> tell(player, BankPhrases.failure(BankPhrases.Kind.GENERIC, "bad_amount", null, null));
         }
         if (BankUiNetwork.session(player) != null) {
@@ -587,6 +589,28 @@ public final class BankUiService {
         }
         BankRuntime.save();
         tell(player, BankPhrases.credit(books, "backed", parts[1], result.amount(), player.getName().getString()));
+    }
+
+    private static void reserveTransfer(ServerPlayerEntity player, BankBooks books, BankUiNetwork.Session session,
+                                        String[] parts, boolean fromDeposits) {
+        if (!session.admin || !player.hasPermissionLevel(2) || parts.length < 3) {
+            tell(player, BankPhrases.failure(BankPhrases.Kind.GENERIC, "denied", null, null));
+            return;
+        }
+        BigDecimal amount;
+        try {
+            amount = dev.jdguo.bank.ledger.Money.parse(parts[2]);
+        } catch (RuntimeException error) {
+            tell(player, BankPhrases.amountProblem(error.getMessage()));
+            return;
+        }
+        TxResult result = books.transferReserve(parts[1], amount, fromDeposits);
+        if (!result.success()) {
+            tell(player, BankPhrases.reserveTransfer(fromDeposits, parts[1], result.code(), amount, books));
+            return;
+        }
+        BankRuntime.save();
+        tell(player, BankPhrases.reserveTransfer(fromDeposits, parts[1], "ok", amount, books));
     }
 
     private static void adminCredit(ServerPlayerEntity player, BankBooks books, BankUiNetwork.Session session, String[] parts, boolean retire) {

@@ -73,7 +73,7 @@ class CentralReserveTest {
         books.accrueInterest(1);
 
         assertEquals(new BigInteger("365"), books.centralReserve(issuer));
-        assertEquals(0, new java.math.BigDecimal("366.0000").compareTo(books.balanceExact(issuer, "note")));
+        assertTrue(books.balanceExact(issuer, "note").compareTo(new java.math.BigDecimal("367")) < 0);
         assertTrue(books.interestPoolExact("note").compareTo(pool) < 0);
         java.math.BigDecimal untouched = books.interestPoolExact("note");
         assertTrue(books.issuePersonalNoteUnbacked(issuer, new BigInteger("4000")).success());

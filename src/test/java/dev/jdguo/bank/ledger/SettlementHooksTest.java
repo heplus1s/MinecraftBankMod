@@ -338,13 +338,8 @@ class SettlementHooksTest {
     private BankBooks fundFees(BigInteger feeNotes) {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         books.setAlpha("note", BigDecimal.ZERO);
-        BigInteger diamonds = feeNotes.multiply(new BigInteger("50"));
-        BigInteger cost = diamonds.add(feeNotes);
-        books.creditUnbacked(seller, "note", cost);
-        TxResult result = books.exchange(seller, "note", "diamond", diamonds);
-        assertTrue(result.success(), result.code());
+        books.postRetainedFee("note", feeNotes);
         assertEquals(feeNotes, books.interestPool("note"));
-        assertEquals(BigInteger.ZERO, books.balance(seller, "note"));
         return books;
     }
 

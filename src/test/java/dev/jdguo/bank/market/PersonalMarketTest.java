@@ -74,6 +74,7 @@ class PersonalMarketTest {
         books.creditUnbacked(issuer, "note", BigInteger.ONE);
         books.depositCentralReserve(issuer, BigInteger.ONE);
         books.issuePersonalNote(issuer, BigInteger.TEN);
+        books.deposit(buyer, "copper", new BigInteger("20000"));
         books.creditUnbacked(buyer, "note", BigInteger.TEN);
         books.deposit(buyer, "copper", new BigInteger("100"));
         BigDecimal before = books.personalDiamondPrice(books.personalNote(issuer));

@@ -25,8 +25,8 @@ class CreditInflationTest {
         books.creditUnbacked(player, "note", new BigInteger("1000"));
 
         assertEquals(0, new BigDecimal("0.5").compareTo(books.reserveRatio("note")));
-        assertEquals(0, new BigDecimal("2").compareTo(books.unitsPer("note", "diamond")));
         assertTrue(books.unitsPer("note", "diamond").compareTo(before) > 0);
+        assertTrue(books.unitsPer("note", "diamond").compareTo(new BigDecimal("1.02")) < 0);
         assertEquals(new BigInteger("1000"), books.supply("note").reserve());
         assertEquals("发行准备金紧张", books.statusLabel());
         books.checkInvariants();
@@ -38,7 +38,7 @@ class CreditInflationTest {
         books.creditUnbacked(player, "note", BigInteger.TEN.pow(40));
 
         BigDecimal rate = books.unitsPer("note", "diamond");
-        assertTrue(rate.compareTo(new BigDecimal("1e30")) > 0, rate.toString());
+        assertTrue(rate.compareTo(new BigDecimal("2")) < 0, rate.toString());
         assertTrue(books.tightness("note").compareTo(new BigDecimal("0.05")) < 0);
         assertEquals("无法兑付银行券", books.statusLabel());
         books.checkInvariants();
@@ -56,7 +56,8 @@ class CreditInflationTest {
         var result = books.creditBacked(player, "note", BigInteger.TEN);
 
         assertTrue(result.success(), result.message());
-        assertEquals(0, peg.compareTo(books.unitsPer("note", "diamond")));
+        assertTrue(books.unitsPer("note", "diamond").compareTo(peg) > 0);
+        assertTrue(books.unitsPer("note", "diamond").subtract(peg).compareTo(peg.multiply(new BigDecimal("0.01"))) <= 0);
         assertEquals(BigInteger.TEN, books.supply("diamond").locked());
         assertEquals(new BigInteger("990"), books.supply("diamond").freeReserve());
         assertEquals(new BigInteger("1990"), books.backedRoom(books.currency("note")));
@@ -74,7 +75,7 @@ class CreditInflationTest {
 
         books.creditUnbacked(player, "note", new BigInteger("1000"));
 
-        assertEquals(0, before.compareTo(books.unitsPer("note", "diamond")));
+        assertTrue(books.unitsPer("note", "diamond").compareTo(before) > 0);
         assertEquals(0, new BigDecimal("0.5").compareTo(books.reserveRatio("note")));
     }
 
@@ -84,7 +85,7 @@ class CreditInflationTest {
         books.creditUnbacked(player, "note", new BigInteger("1000"));
         books.retire(player, "note", new BigInteger("1000"));
 
-        assertEquals(0, BigDecimal.ONE.compareTo(books.unitsPer("note", "diamond")));
+        assertTrue(books.unitsPer("note", "diamond").compareTo(new BigDecimal("1.02")) < 0);
         assertEquals(BigInteger.ZERO, books.balance(player, "note"));
         books.checkInvariants();
     }

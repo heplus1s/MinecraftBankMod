@@ -36,6 +36,7 @@ class NoteRegimeTest {
 
         BankBooks later = BankBooks.create(BankConfig.defaults());
         PersonalNote traded = open(later, issuerB, "Bb", NoteRegime.FLOAT, "diamond", BigInteger.ONE, BigInteger.TEN, BigInteger.TEN);
+        later.deposit(buyer, "copper", new BigInteger("20000"));
         later.creditUnbacked(buyer, "note", new BigInteger("100"));
         var bought = later.buyPersonalNote(buyer, "Bb", BigInteger.TEN);
         assertTrue(bought.success(), bought.code());
@@ -55,6 +56,7 @@ class NoteRegimeTest {
         PersonalNote floating = open(books, issuerA, "Aa", NoteRegime.FLOAT, "diamond", BigInteger.ONE, BigInteger.TEN, BigInteger.TEN);
         assertEquals(0, new BigDecimal("2").compareTo(books.personalDiamondPrice(peg)));
 
+        books.deposit(buyer, "copper", new BigInteger("20000"));
         books.creditUnbacked(buyer, "note", new BigInteger("100"));
         assertTrue(books.buyPersonalNote(buyer, "Bb", BigInteger.valueOf(5)).success());
         assertEquals(0, new BigDecimal("2").compareTo(books.personalDiamondPrice(peg)));
@@ -90,6 +92,7 @@ class NoteRegimeTest {
         assertEquals(BigInteger.TEN, hard.locked());
         assertEquals("reserve", books.issuePersonalNote(issuerB, BigInteger.ONE).code());
 
+        books.deposit(buyer, "copper", new BigInteger("20000"));
         books.creditUnbacked(buyer, "note", new BigInteger("100"));
         assertTrue(books.buyPersonalNote(buyer, "Bb", BigInteger.TEN).success());
         assertEquals(0, BigDecimal.ONE.compareTo(books.personalDiamondPrice(hard)));

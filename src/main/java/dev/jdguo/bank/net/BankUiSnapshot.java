@@ -25,9 +25,6 @@ public final class BankUiSnapshot {
         o.addProperty("page", page == null ? "savings" : page);
         o.addProperty("admin", admin);
         o.addProperty("confirm", confirm);
-        o.addProperty("m0", CompactFormat.formatAggregate(books.centralM0()));
-        o.addProperty("m1", CompactFormat.formatAggregate(books.centralM1()));
-        o.addProperty("m2", CompactFormat.formatAggregate(books.centralM2()));
         o.addProperty("status", books.statusLabel());
         o.addProperty("copper", Money.stored(books.balanceExact(player, "copper")));
         o.addProperty("diamond", Money.stored(books.balanceExact(player, "diamond")));
@@ -79,7 +76,24 @@ public final class BankUiSnapshot {
         o.add("accounts", accounts);
         o.add("central", central);
         if (admin) {
+            o.addProperty("m0", CompactFormat.formatAggregate(books.centralM0()));
+            o.addProperty("m1", CompactFormat.formatAggregate(books.centralM1()));
+            o.addProperty("m2", CompactFormat.formatAggregate(books.centralM2()));
             o.addProperty("frozen", books.frozen());
+            JsonArray hardBooks = new JsonArray();
+            for (String id : new String[] {"copper", "diamond"}) {
+                if (books.currency(id) == null) {
+                    continue;
+                }
+                Supply metal = books.supply(id);
+                JsonObject row = new JsonObject();
+                row.addProperty("id", id);
+                row.addProperty("savingsBook", Money.stored(books.savingsBook(id)));
+                row.addProperty("depositVault", Money.stored(metal.depositVaultExact()));
+                row.addProperty("reserve", Money.stored(metal.reserveExact()));
+                hardBooks.add(row);
+            }
+            o.add("hardBooks", hardBooks);
             o.addProperty("feePercent", percent(books.feeFraction()));
             if (centralNote != null) {
                 BigDecimal tight = books.tightness(centralNote.id());
