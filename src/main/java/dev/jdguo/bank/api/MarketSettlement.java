@@ -23,15 +23,15 @@ public final class MarketSettlement {
     private MarketSettlement() {}
 
     public static TxResult transfer(UUID from, UUID to, String currency, BigInteger amount, String reference) {
-        return post(reference, books -> books.transferSavings(from, to, currency, amount));
+        return postReferenced(reference, "transfer|" + from + "|" + to + "|" + currency + "|" + amount, amount, books -> books.transferSavings(from, to, currency, amount));
     }
 
     public static TxResult creditLandGrant(UUID payer, String currency, BigInteger amount, String reference) {
-        return post(reference, books -> books.creditLandGrant(payer, currency, amount));
+        return postReferenced(reference, "grant|" + payer + "|" + currency + "|" + amount, amount, books -> books.creditLandGrant(payer, currency, amount));
     }
 
     public static TxResult refundLandGrant(UUID payer, String currency, BigInteger amount, String reference) {
-        return post(reference, books -> books.refundLandGrant(payer, currency, amount));
+        return postReferenced(reference, "refund-grant|" + payer + "|" + currency + "|" + amount, amount, books -> books.refundLandGrant(payer, currency, amount));
     }
 
     public static boolean externalPersonalMarket() {
@@ -61,8 +61,33 @@ public final class MarketSettlement {
         return movement.apply(BankRuntime.books());
     }
 
+    public static TxResult marketReceipt(String reference) {
+        if (!validReference(reference)) {
+            return TxResult.fail("bad_reference", "");
+        }
+        return read(books -> books.marketReceipt(reference) ? TxResult.ok(BigInteger.ZERO, "")
+                : TxResult.fail("unrecorded", ""));
+    }
+
+    private static boolean validReference(String reference) {
+        return reference != null && !reference.isBlank() && reference.length() <= 128;
+    }
+
+    private static TxResult postReferenced(String reference, String fingerprint, BigInteger amount, Movement movement) {
+        if (!validReference(reference)) {
+            return TxResult.fail("bad_reference", "");
+        }
+        return read(books -> {
+            TxResult result = books.postMarketMovement(reference, fingerprint, amount, () -> movement.apply(books));
+            if (result.success() && !BankRuntime.saveMarket()) {
+                return TxResult.fail("bank_pending", "Could not persist the receipt");
+            }
+            return result;
+        });
+    }
+
     private static TxResult post(String reference, Movement movement) {
-        if (reference == null || reference.isBlank() || reference.length() > 128) {
+        if (!validReference(reference)) {
             return TxResult.fail("bad_reference", "Missing reference");
         }
         if (BankRuntime.state == null) {

@@ -20,9 +20,15 @@ public final class BankRuntime {
     }
 
     public static void save() {
-        if (state != null) {
-            state.markDirty();
-            state.writeBackup();
+        saveMarket();
+    }
+
+    public static boolean saveMarket() {
+        if (state == null) {
+            return false;
         }
+        state.books().advanceCheckpoint();
+        state.markDirty();
+        return server == null || state.writeBackup();
     }
 }

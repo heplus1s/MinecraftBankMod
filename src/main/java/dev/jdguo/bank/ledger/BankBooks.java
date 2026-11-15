@@ -39,6 +39,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 /**
  * World ledger. Not thread-safe; the Minecraft server thread is the only caller.
@@ -68,6 +69,35 @@ public final class BankBooks {
     private final Map<UUID, DisplayPref> prefs = new LinkedHashMap<>();
     private final Map<String, BigDecimal> alphas = new LinkedHashMap<>();
     private final java.util.Set<UUID> imported = new java.util.LinkedHashSet<>();
+
+    private final Map<String, String> marketReceipts = new LinkedHashMap<>();
+    private long checkpoint;
+
+    public long checkpoint() {
+        return checkpoint;
+    }
+
+    public void advanceCheckpoint() {
+        checkpoint = Math.incrementExact(checkpoint);
+    }
+
+    public boolean marketReceipt(String reference) {
+        return marketReceipts.containsKey(reference);
+    }
+
+    public TxResult postMarketMovement(String reference, String fingerprint, BigInteger amount,
+                                       Supplier<TxResult> movement) {
+        String prior = marketReceipts.get(reference);
+        if (prior != null) {
+            return prior.equals(fingerprint) ? TxResult.ok(amount, "")
+                    : TxResult.fail("reference_conflict", "");
+        }
+        TxResult result = movement.get();
+        if (result.success()) {
+            marketReceipts.put(reference, fingerprint);
+        }
+        return result;
+    }
 
     private String numeraire;
     private BigDecimal feeFraction;
@@ -3548,6 +3578,10 @@ public final class BankBooks {
         recomputeOfficialNoteQuote();
         JsonObject root = new JsonObject();
         root.addProperty("version", SNAPSHOT_VERSION);
+        root.addProperty("checkpoint", checkpoint);
+        JsonObject marketReceiptsJson = new JsonObject();
+        marketReceipts.forEach(marketReceiptsJson::addProperty);
+        root.add("marketReceipts", marketReceiptsJson);
         root.addProperty("numeraire", numeraire);
         root.addProperty("fee", feeFraction.toPlainString());
         if (liveCopperPerDiamond != null) {
@@ -3782,6 +3816,11 @@ public final class BankBooks {
             defs.putIfAbsent(def.id(), def);
         }
         BankBooks books = new BankBooks(defs);
+        books.checkpoint = root.has("checkpoint") ? root.get("checkpoint").getAsLong() : 0;
+        if (root.has("marketReceipts")) {
+            root.getAsJsonObject("marketReceipts").entrySet().forEach(entry ->
+                    books.marketReceipts.put(entry.getKey(), entry.getValue().getAsString()));
+        }
         books.numeraire = root.has("numeraire") ? root.get("numeraire").getAsString() : fallback.numeraire();
         books.feeFraction = new BigDecimal(root.get("fee").getAsString());
         if (root.has("liveCopperPerDiamond") && !root.get("liveCopperPerDiamond").isJsonNull()) {

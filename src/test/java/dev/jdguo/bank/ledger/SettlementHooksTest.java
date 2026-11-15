@@ -33,6 +33,30 @@ class SettlementHooksTest {
     }
 
     @Test
+    void referencedMarketTransferSurvivesReloadAndCannotBePostedTwice() {
+        BankBooks books = BankBooks.create(BankConfig.defaults());
+        UUID payer = UUID.randomUUID();
+        UUID seller = UUID.randomUUID();
+        books.creditHeld(payer, "note", BigInteger.TEN);
+        BigInteger amount = BigInteger.valueOf(3);
+        String reference = "market-pay:example";
+        assertTrue(books.postMarketMovement(reference, "trade-3", amount,
+                () -> books.transferSavings(payer, seller, "note", amount)).success());
+        books.advanceCheckpoint();
+
+        BankBooks reloaded = BankBooks.fromJson(books.toJson(), BankConfig.defaults());
+        assertTrue(reloaded.marketReceipt(reference));
+        assertEquals(1, reloaded.checkpoint());
+        assertTrue(reloaded.postMarketMovement(reference, "trade-3", amount, () -> {
+            throw new AssertionError("posted reference must not perform another movement");
+        }).success());
+        assertEquals("reference_conflict", reloaded.postMarketMovement(reference, "trade-4", amount,
+                () -> { throw new AssertionError("conflicting reference must not post"); }).code());
+        assertEquals(BigInteger.valueOf(7), reloaded.balance(payer, "note"));
+        assertEquals(amount, reloaded.balance(seller, "note"));
+    }
+
+    @Test
     void savingsTransferPaysTheSellerInsideThePool() {
         BankBooks books = funded();
         books.creditHeld(buyer, "note", new BigInteger("80"));
