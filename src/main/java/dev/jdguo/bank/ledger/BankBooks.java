@@ -2334,6 +2334,75 @@ public final class BankBooks {
         return issuer == null ? BigInteger.ZERO : centralReserveAccounts.getOrDefault(issuer, BigInteger.ZERO);
     }
 
+    /**
+     * Funds the reserve that {@link #issuePersonalNote} checks for this note.
+     * Copper and diamond anchors move that personal issuance reserve. A 银行券 anchor
+     * still uses {@link #depositCentralReserve}.
+     */
+    public TxResult postIssuanceReserve(UUID issuer, BigInteger amount, boolean deposit) {
+        PersonalNote note = personalNote(issuer);
+        if (note == null) {
+            return TxResult.fail("none", "No personal note");
+        }
+        if ("note".equals(note.reserveCurrency())) {
+            return deposit ? depositCentralReserve(issuer, amount) : withdrawCentralReserve(issuer, amount);
+        }
+        return deposit ? depositPersonalReserve(issuer, amount) : withdrawPersonalReserve(issuer, amount);
+    }
+
+    /**
+     * Moves the issuer's copper or diamond savings into the personal issuance reserve
+     * {@link #issuePersonalNote} locks. The metal stays in the deposit vault. Central
+     * issuance reserves and the 银行券 reserve account are not touched.
+     */
+    public TxResult depositPersonalReserve(UUID issuer, BigInteger amount) {
+        PersonalNote note = personalNote(issuer);
+        if (note == null) {
+            return TxResult.fail("none", "No personal note");
+        }
+        String currency = note.reserveCurrency();
+        if (!"copper".equals(currency) && !"diamond".equals(currency)) {
+            return TxResult.fail("anchor", "This note does not use a commodity reserve");
+        }
+        if (amount == null || amount.signum() <= 0) {
+            return TxResult.fail("par", "Invalid amount");
+        }
+        if (balanceExact(issuer, currency).compareTo(Money.of(amount)) < 0) {
+            return TxResult.fail("funds", "Not enough savings");
+        }
+        debitBalance(issuer, currency, amount);
+        setPersonalReserve(issuer, currency, personalReserve(issuer, currency).add(amount));
+        return TxResult.ok(amount, "Posted personal reserve");
+    }
+
+    /**
+     * Returns free personal issuance reserve to savings. Metal already locked for the note stays put.
+     */
+    public TxResult withdrawPersonalReserve(UUID issuer, BigInteger amount) {
+        PersonalNote note = personalNote(issuer);
+        if (note == null) {
+            return TxResult.fail("none", "No personal note");
+        }
+        String currency = note.reserveCurrency();
+        if (!"copper".equals(currency) && !"diamond".equals(currency)) {
+            return TxResult.fail("anchor", "This note does not use a commodity reserve");
+        }
+        if (amount == null || amount.signum() <= 0) {
+            return TxResult.fail("par", "Invalid amount");
+        }
+        BigInteger held = personalReserve(issuer, currency);
+        BigInteger free = held.subtract(note.locked());
+        if (free.signum() < 0) {
+            free = BigInteger.ZERO;
+        }
+        if (free.compareTo(amount) < 0) {
+            return TxResult.fail("short_reserve", "Personal reserve cannot cover this withdrawal");
+        }
+        setPersonalReserve(issuer, currency, held.subtract(amount));
+        creditBalance(issuer, currency, amount);
+        return TxResult.ok(amount, "Withdrew personal reserve");
+    }
+
     /** Moves central notes from savings into the issuer's reserve account. M1 is unchanged. */
     public TxResult depositCentralReserve(UUID issuer, BigInteger amount) {
         if (personalNote(issuer) == null) {

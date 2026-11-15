@@ -72,6 +72,8 @@ public final class BankUiService {
             case "note-bankrupt-yes" -> bankrupt(player, books, session);
             case "reserve-deposit" -> reserve(player, books, parts, true);
             case "reserve-withdraw" -> reserve(player, books, parts, false);
+            case "central-reserve-deposit" -> centralReserve(player, books, parts, true);
+            case "central-reserve-withdraw" -> centralReserve(player, books, parts, false);
             case "admin-freeze" -> freeze(player, books, session);
             case "admin-unbacked" -> adminCredit(player, books, session, parts, false);
             case "admin-retire" -> adminCredit(player, books, session, parts, true);
@@ -533,15 +535,51 @@ public final class BankUiService {
         if (amount == null) {
             return;
         }
+        TxResult result = books.postIssuanceReserve(player.getUuid(), amount, deposit);
+        if (!result.success()) {
+            tellReserve(player, books, result);
+            return;
+        }
+        BankRuntime.save();
+        tell(player, reserveSpoken(books, player.getUuid(), deposit, amount, false));
+    }
+
+    /** Always the 银行券 央行准备金账户, including when the note's issuance reserve is a commodity. */
+    private static void centralReserve(ServerPlayerEntity player, BankBooks books, String[] parts, boolean deposit) {
+        if (parts.length < 2) {
+            return;
+        }
+        BigInteger amount = amount(player, parts[1], null, null);
+        if (amount == null) {
+            return;
+        }
         TxResult result = deposit
                 ? books.depositCentralReserve(player.getUuid(), amount)
                 : books.withdrawCentralReserve(player.getUuid(), amount);
         if (!result.success()) {
-            tell(player, BankPhrases.noteRejected(result.code()));
+            tellReserve(player, books, result);
             return;
         }
         BankRuntime.save();
         tell(player, BankPhrases.centralReserveMoved(deposit, amount));
+    }
+
+    private static void tellReserve(ServerPlayerEntity player, BankBooks books, TxResult result) {
+        PersonalNote note = books.personalNote(player.getUuid());
+        String currency = note == null ? "note" : note.reserveCurrency();
+        if ("short_reserve".equals(result.code())) {
+            tell(player, BankPhrases.personalReserveShort(books, currency));
+            return;
+        }
+        tell(player, BankPhrases.noteRejected(result.code()));
+    }
+
+    private static dev.jdguo.bank.text.Spoken reserveSpoken(BankBooks books, java.util.UUID player, boolean deposit, BigInteger amount, boolean centralAccount) {
+        PersonalNote note = books.personalNote(player);
+        if (!centralAccount && note != null && !"note".equals(note.reserveCurrency())) {
+            return BankPhrases.personalReserveMoved(books, note.reserveCurrency(), deposit, amount);
+        }
+        return BankPhrases.centralReserveMoved(deposit, amount);
     }
 
     private static void freeze(ServerPlayerEntity player, BankBooks books, BankUiNetwork.Session session) {

@@ -552,6 +552,22 @@ public final class BankPhrases {
                         + ", required ×" + CompactFormat.format(need) + ". Not a deposit, and it earns no interest.");
     }
 
+    public static Spoken personalReserveMoved(BankBooks books, String currency, boolean deposit, BigInteger amount) {
+        String name = nameZh(books, currency);
+        String n = CompactFormat.format(amount);
+        return deposit
+                ? line(Tone.GREEN, "已从储蓄存入个人准备金 " + name + " ×" + n + "。按准备金发行用这笔。",
+                        "Moved " + name + " ×" + n + " from savings into the personal issuance reserve.")
+                : line(Tone.GREEN, "已从个人准备金取出 " + name + " ×" + n + "，回到储蓄。",
+                        "Moved " + name + " ×" + n + " from the personal issuance reserve back to savings.");
+    }
+
+    public static Spoken personalReserveShort(BankBooks books, String currency) {
+        String name = nameZh(books, currency);
+        return line(Tone.RED, "个人准备金里的" + name + "不够取出，已经锁定的部分不能动。这次已全部拒绝。",
+                "The free personal reserve of " + name + " is short. Locked collateral stays put.");
+    }
+
     public static Spoken centralReserveMoved(boolean deposit, BigInteger amount) {
         String n = CompactFormat.format(amount);
         return deposit

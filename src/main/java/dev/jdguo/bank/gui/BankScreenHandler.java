@@ -585,27 +585,42 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                             Text.literal("Unbacked. No reserve is locked.").formatted(Formatting.DARK_GRAY)),
                     "pn:unbacked:" + amount, amount.intValue()));
         }
+        boolean metal = "copper".equals(own.reserveCurrency()) || "diamond".equals(own.reserveCurrency());
+        String reserveName = metal && books.currency(own.reserveCurrency()) != null
+                ? books.currency(own.reserveCurrency()).name()
+                : "银行券";
+        BigInteger reserveHeld = metal
+                ? books.personalReserve(uuid, own.reserveCurrency())
+                : books.centralReserve(uuid);
+        BigInteger reserveFree = reserveHeld.subtract(own.locked());
+        if (reserveFree.signum() < 0) {
+            reserveFree = BigInteger.ZERO;
+        }
         inventory.setStack(15, marker(Items.GOLD_INGOT,
-                Text.literal("准备金账户 " + CompactFormat.format(books.centralReserve(uuid))
-                        + " / 应当存入 " + CompactFormat.format(books.requiredCentralReserve(own))).formatted(Formatting.GOLD),
-                List.of(Text.literal("准备金账户只存银行券，不计利息").formatted(Formatting.GRAY),
-                        Text.literal("Central-bank reserve account").formatted(Formatting.DARK_GRAY)),
+                Text.literal((metal ? "个人准备金 " : "央行准备金账户 ") + reserveName + " ×"
+                        + CompactFormat.format(reserveHeld)
+                        + (metal ? "  可取 ×" + CompactFormat.format(reserveFree)
+                        : " / 应当存入 " + CompactFormat.format(books.requiredCentralReserve(own)))).formatted(Formatting.GOLD),
+                List.of(Text.literal(metal
+                                ? "锁定 ×" + CompactFormat.format(own.locked()) + "。按准备金发行用这笔。"
+                                : "准备金账户只存银行券，不计利息").formatted(Formatting.GRAY),
+                        Text.literal(metal ? "Personal issuance reserve" : "Central-bank reserve account").formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
         inventory.setStack(23, marker(Items.HOPPER,
-                Text.literal("存入准备金账户 ×10").formatted(Formatting.GREEN),
-                List.of(Text.literal("从储蓄账户存入准备金账户").formatted(Formatting.GRAY)),
+                Text.literal("存入" + (metal ? "个人准备金 " + reserveName : "央行准备金账户") + " ×10").formatted(Formatting.GREEN),
+                List.of(Text.literal("从储蓄账户存入").formatted(Formatting.GRAY)),
                 "pn:reserve:deposit:10", 10));
         inventory.setStack(24, marker(Items.HOPPER,
-                Text.literal("存入准备金账户 ×100").formatted(Formatting.GREEN),
-                List.of(Text.literal("从储蓄账户存入准备金账户").formatted(Formatting.GRAY)),
+                Text.literal("存入" + (metal ? "个人准备金 " + reserveName : "央行准备金账户") + " ×100").formatted(Formatting.GREEN),
+                List.of(Text.literal("从储蓄账户存入").formatted(Formatting.GRAY)),
                 "pn:reserve:deposit:100", 64));
         inventory.setStack(33, marker(Items.CHEST,
-                Text.literal("取出准备金账户 ×10").formatted(Formatting.YELLOW),
-                List.of(Text.literal("从准备金账户取出至储蓄账户").formatted(Formatting.GRAY)),
+                Text.literal("取出" + (metal ? "个人准备金 " + reserveName : "央行准备金账户") + " ×10").formatted(Formatting.YELLOW),
+                List.of(Text.literal("取回储蓄账户").formatted(Formatting.GRAY)),
                 "pn:reserve:withdraw:10", 10));
         inventory.setStack(34, marker(Items.CHEST,
-                Text.literal("取出准备金账户 ×100").formatted(Formatting.YELLOW),
-                List.of(Text.literal("从准备金账户取出至储蓄账户").formatted(Formatting.GRAY)),
+                Text.literal("取出" + (metal ? "个人准备金 " + reserveName : "央行准备金账户") + " ×100").formatted(Formatting.YELLOW),
+                List.of(Text.literal("取回储蓄账户").formatted(Formatting.GRAY)),
                 "pn:reserve:withdraw:100", 64));
         inventory.setStack(8, marker(Items.BARRIER,
                 Text.literal("宣告破产").formatted(Formatting.DARK_RED),
@@ -824,15 +839,22 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         if (action.startsWith("pn:reserve:")) {
             String[] parts = action.split(":");
             BigInteger amount = new BigInteger(parts[3]);
-            TxResult result = "deposit".equals(parts[2])
-                    ? books.depositCentralReserve(uuid, amount)
-                    : books.withdrawCentralReserve(uuid, amount);
+            boolean deposit = "deposit".equals(parts[2]);
+            TxResult result = books.postIssuanceReserve(uuid, amount, deposit);
             if (!result.success()) {
-                tell(player, BankPhrases.noteRejected(result.code()));
+                PersonalNote own = books.personalNote(uuid);
+                String currency = own == null ? "note" : own.reserveCurrency();
+                tell(player, "short_reserve".equals(result.code())
+                        ? BankPhrases.personalReserveShort(books, currency)
+                        : BankPhrases.noteRejected(result.code()));
                 return;
             }
             BankRuntime.save();
-            tell(player, BankPhrases.centralReserveMoved("deposit".equals(parts[2]), amount));
+            PersonalNote own = books.personalNote(uuid);
+            boolean metal = own != null && !"note".equals(own.reserveCurrency());
+            tell(player, metal
+                    ? BankPhrases.personalReserveMoved(books, own.reserveCurrency(), deposit, amount)
+                    : BankPhrases.centralReserveMoved(deposit, amount));
             return;
         }
         if (action.startsWith("pn:regime:")) {

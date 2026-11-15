@@ -160,6 +160,9 @@ public final class BankUiSnapshot {
             o.addProperty("circulation", whole(own.circulation()));
             o.addProperty("reserve", whole(books.centralReserve(player)));
             o.addProperty("required", whole(books.requiredCentralReserve(own)));
+            o.addProperty("centralReserve", whole(books.centralReserve(player)));
+            o.addProperty("centralRequired", whole(books.requiredCentralReserve(own)));
+            putIssuanceReserve(o, books, player, own);
             o.addProperty("bankrupt", own.bankrupt());
             o.add("ownNote", ownNote(books, player, own));
         }
@@ -235,8 +238,10 @@ public final class BankUiSnapshot {
         row.addProperty("anchor", note.anchor());
         row.addProperty("par", whole(note.par()));
         row.addProperty("locked", whole(note.locked()));
-        row.addProperty("personalReserve", whole(books.personalReserve(player, note.anchor())));
+        row.addProperty("personalReserve", whole(books.personalReserve(player, note.reserveCurrency())));
         row.addProperty("centralReserve", whole(books.centralReserve(player)));
+        row.addProperty("centralRequired", whole(books.requiredCentralReserve(note)));
+        putIssuanceReserve(row, books, player, note);
         row.addProperty("circulation", whole(note.circulation()));
         row.addProperty("face", whole(note.par()));
         BigDecimal live = books.personalDiamondPrice(note);
@@ -263,6 +268,26 @@ public final class BankUiSnapshot {
         }
         row.add("switches", switches);
         return row;
+    }
+
+    /**
+     * Commodity issuance reserve that 按准备金发行 locks. {@code reserve} / {@code required}
+     * stay the 银行券 央行准备金账户 and are not these figures.
+     */
+    private static void putIssuanceReserve(JsonObject row, BankBooks books, UUID player, PersonalNote note) {
+        String currency = note.reserveCurrency();
+        CurrencyDef def = books.currency(currency);
+        BigInteger held = books.personalReserve(player, currency);
+        BigInteger locked = note.locked();
+        BigInteger free = held.subtract(locked == null ? BigInteger.ZERO : locked);
+        if (free.signum() < 0) {
+            free = BigInteger.ZERO;
+        }
+        row.addProperty("reserveCurrency", currency == null ? "" : currency);
+        row.addProperty("reserveCurrencyName", def == null || def.name() == null ? currency : def.name());
+        row.addProperty("issuanceReserve", whole(held));
+        row.addProperty("issuanceLocked", whole(locked));
+        row.addProperty("issuanceFree", whole(free));
     }
 
     /** Whole units. Zero is {@code 0}, never a six-decimal placeholder. */
