@@ -783,7 +783,7 @@ public final class BankPhrases {
         if (rate == null) {
             return "—";
         }
-        return CompactFormat.formatRate(rate);
+        return Money.stored(rate);
     }
 
     private static Spoken line(Tone tone, String zhBody, String enBody) {

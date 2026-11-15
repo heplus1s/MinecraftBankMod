@@ -138,9 +138,9 @@ class InterestTest {
         copperBooks.deposit(payer, "copper", new BigInteger("5000"));
         TxResult copper = copperBooks.exchange(payer, "copper", "diamond", BigInteger.ONE);
         assertTrue(copper.success(), copper.code());
-        assertEquals(new BigInteger("20"), copperBooks.interestPool("copper"));
-        assertEquals(copperBooks.supply("copper").depositVault().add(new BigInteger("20")), copperBooks.savingsPool("copper"));
-        assertEquals(new BigInteger("3980"), copperBooks.supply("copper").depositVault());
+        assertEquals(0, new BigDecimal("19.9500").compareTo(copperBooks.interestPoolExact("copper")));
+        assertEquals(copperBooks.supply("copper").depositVault().add(copperBooks.interestPool("copper")), copperBooks.savingsPool("copper"));
+        assertEquals(0, new BigDecimal("3982.5500").compareTo(copperBooks.supply("copper").depositVaultExact()));
         assertEquals(new BigInteger("1000000"), copperBooks.supply("copper").reserve());
         copperBooks.checkInvariants();
         books.checkInvariants();

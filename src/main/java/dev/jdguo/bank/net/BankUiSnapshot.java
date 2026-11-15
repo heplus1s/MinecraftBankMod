@@ -32,7 +32,10 @@ public final class BankUiSnapshot {
         o.addProperty("savings", Money.stored(books.savingsPoolExact("note")));
         o.addProperty("issuanceDiamond", Money.stored(books.supply("diamond").reserveExact()));
         o.addProperty("vaultDiamond", Money.stored(books.supply("diamond").depositVaultExact()));
-        putQuote(o, "copperPerDiamond", quoted(books, "copper", "diamond"));
+        BigDecimal copperRate = books.unitsPer("copper", "diamond");
+        if (copperRate != null) {
+            o.addProperty("copperPerDiamond", Money.stored(copperRate));
+        }
         CurrencyDef centralNote = books.primaryVirtual();
         if (centralNote != null) {
             putDiamondsPerNote(o, books, centralNote.id());
@@ -49,7 +52,13 @@ public final class BankUiSnapshot {
             // rate / unitsPerDiamond: units of this currency for one numeraire or one diamond.
             // diamondsPerNote, on the central note only: diamonds for one 银行券.
             boolean officialNote = centralNote != null && def.id().equals(centralNote.id());
-            if (officialNote) {
+            if ("copper".equals(def.id())) {
+                BigDecimal quote = books.unitsPer("copper", "diamond");
+                if (quote != null) {
+                    row.addProperty("rate", Money.stored(quote));
+                    row.addProperty("unitsPerDiamond", Money.stored(quote));
+                }
+            } else if (officialNote) {
                 putStoredQuote(row, "rate", quoted(books, def.id(), books.numeraire()));
                 putStoredQuote(row, "unitsPerDiamond", quoted(books, def.id(), "diamond"));
                 putDiamondsPerNote(row, books, def.id());

@@ -41,7 +41,7 @@ class BankPhrasesTest {
         assertEquals(new BigInteger("2000"), books.supply("diamond").reserve());
         assertEquals(BigInteger.TEN, books.supply("diamond").depositVault());
         assertEquals(BigInteger.TEN, books.balance(player, "diamond"));
-        assertEquals(0, new BigDecimal("1000").compareTo(books.unitsPer("copper", "diamond")));
+        assertEquals(0, new BigDecimal("501.2531").compareTo(books.unitsPer("copper", "diamond")));
         books.checkInvariants();
     }
 

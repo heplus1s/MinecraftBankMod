@@ -12,7 +12,6 @@ import dev.jdguo.bank.currency.BankConfig;
 import dev.jdguo.bank.currency.CurrencyDef;
 import dev.jdguo.bank.currency.CurrencyKind;
 import dev.jdguo.bank.fx.FxMath;
-import dev.jdguo.bank.fx.QuoteElasticity;
 import dev.jdguo.bank.instruments.CheckBook;
 import dev.jdguo.bank.instruments.CheckRecord;
 import dev.jdguo.bank.instruments.CheckStatus;
@@ -179,6 +178,7 @@ public final class BankBooks {
         }
         creditBalance(player, currency, amount);
         addSavings(currency, amount);
+        recomputeOfficialNoteQuote();
         return TxResult.ok(amount, "Deposited " + label(def) + " " + CompactFormat.format(amount));
     }
 
@@ -203,6 +203,7 @@ public final class BankBooks {
         BigInteger give = capped.amount();
         debitBalance(player, currency, give);
         addSavings(currency, give.negate());
+        recomputeOfficialNoteQuote();
         return TxResult.ok(give, "Withdrew " + label(def) + " " + CompactFormat.format(give));
     }
 
@@ -240,6 +241,7 @@ public final class BankBooks {
         BigInteger diamonds = capped.amount();
         debitBalance(player, "diamond", diamonds);
         addSavings("diamond", diamonds.negate());
+        recomputeOfficialNoteQuote();
         return TxResult.ok(diamonds, "Withdrew diamonds " + CompactFormat.format(diamonds));
     }
 
@@ -371,7 +373,7 @@ public final class BankBooks {
         supply("diamond").addReserve(diamonds.negate());
         addSavings("diamond", diamonds);
         creditBalance(player, "diamond", diamonds);
-        nudgeCopperQuote(diamonds);
+        recomputeOfficialNoteQuote();
         return TxResult.ok(Money.units(diamonds), "Redeemed notes");
     }
 
@@ -403,14 +405,6 @@ public final class BankBooks {
         supply(metal).addReserve(Money.of(metalQty).negate());
         addSavings(metal, metalQty);
         creditBalance(player, metal, metalQty);
-        if ("diamond".equals(metal)) {
-            nudgeCopperQuote(new BigDecimal(metalQty));
-        } else if ("copper".equals(metal)) {
-            BigInteger rate = copperPerDiamond();
-            if (rate != null && rate.signum() > 0) {
-                nudgeCopperQuote(new BigDecimal(metalQty).divide(new BigDecimal(rate), 8, RoundingMode.HALF_UP).negate());
-            }
-        }
         recomputeOfficialNoteQuote();
         return TxResult.ok(metalQty, "Redeemed notes for " + CompactFormat.format(metalQty) + " " + metal);
     }
@@ -461,11 +455,7 @@ public final class BankBooks {
         }
         creditBalance(player, receiveId, receiveQty);
         addSavings(receiveId, receiveQty);
-        if ("diamond".equals(receiveId)) {
-            nudgeCopperQuote(new BigDecimal(receiveQty));
-        } else if ("diamond".equals(payId)) {
-            nudgeCopperQuote(new BigDecimal(receiveQty).negate());
-        }
+        recomputeOfficialNoteQuote();
         return TxResult.ok(Money.units(gross), BigInteger.ZERO, "Exchanged " + Money.stored(gross) + " " + label(pay)
                 + " for " + CompactFormat.format(receiveQty) + " " + label(recv));
     }
@@ -702,7 +692,7 @@ public final class BankBooks {
         BigInteger fromCopper = BigInteger.ZERO;
         BigInteger rate = copperPerDiamond();
         if (rest.signum() > 0) {
-            if (rate.signum() <= 0) {
+            if (rate == null || rate.signum() <= 0) {
                 return TxResult.fail("insufficient_reserves", "Not enough free reserves to lock");
             }
             fromCopper = rest.multiply(rate);
@@ -737,7 +727,7 @@ public final class BankBooks {
             return;
         }
         BigInteger rate = copperPerDiamond();
-        if (rate.signum() <= 0) {
+        if (rate == null || rate.signum() <= 0) {
             return;
         }
         Supply copper = supply("copper");
@@ -761,10 +751,12 @@ public final class BankBooks {
         }
         String noteId = centralNoteId();
         if ("copper".equals(pay) && "diamond".equals(receive)) {
-            return clampQuote(liveCopperPerDiamond);
+            recomputeOfficialCopperQuote();
+            return liveCopperPerDiamond;
         }
         if ("diamond".equals(pay) && "copper".equals(receive)) {
-            return clampQuote(inverse(liveCopperPerDiamond));
+            recomputeOfficialCopperQuote();
+            return inverse(liveCopperPerDiamond);
         }
         if (noteId.equals(pay) && "diamond".equals(receive)) {
             recomputeOfficialNoteQuote();
@@ -821,26 +813,53 @@ public final class BankBooks {
     }
 
     /**
-     * Fills a missing copper-per-diamond quote from the rate the reserve books already imply.
-     * The 银行券 quote is never taken from that old formula. It is always reserves over issuance.
+     * Recomputes both official quotes from the books. A stored quote is not an input.
      */
     private void fillMissingQuotes() {
-        if (liveCopperPerDiamond == null || liveCopperPerDiamond.signum() <= 0) {
-            BigDecimal implied = impliedUnitsPer("copper", "diamond");
-            if (implied != null && implied.signum() > 0) {
-                liveCopperPerDiamond = Money.of(implied);
-            }
-        }
         recomputeOfficialNoteQuote();
     }
 
     /**
-     * Official 「1 银行券 = R / L 钻石」.
-     * {@code L} is outstanding central-note liability. {@code R} is copper and diamond issuance
-     * reserves, locked as well as free, with copper converted at the live copper quote.
-     * Deposit vaults are not reserves. Nothing here applies a volume nudge.
+     * Datapack gap, without an integer floor.
+     * {@code stock + (stock - claims) * alpha / 1000}. Alpha 1000 is {@code 2 * stock - claims}.
+     */
+    private BigDecimal gapEffective(BigDecimal stock, BigDecimal claims, String currency) {
+        BigDecimal alpha = alphaOf(currency);
+        BigDecimal gap = stock.subtract(claims).multiply(alpha)
+                .divide(new BigDecimal("1000"), 8, RoundingMode.HALF_UP);
+        return stock.add(gap);
+    }
+
+    /**
+     * 「1 钻石 = xxx 铜锭」.
+     * Copper and diamond each use issuance reserves as the stock and central-bank savings as the claims.
+     * Savings are the deposit vault. They are not added into reserves, and they are not counted twice.
+     */
+    private void recomputeOfficialCopperQuote() {
+        if (supplies.get("copper") == null || supplies.get("diamond") == null) {
+            liveCopperPerDiamond = null;
+            return;
+        }
+        BigDecimal copper = gapEffective(supply("copper").reserveExact(), supply("copper").depositVaultExact(), "copper");
+        BigDecimal diamonds = gapEffective(supply("diamond").reserveExact(), supply("diamond").depositVaultExact(), "diamond");
+        if (diamonds.signum() <= 0) {
+            liveCopperPerDiamond = null;
+            return;
+        }
+        BigDecimal rate = copper.divide(diamonds, Money.SCALE, RoundingMode.HALF_UP);
+        if (rate.signum() < 0) {
+            liveCopperPerDiamond = null;
+            return;
+        }
+        liveCopperPerDiamond = rate.signum() == 0 ? Money.ZERO : clampQuote(rate);
+    }
+
+    /**
+     * 「1 银行券 = xxx 钻石」, the same gap applied to diamond-equivalent issuance reserves and notes outstanding.
+     * {@code L = 0} or a non-positive effective reserve clears the quote. Deposit vaults are not reserves.
      */
     private void recomputeOfficialNoteQuote() {
+        recomputeOfficialCopperQuote();
         CurrencyDef note = primaryVirtual();
         if (note == null || supplies.get(note.id()) == null) {
             officialDiamondsPerNote = null;
@@ -854,9 +873,15 @@ public final class BankBooks {
             return;
         }
         BigDecimal reserves = issuanceDiamondEquivalent();
-        BigDecimal quote = reserves.divide(liabilities, Money.SCALE, RoundingMode.HALF_UP);
+        BigDecimal effective = gapEffective(reserves, liabilities, note.id());
+        if (effective.signum() <= 0) {
+            officialDiamondsPerNote = null;
+            liveNotesPerDiamond = null;
+            return;
+        }
+        BigDecimal quote = effective.divide(liabilities, Money.SCALE, RoundingMode.HALF_UP);
         if (quote.signum() <= 0) {
-            officialDiamondsPerNote = Money.ZERO;
+            officialDiamondsPerNote = null;
             liveNotesPerDiamond = null;
             return;
         }
@@ -875,19 +900,6 @@ public final class BankBooks {
         return diamonds.add(copper.divide(liveCopperPerDiamond, 8, RoundingMode.HALF_UP));
     }
 
-    /** The quote the reserve books already imply. Null when either side has no positive basis. */
-    private BigDecimal impliedUnitsPer(String pay, String receive) {
-        if (need(pay) == null || need(receive) == null) {
-            return null;
-        }
-        return FxMath.quote(abundance(pay), abundance(receive), null, null);
-    }
-
-    private void nudgeCopperQuote(BigDecimal diamondDemand) {
-        BigDecimal reference = new BigDecimal(supply("diamond").anchor().max(BigInteger.ONE));
-        liveCopperPerDiamond = QuoteElasticity.nudge(liveCopperPerDiamond, diamondDemand, reference);
-        recomputeOfficialNoteQuote();
-    }
 
     public BigDecimal abundance(String id) {
         CurrencyDef def = need(id);
@@ -1344,23 +1356,8 @@ public final class BankBooks {
             self.addReserve(posted.negate());
             self.addDepositVault(posted);
         }
-        nudgeForReserveTransfer(currency, posted, fromDeposits);
-        return TxResult.ok(Money.units(posted), fromDeposits ? "Reserve from deposits" : "Reserve to deposits");
-    }
-
-    private void nudgeForReserveTransfer(String currency, BigDecimal amount, boolean fromDeposits) {
-        if (liveCopperPerDiamond != null && liveCopperPerDiamond.signum() > 0) {
-            BigDecimal diamonds;
-            int sign = fromDeposits ? 1 : -1;
-            if ("diamond".equals(currency)) {
-                diamonds = amount.multiply(BigDecimal.valueOf(sign)).negate();
-                nudgeCopperQuote(diamonds);
-            } else if ("copper".equals(currency)) {
-                diamonds = amount.divide(liveCopperPerDiamond, 8, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(sign));
-                nudgeCopperQuote(diamonds);
-            }
-        }
         recomputeOfficialNoteQuote();
+        return TxResult.ok(Money.units(posted), fromDeposits ? "Reserve from deposits" : "Reserve to deposits");
     }
 
     /**
@@ -1707,11 +1704,12 @@ public final class BankBooks {
      * There is no fallback par.
      */
     public BigInteger copperPerDiamond() {
+        recomputeOfficialCopperQuote();
         if (liveCopperPerDiamond == null || liveCopperPerDiamond.signum() <= 0) {
             return null;
         }
         BigInteger rounded = liveCopperPerDiamond.setScale(0, RoundingMode.HALF_UP).toBigInteger();
-        return rounded.signum() < 1 ? BigInteger.ONE : rounded;
+        return rounded.signum() < 1 ? null : rounded;
     }
 
     public BigInteger personalReserve(UUID player, String currency) {
@@ -1849,7 +1847,13 @@ public final class BankBooks {
     /** Peg and hard quotes ignore buy/sell flow and do not fall when reserves are short. */
     private BigDecimal fixedDiamondQuote(PersonalNote note) {
         return switch (note.reserveCurrency()) {
-            case "copper" -> new BigDecimal(note.par()).divide(new BigDecimal(copperPerDiamond()), FxMath.MC);
+            case "copper" -> {
+                BigInteger rate = copperPerDiamond();
+                if (rate == null || rate.signum() <= 0) {
+                    yield BigDecimal.ZERO;
+                }
+                yield new BigDecimal(note.par()).divide(new BigDecimal(rate), FxMath.MC);
+            }
             case "note" -> {
                 BigDecimal notesPerDiamond = unitsPer("note", "diamond");
                 if (notesPerDiamond == null || notesPerDiamond.signum() <= 0) {
@@ -2037,7 +2041,7 @@ public final class BankBooks {
     private BigDecimal faceDiamonds(String anchor, BigInteger par) {
         if ("copper".equals(anchor)) {
             BigInteger rate = copperPerDiamond();
-            if (rate.signum() <= 0) {
+            if (rate == null || rate.signum() <= 0) {
                 return BigDecimal.ZERO;
             }
             return new BigDecimal(par).divide(new BigDecimal(rate), FxMath.MC);
@@ -2976,7 +2980,7 @@ public final class BankBooks {
                 quasi = quasi.add(diamonds.multiply(notesPerDiamond, FxMath.MC), FxMath.MC);
             }
             BigInteger rate = copperPerDiamond();
-            if (rate.signum() > 0) {
+            if (rate != null && rate.signum() > 0) {
                 BigDecimal copperNotes = new BigDecimal(bookSavings("copper")).multiply(notesPerDiamond, FxMath.MC)
                         .divide(new BigDecimal(rate), FxMath.MC);
                 quasi = quasi.add(copperNotes, FxMath.MC);

@@ -426,8 +426,10 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                     if (result.success()) {
                         BankRuntime.save();
                         BigInteger shown = qty;
-                        if ("diamond".equals(recv.id()) && result.copperPaid().signum() > 0 && books.copperPerDiamond().signum() > 0) {
-                            shown = qty.subtract(result.copperPaid().divide(books.copperPerDiamond()));
+                        BigInteger perDiamond = books.copperPerDiamond();
+                        if ("diamond".equals(recv.id()) && result.copperPaid().signum() > 0
+                                && perDiamond != null && perDiamond.signum() > 0) {
+                            shown = qty.subtract(result.copperPaid().divide(perDiamond));
                         }
                         tell(player, BankPhrases.exchange(books, player.getUuid(), pay.id(), recv.id(), shown, result.copperPaid()));
                     } else {

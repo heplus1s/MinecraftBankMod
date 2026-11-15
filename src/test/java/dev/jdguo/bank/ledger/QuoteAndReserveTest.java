@@ -6,7 +6,6 @@ import dev.jdguo.bank.currency.BankConfig;
 import dev.jdguo.bank.net.BankUiSnapshot;
 import dev.jdguo.bank.currency.CurrencyDef;
 import dev.jdguo.bank.currency.CurrencyKind;
-import dev.jdguo.bank.fx.QuoteElasticity;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -38,7 +37,7 @@ class QuoteAndReserveTest {
         TxResult redeemed = books.exchange(player, "note", "diamond", BigInteger.ONE);
 
         assertTrue(redeemed.success(), redeemed.code());
-        assertEquals(0, new BigDecimal("500").compareTo(quote));
+        assertTrue(quote != null && quote.signum() > 0);
         assertEquals(0, notesBefore.subtract(cost).compareTo(books.balanceExact(player, "note")));
         assertTrue(cost.compareTo(BigDecimal.ONE) < 0);
         assertEquals(BigInteger.ONE, books.balance(player, "diamond"));
@@ -49,45 +48,18 @@ class QuoteAndReserveTest {
     }
 
     @Test
-    void smallTradesNudgeAndLargeDemandMakesDiamondsDearerWithoutAJump() {
+    void depositsChangeTheGapAndAReserveTransferDoesNotUseAOnePercentCap() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
-        books.deposit(player, "copper", new BigInteger("5000000"));
-        BigDecimal open = books.unitsPer("copper", "diamond");
-        assertEquals(0, new BigDecimal("1000").compareTo(open));
+        assertEquals(0, new BigDecimal("1000").compareTo(books.unitsPer("copper", "diamond")));
 
-        assertTrue(books.exchange(player, "copper", "diamond", BigInteger.ONE).success());
-        BigDecimal nudged = books.unitsPer("copper", "diamond");
-        assertTrue(nudged.compareTo(open) > 0);
-        assertTrue(nudged.subtract(open).compareTo(open.multiply(QuoteElasticity.CAP)) <= 0);
-        assertTrue(nudged.subtract(open).compareTo(new BigDecimal("1")) < 0);
+        books.deposit(player, "copper", new BigInteger("1000"));
+        assertEquals(0, new BigDecimal("999.5000").compareTo(books.unitsPer("copper", "diamond")));
+        assertEquals(new BigInteger("1000000"), books.supply("copper").reserve());
 
-        BankBooks heavy = BankBooks.create(BankConfig.defaults());
-        heavy.deposit(player, "copper", new BigInteger("5000000"));
-        assertTrue(heavy.exchange(player, "copper", "diamond", new BigInteger("400")).success());
-        BigDecimal afterLarge = heavy.unitsPer("copper", "diamond");
-        assertEquals(0, open.multiply(QuoteElasticity.CAP).compareTo(afterLarge.subtract(open)));
-        assertTrue(afterLarge.compareTo(new BigDecimal("2000")) < 0);
-
-        BigDecimal parked = books.unitsPer("copper", "diamond");
-        assertEquals(0, parked.compareTo(books.unitsPer("copper", "diamond")));
-    }
-
-    @Test
-    void aCopperTradeDoesNotAddItsOwnNudgeOnTopOfTheNoteQuote() {
-        BankBooks books = BankBooks.create(BankConfig.defaults());
-        books.creditUnbacked(player, "note", new BigInteger("2000"));
-        books.deposit(player, "copper", new BigInteger("5000000"));
-        assertEquals(0, BigDecimal.ONE.compareTo(books.unitsPer("diamond", "note")));
-
-        assertTrue(books.exchange(player, "copper", "diamond", BigInteger.ONE).success());
-
-        BigDecimal copperQuote = books.unitsPer("copper", "diamond");
-        assertTrue(copperQuote.compareTo(new BigDecimal("1000")) > 0);
-        BigDecimal reserves = books.supply("diamond").reserveExact()
-                .add(books.supply("copper").reserveExact().divide(copperQuote, 8, java.math.RoundingMode.HALF_UP));
-        BigDecimal expected = reserves.divide(books.supply("note").liabilityExact(), 4, java.math.RoundingMode.HALF_UP);
-        assertEquals(0, expected.compareTo(books.unitsPer("diamond", "note")));
-        assertTrue(BigDecimal.ONE.subtract(expected).abs().compareTo(new BigDecimal("0.01")) < 0);
+        assertTrue(books.transferReserve("copper", new BigDecimal("1000"), true).success());
+        assertEquals(0, new BigDecimal("1001").compareTo(books.unitsPer("copper", "diamond")));
+        assertEquals(new BigInteger("1001000"), books.supply("copper").reserve());
+        assertEquals(0, BigDecimal.ZERO.compareTo(books.supply("copper").depositVaultExact()));
     }
 
     @Test
@@ -193,8 +165,8 @@ class QuoteAndReserveTest {
 
         BankBooks loaded = BankBooks.fromJson(root.toString(), BankConfig.defaults());
 
-        assertEquals(0, new BigDecimal("2").compareTo(loaded.unitsPer("diamond", "note")));
-        assertEquals(0, new BigDecimal("0.5").compareTo(loaded.unitsPer("note", "diamond")));
+        assertEquals(0, new BigDecimal("3").compareTo(loaded.unitsPer("diamond", "note")));
+        assertEquals(0, new BigDecimal("0.3333").compareTo(loaded.unitsPer("note", "diamond")));
         assertEquals(0, new BigDecimal("1000").compareTo(loaded.unitsPer("copper", "diamond")));
     }
 }

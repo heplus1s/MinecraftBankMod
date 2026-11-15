@@ -74,16 +74,17 @@ class BankLedgerTest {
         books.deposit(player, "copper", new BigInteger("5000"));
         BigInteger noteM1 = books.centralM1();
         BigInteger qty = BigInteger.ONE;
-        BigInteger expected = books.cost("copper", "diamond", qty);
+        BigDecimal settled = books.settlementCost("copper", "diamond", qty);
+        BigInteger expected = dev.jdguo.bank.ledger.Money.units(settled);
 
         TxResult result = books.exchange(player, "copper", "diamond", qty);
 
         assertTrue(result.success());
         assertEquals(expected, result.amount());
-        assertEquals(new BigInteger("5000").subtract(expected), books.balance(player, "copper"));
+        assertEquals(0, new BigDecimal("5000").subtract(settled).compareTo(books.balanceExact(player, "copper")));
         assertEquals(qty, books.balance(player, "diamond"));
         assertEquals(new BigInteger("1000000"), books.supply("copper").reserve());
-        assertEquals(new BigInteger("20"), books.interestPool("copper"));
+        assertEquals(0, new BigDecimal("19.9500").compareTo(books.interestPoolExact("copper")));
         assertEquals(new BigInteger("1000"), books.supply("diamond").reserve());
         assertEquals(books.balance(player, "copper"), books.supply("copper").depositVault());
         assertEquals(qty, books.supply("diamond").depositVault());
@@ -94,17 +95,17 @@ class BankLedgerTest {
     @Test
     void exchangeIntoACommodityStopsAtFreeVaultHeadroom() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
-        books.deposit(player, "copper", new BigInteger("50000000"));
         books.setReserve("diamond", BigInteger.valueOf(2));
+        books.deposit(player, "copper", new BigInteger("500000"));
 
         BigInteger reserve = books.supply("diamond").reserve();
-        TxResult result = books.exchange(player, "copper", "diamond", BigInteger.TEN);
+        TxResult result = books.exchange(player, "copper", "diamond", BigInteger.ONE);
 
         assertTrue(result.success(), result.code());
         assertEquals(BigInteger.ZERO, result.copperPaid());
-        assertEquals(BigInteger.TEN, books.balance(player, "diamond"));
+        assertEquals(BigInteger.ONE, books.balance(player, "diamond"));
         assertEquals(reserve, books.supply("diamond").reserve());
-        assertEquals(new BigInteger("50000000").subtract(result.amount()), books.balance(player, "copper"));
+        assertEquals(new BigInteger("500000").subtract(result.amount()), books.balance(player, "copper"));
         books.checkInvariants();
     }
 

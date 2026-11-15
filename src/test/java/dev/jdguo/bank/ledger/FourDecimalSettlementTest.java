@@ -101,7 +101,7 @@ class FourDecimalSettlementTest {
         books.setFeeFraction(BigDecimal.ZERO);
         UUID others = UUID.fromString("55555555-5555-5555-5555-555555555555");
         assertTrue(books.creditUnbacked(player, "note", playerNotes).success());
-        assertTrue(books.creditUnbacked(others, "note", new BigDecimal("20000").subtract(playerNotes)).success());
+        assertTrue(books.creditUnbacked(others, "note", new BigDecimal("3636.3636").subtract(playerNotes)).success());
         return books;
     }
 }

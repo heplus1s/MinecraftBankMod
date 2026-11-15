@@ -20,6 +20,7 @@ class DepositHeldBillTest {
     @Test
     void depositHeldRedeemsOnlyTheBillInHand() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
+        books.setReserve("copper", BigInteger.ZERO);
         books.creditUnbacked(issuer, "note", new BigInteger("400"));
         TxResult first = books.issueCheck(issuer, "note", new BigInteger("100"), "Ada", null, true);
         TxResult second = books.issueCheck(issuer, "note", new BigInteger("100"), "Ada", null, true);
@@ -48,6 +49,7 @@ class DepositHeldBillTest {
     @Test
     void aSecondPresentationOfTheSameBillIsRefusedAndCleared() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
+        books.setReserve("copper", BigInteger.ZERO);
         books.creditUnbacked(issuer, "note", new BigInteger("80"));
         TxResult issued = books.issueCheck(issuer, "note", new BigInteger("40"), "Ada", null, true);
         PresentedCheck hand = presented(books, issued);

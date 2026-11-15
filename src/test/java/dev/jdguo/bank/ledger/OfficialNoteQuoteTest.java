@@ -36,12 +36,12 @@ class OfficialNoteQuoteTest {
         assertEquals(0, BigDecimal.ONE.compareTo(books.unitsPer("diamond", "note")));
 
         books.creditUnbacked(player, "note", new BigInteger("2000"));
-        assertEquals(0, new BigDecimal("0.5").compareTo(books.unitsPer("diamond", "note")));
-        assertEquals(0, new BigDecimal("2").compareTo(books.unitsPer("note", "diamond")));
+        assertNull(books.unitsPer("diamond", "note"));
+        assertNull(books.unitsPer("note", "diamond"));
 
         books.retire(player, "note", new BigInteger("3000"));
-        assertEquals(0, new BigDecimal("2").compareTo(books.unitsPer("diamond", "note")));
-        assertEquals(0, new BigDecimal("0.5").compareTo(books.unitsPer("note", "diamond")));
+        assertEquals(0, new BigDecimal("3").compareTo(books.unitsPer("diamond", "note")));
+        assertEquals(0, new BigDecimal("0.3333").compareTo(books.unitsPer("note", "diamond")));
     }
 
     @Test
@@ -51,12 +51,13 @@ class OfficialNoteQuoteTest {
         books.setReserve("copper", BigInteger.ZERO);
         books.creditUnbacked(player, "note", new BigInteger("8"));
 
-        assertEquals(0, BigDecimal.ZERO.compareTo(books.unitsPer("diamond", "note")));
+        assertNull(books.unitsPer("diamond", "note"));
         assertNull(books.unitsPer("note", "diamond"));
-        assertNull(books.unitsPer("note", "copper"));
+        assertNull(books.unitsPer("copper", "diamond"));
         assertEquals(0, new BigDecimal(books.centralM1()).compareTo(books.centralM2()));
         JsonObject snapshot = JsonParser.parseString(BankUiSnapshot.json(books, player, false, "savings", false)).getAsJsonObject();
-        assertEquals("0", snapshot.get("diamondsPerNote").getAsString());
+        assertFalse(snapshot.has("diamondsPerNote"));
+        assertFalse(snapshot.has("copperPerDiamond"));
         assertFalse(currency(snapshot, "note").has("unitsPerDiamond"));
     }
 
@@ -66,15 +67,17 @@ class OfficialNoteQuoteTest {
         books.creditUnbacked(player, "note", new BigInteger("2000"));
         assertEquals(0, BigDecimal.ONE.compareTo(books.unitsPer("diamond", "note")));
 
-        assertTrue(books.transferReserve("diamond", new BigDecimal("500"), false).success());
-        assertEquals(0, expected(books).compareTo(books.unitsPer("diamond", "note")));
-        assertTrue(books.unitsPer("diamond", "note").compareTo(BigDecimal.ONE) < 0);
-
         BigDecimal copperBefore = books.unitsPer("copper", "diamond");
-        books.deposit(player, "copper", new BigInteger("5000000"));
-        assertTrue(books.exchange(player, "copper", "diamond", new BigInteger("400")).success());
-        assertTrue(books.unitsPer("copper", "diamond").compareTo(copperBefore) > 0);
-        assertEquals(0, expected(books).compareTo(books.unitsPer("diamond", "note")));
+        assertTrue(books.transferReserve("diamond", new BigDecimal("500"), false).success());
+        assertTrue(books.unitsPer("copper", "diamond").compareTo(copperBefore) != 0);
+        assertNull(books.unitsPer("diamond", "note"));
+
+        BankBooks fresh = BankBooks.create(BankConfig.defaults());
+        fresh.creditUnbacked(player, "note", new BigInteger("1000"));
+        assertEquals(0, new BigDecimal("3").compareTo(fresh.unitsPer("diamond", "note")));
+        fresh.deposit(player, "copper", new BigInteger("1000"));
+        assertEquals(0, new BigDecimal("999.5000").compareTo(fresh.unitsPer("copper", "diamond")));
+        assertEquals(0, expected(fresh).compareTo(fresh.unitsPer("diamond", "note")));
     }
 
     @Test
@@ -88,9 +91,18 @@ class OfficialNoteQuoteTest {
 
     private static BigDecimal expected(BankBooks books) {
         BigDecimal copperQuote = books.unitsPer("copper", "diamond");
-        BigDecimal reserves = books.supply("diamond").reserveExact()
-                .add(books.supply("copper").reserveExact().divide(copperQuote, 8, RoundingMode.HALF_UP));
-        return reserves.divide(books.supply("note").liabilityExact(), 4, RoundingMode.HALF_UP);
+        BigDecimal reserves = books.supply("diamond").reserveExact();
+        if (copperQuote != null && copperQuote.signum() > 0) {
+            reserves = reserves.add(books.supply("copper").reserveExact().divide(copperQuote, 8, RoundingMode.HALF_UP));
+        }
+        BigDecimal liabilities = books.supply("note").liabilityExact();
+        BigDecimal alpha = books.alphaOf("note");
+        BigDecimal effective = reserves.add(reserves.subtract(liabilities).multiply(alpha)
+                .divide(new BigDecimal("1000"), 8, RoundingMode.HALF_UP));
+        if (effective.signum() <= 0 || liabilities.signum() <= 0) {
+            return null;
+        }
+        return effective.divide(liabilities, 4, RoundingMode.HALF_UP);
     }
 
     private static JsonObject currency(JsonObject snapshot, String id) {

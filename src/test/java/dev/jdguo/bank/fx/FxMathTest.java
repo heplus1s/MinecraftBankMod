@@ -55,10 +55,10 @@ class FxMathTest {
     }
 
     @Test
-    void savingsDepositDoesNotMoveTheIssuanceCopperDiamondRate() {
+    void aSavingsDepositMovesTheCopperQuoteThroughTheGap() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         books.deposit(java.util.UUID.randomUUID(), "copper", new BigInteger("1000000"));
-        assertEquals(0, new BigDecimal("1000").compareTo(books.unitsPer("copper", "diamond")));
+        assertEquals(0, new BigDecimal("500").compareTo(books.unitsPer("copper", "diamond")));
         assertEquals(new BigInteger("1000000"), books.supply("copper").reserve());
         assertEquals(new BigInteger("1000000"), books.supply("copper").depositVault());
     }
