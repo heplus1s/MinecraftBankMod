@@ -6,6 +6,7 @@ import dev.jdguo.bank.instruments.NoteSeries;
 import dev.jdguo.bank.instruments.PresentedNote;
 import dev.jdguo.bank.fx.FxMath;
 import dev.jdguo.bank.ledger.BankBooks;
+import dev.jdguo.bank.ledger.Money;
 import dev.jdguo.bank.ledger.TxResult;
 import org.junit.jupiter.api.Test;
 
@@ -29,7 +30,7 @@ class SecondaryMarketTest {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         PersonalNote expensive = issue(books, issuerA, "Aa", new BigInteger("2"), new BigInteger("20"), BigInteger.TEN);
         PersonalNote cheap = issue(books, issuerB, "Bb", BigInteger.ONE, BigInteger.TEN, BigInteger.TEN);
-        books.creditUnbacked(issuerA, "note", new BigInteger("20"));
+        books.creditHeld(issuerA, "note", new BigInteger("20"));
         books.deposit(issuerA, "copper", new BigInteger("2000"));
         BigInteger diamondReserve = books.supply("diamond").reserve();
         BigInteger noteLiability = books.supply("note").liability();
@@ -71,17 +72,19 @@ class SecondaryMarketTest {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         PersonalNote pay = issue(books, issuerA, "Aa", BigInteger.ONE, BigInteger.TEN, BigInteger.TEN);
         PersonalNote receive = issue(books, issuerB, "Bb", BigInteger.ONE, BigInteger.TEN, BigInteger.TEN);
-        books.creditUnbacked(buyer, "note", new BigInteger("100"));
+        books.deposit(buyer, "copper", new BigInteger("20000"));
+        books.creditHeld(buyer, "note", new BigInteger("100"));
         assertTrue(books.buyPersonalNote(buyer, "Bb", BigInteger.TEN).success());
         assertEquals(0, new BigDecimal("1.1").compareTo(books.personalDiamondPrice(receive)));
         books.deposit(issuerA, "copper", new BigInteger("2000"));
-        books.creditUnbacked(issuerA, "note", new BigInteger("20"));
+        books.creditHeld(issuerA, "note", new BigInteger("20"));
         BigInteger reserveA = books.personalReserve(issuerA, "diamond");
         BigInteger reserveB = books.personalReserve(issuerB, "diamond");
         BigInteger lockedA = pay.locked();
         BigInteger lockedB = receive.locked();
         BigInteger diamondStock = books.supply("diamond").reserve();
         BigInteger buyerNotes = books.balance(buyer, "note");
+        BigInteger buyerCopper = books.balance(buyer, "copper");
         SecondaryClearing.Quote quote = SecondaryClearing.priceSwap(
                 books.personalDiamondPrice(pay), books.personalDiamondPrice(receive), BigInteger.ONE,
                 books.unitsPer("note", "diamond"), books.copperPerDiamond());
@@ -102,7 +105,7 @@ class SecondaryMarketTest {
         assertEquals(new BigInteger("20").subtract(quote.central()), books.balance(issuerA, "note"));
         assertEquals(new BigInteger("9"), books.personalHolding(receive.id(), buyer));
         assertEquals(BigInteger.ONE, books.personalHolding(pay.id(), buyer));
-        assertEquals(quote.copper(), books.balance(buyer, "copper"));
+        assertEquals(buyerCopper.add(quote.copper()), books.balance(buyer, "copper"));
         assertEquals(buyerNotes.add(quote.central()), books.balance(buyer, "note"));
         assertEquals(reserveA, books.personalReserve(issuerA, "diamond"));
         assertEquals(reserveB, books.personalReserve(issuerB, "diamond"));
@@ -140,7 +143,8 @@ class SecondaryMarketTest {
     void shortReserveRedeemsAtADiscountAndDoesNotPayMoreThanPosted() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         PersonalNote note = issue(books, issuerB, "Bb", BigInteger.ONE, BigInteger.TEN, BigInteger.TEN);
-        books.creditUnbacked(buyer, "note", new BigInteger("100"));
+        books.deposit(buyer, "copper", new BigInteger("20000"));
+        books.creditHeld(buyer, "note", new BigInteger("100"));
         assertTrue(books.buyPersonalNote(buyer, "Bb", BigInteger.TEN).success());
         assertEquals(0, new BigDecimal("1.1").compareTo(books.personalDiamondPrice(note)));
         BigDecimal market = books.personalDiamondPrice(note).multiply(BigDecimal.TEN);
@@ -168,6 +172,7 @@ class SecondaryMarketTest {
         BigDecimal purchaseB = books.personalDiamondPrice(noteB);
         assertEquals(0, BigDecimal.ONE.compareTo(purchaseA));
         assertEquals(0, BigDecimal.ONE.compareTo(purchaseB));
+        books.creditHeld(buyer, "note", new BigInteger("2000"));
 
         SwapTrade bought = books.swapPersonalNotes(issuerA, "Aa", "Bb", BigInteger.TEN);
 
@@ -185,7 +190,7 @@ class SecondaryMarketTest {
         assertEquals(BigInteger.TEN, books.personalReserve(issuerA, "diamond"));
         assertEquals(BigInteger.TEN, books.personalReserve(issuerB, "diamond"));
 
-        books.creditUnbacked(issuerB, "note", new BigInteger("50"));
+        books.creditHeld(issuerB, "note", new BigInteger("50"));
         books.deposit(issuerB, "copper", new BigInteger("5000"));
         BigDecimal live = books.personalDiamondPrice(noteB);
         assertEquals(0, afterB.compareTo(live));
@@ -206,9 +211,9 @@ class SecondaryMarketTest {
 
     /** Central notes and copper for a diamond quote, using the same rounding as a live sale. */
     private static BigInteger[] cash(BankBooks books, BigDecimal diamondEach, BigInteger amount) {
-        BigDecimal exact = diamondEach.multiply(new BigDecimal(amount), FxMath.MC)
-                .multiply(books.unitsPer("note", "diamond"), FxMath.MC);
-        BigInteger central = exact.setScale(0, RoundingMode.FLOOR).toBigInteger();
+        BigDecimal exact = Money.of(diamondEach.multiply(new BigDecimal(amount), FxMath.MC)
+                .multiply(books.unitsPer("note", "diamond"), FxMath.MC));
+        BigInteger central = exact.setScale(0, RoundingMode.DOWN).toBigInteger();
         if (central.signum() < 0) {
             central = BigInteger.ZERO;
         }
@@ -224,7 +229,7 @@ class SecondaryMarketTest {
     @Test
     void paperStillStacksAndACopyIsRejected() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
-        books.creditUnbacked(issuerA, "note", BigInteger.valueOf(64));
+        books.creditHeld(issuerA, "note", BigInteger.valueOf(64));
         var issued = books.issueCentralPaper(issuerA, BigInteger.valueOf(64));
         PresentedNote paper = new PresentedNote("note", null, BigInteger.ONE);
         assertEquals(NotePaper.signature(paper, "银行券"), NotePaper.signature(paper, "银行券"));
@@ -246,7 +251,7 @@ class SecondaryMarketTest {
         books.setPersonalReserve(issuer, "diamond", reserve);
         assertTrue(books.createPersonalNote(issuer, name, false, par).success());
         BigInteger cover = amount.multiply(par.max(BigInteger.ONE));
-        books.creditUnbacked(issuer, "note", cover);
+        books.creditHeld(issuer, "note", cover);
         assertTrue(books.depositCentralReserve(issuer, cover).success());
         assertTrue(books.issuePersonalNote(issuer, amount).success());
         return books.personalNote(issuer);

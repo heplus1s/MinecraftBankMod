@@ -24,6 +24,10 @@ public record Redemption(boolean success, String code, PersonalNote note, BigInt
     }
 
     public static Redemption fail(String code) {
-        return new Redemption(false, code, null, BigInteger.ZERO, BigInteger.ZERO, BigInteger.ZERO, BigInteger.ZERO, false, BigInteger.ZERO);
+        return fail(code, null);
+    }
+
+    public static Redemption fail(String code, PersonalNote note) {
+        return new Redemption(false, code, note, BigInteger.ZERO, BigInteger.ZERO, BigInteger.ZERO, BigInteger.ZERO, false, BigInteger.ZERO);
     }
 }

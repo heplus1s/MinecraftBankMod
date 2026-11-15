@@ -45,7 +45,7 @@ public final class CompactFormat {
         if (value == null) {
             return "0";
         }
-        BigDecimal scaled = value.setScale(6, RoundingMode.HALF_UP).stripTrailingZeros();
+        BigDecimal scaled = value.setScale(Money.SCALE, RoundingMode.HALF_UP).stripTrailingZeros();
         if (scaled.scale() < 0) {
             scaled = scaled.setScale(0);
         }
@@ -88,6 +88,14 @@ public final class CompactFormat {
         }
         BigDecimal pct = ratio.multiply(new BigDecimal("100")).setScale(2, RoundingMode.HALF_UP);
         return plain(pct) + "%";
+    }
+
+    /** Display only: six decimal places at most, with sub-micro quotes shown as zero. */
+    public static String formatPersonalQuote(BigDecimal value) {
+        if (value == null) {
+            return "无法报价";
+        }
+        return plain(value.setScale(6, RoundingMode.DOWN));
     }
 
     private static String plain(BigDecimal value) {

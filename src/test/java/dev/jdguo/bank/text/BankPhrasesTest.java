@@ -10,6 +10,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BankPhrasesTest {
@@ -25,7 +26,8 @@ class BankPhrasesTest {
         assertEquals("银行券", books.currency("note").name());
         assertEquals("bank note", books.currency("note").nameEn());
         assertEquals(0, BigDecimal.ONE.compareTo(books.currency("note").parPerBacking()));
-        assertEquals(0, BigDecimal.ONE.compareTo(books.unitsPer("note", "diamond")));
+        assertNull(books.unitsPer("note", "diamond"));
+        assertNull(books.unitsPer("diamond", "note"));
         assertEquals(new BigInteger("1000"), books.supply("note").reserve());
     }
 
@@ -39,8 +41,7 @@ class BankPhrasesTest {
         assertEquals(new BigInteger("2000"), books.supply("diamond").reserve());
         assertEquals(BigInteger.TEN, books.supply("diamond").depositVault());
         assertEquals(BigInteger.TEN, books.balance(player, "diamond"));
-        assertEquals(0, new BigDecimal("1000000").divide(new BigDecimal("2000"), dev.jdguo.bank.fx.FxMath.MC)
-                .compareTo(books.unitsPer("copper", "diamond")));
+        assertEquals(0, new BigDecimal("501.2531").compareTo(books.unitsPer("copper", "diamond")));
         books.checkInvariants();
     }
 
@@ -95,11 +96,15 @@ class BankPhrasesTest {
         assertEquals(Tone.DARK_RED, sold.tone());
         assertTrue(sold.zh().startsWith("[银行] 卖出 钻×10 成功"));
 
-        assertEquals("[银行] 你的账户余额不足。", BankPhrases.failure(BankPhrases.Kind.WITHDRAW, "insufficient_funds", "copper", null).zh());
+        assertEquals("[银行] 账户余额不足，这次已全部拒绝，不会只支付一部分。",
+                BankPhrases.failure(BankPhrases.Kind.WITHDRAW, "insufficient_funds", "copper", null).zh());
         assertEquals("[银行] 银行准备金不足。", BankPhrases.failure(BankPhrases.Kind.WITHDRAW, "insufficient_reserves", "diamond", null).zh());
-        assertEquals("[银行] 铜锭不足。", BankPhrases.failure(BankPhrases.Kind.EXCHANGE, "insufficient_funds", "diamond", "copper").zh());
-        assertEquals("[银行] 你的钻石不足。", BankPhrases.failure(BankPhrases.Kind.EXCHANGE, "insufficient_funds", "copper", "diamond").zh());
-        assertEquals("[Bank] Not enough copper.", BankPhrases.failure(BankPhrases.Kind.EXCHANGE, "insufficient_funds", "diamond", "copper").en());
+        assertEquals("[银行] 铜锭余额不足，这次兑换已全部拒绝，不会只换一部分。",
+                BankPhrases.failure(BankPhrases.Kind.EXCHANGE, "insufficient_funds", "diamond", "copper").zh());
+        assertEquals("[银行] 钻石余额不足，这次兑换已全部拒绝，不会只换一部分。",
+                BankPhrases.failure(BankPhrases.Kind.EXCHANGE, "insufficient_funds", "copper", "diamond").zh());
+        assertEquals("[Bank] Not enough copper, so none was exchanged.",
+                BankPhrases.failure(BankPhrases.Kind.EXCHANGE, "insufficient_funds", "diamond", "copper").en());
     }
 
     @Test

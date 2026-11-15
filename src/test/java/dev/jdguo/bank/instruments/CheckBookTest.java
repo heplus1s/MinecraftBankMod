@@ -21,7 +21,8 @@ class CheckBookTest {
     @Test
     void checkMovesBalanceAndCanBeRedeemedOnce() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
-        books.creditUnbacked(issuer, "note", BigInteger.valueOf(500));
+        books.setReserve("copper", BigInteger.ZERO);
+        books.creditHeld(issuer, "note", BigInteger.valueOf(500));
         BigInteger liability = books.supply("note").liability();
 
         TxResult issued = books.issueCheck(issuer, "note", BigInteger.valueOf(200), "Steve", null, true);
@@ -46,7 +47,7 @@ class CheckBookTest {
     @Test
     void tamperedAmountDoesNotPay() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
-        books.creditUnbacked(issuer, "note", BigInteger.valueOf(50));
+        books.creditHeld(issuer, "note", BigInteger.valueOf(50));
         TxResult issued = books.issueCheck(issuer, "note", BigInteger.valueOf(50), "Steve", null, true);
         PresentedCheck tampered = new PresentedCheck(issued.instrumentId(), "note", new BigInteger("999999"), issuer, null);
 
@@ -61,21 +62,23 @@ class CheckBookTest {
     @Test
     void namedPayeeIsRejectedForAnyoneElseAndStaysOutstanding() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
-        books.creditUnbacked(issuer, "note", BigInteger.valueOf(20));
+        books.setReserve("copper", BigInteger.ZERO);
+        books.setReserve("diamond", new BigInteger("15"));
+        books.creditHeld(issuer, "note", BigInteger.valueOf(20));
         TxResult issued = books.issueCheck(issuer, "note", BigInteger.valueOf(20), "Steve", holder, true);
         PresentedCheck paper = new PresentedCheck(issued.instrumentId(), "note", BigInteger.valueOf(20), issuer, holder);
 
         assertEquals("wrong_payee", books.redeemCheck(stranger, paper).code());
         assertTrue(books.redeemCheck(holder, paper).success());
         assertEquals(BigInteger.ZERO, books.balance(holder, "note"));
-        assertTrue(books.balance(holder, "diamond").add(books.balance(holder, "copper")).signum() > 0);
+        assertEquals(new BigInteger("10"), books.balance(holder, "diamond"));
         books.checkInvariants();
     }
 
     @Test
     void twoIssuesNeverShareAnId() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
-        books.creditUnbacked(issuer, "note", BigInteger.valueOf(10));
+        books.creditHeld(issuer, "note", BigInteger.valueOf(10));
         UUID first = books.issueCheck(issuer, "note", BigInteger.ONE, "Steve", null, true).instrumentId();
         UUID second = books.issueCheck(issuer, "note", BigInteger.ONE, "Steve", null, true).instrumentId();
         assertNotEquals(first, second);

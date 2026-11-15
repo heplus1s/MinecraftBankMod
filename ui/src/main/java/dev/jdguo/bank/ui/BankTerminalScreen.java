@@ -164,10 +164,10 @@ public final class BankTerminalScreen extends Screen {
             return 0;
         }
         if ("management".equals(category)) {
-            return 2 + centralCount("savings") + centralCount("reserve");
+            return 2 + centralCount("savings") + centralCount("reserve") + institutionCount();
         }
         if ("issuance".equals(category) && data.has("personal")) {
-            return 3;
+            return 5;
         }
         if (level == Level.HOME || "savings".equals(category) || "deposit".equals(category) || "withdraw".equals(category)) {
             int count = data.has("accounts") ? data.getAsJsonArray("accounts").size() : 0;
@@ -194,14 +194,19 @@ public final class BankTerminalScreen extends Screen {
         if ("management".equals(category)) {
             y = line(context, "储蓄总池", x, y, 0xFFB7C7B0);
             y = centralLines(context, x, y, "savings");
+            y = institutionLines(context, x, y);
             y = line(context, "发行准备金", x, y + 4, 0xFFD0B060);
             centralLines(context, x, y, "reserve");
             return;
         }
         if ("issuance".equals(category) && data.has("personal")) {
+            boolean paused = data.has("redemptionPaused") && data.get("redemptionPaused").getAsBoolean();
             y = line(context, "「" + text("personal") + "」", x, y, 0xFFE8D090);
             y = line(context, "流通额  " + text("circulation"), x, y, 0xFFE8E8E8);
-            line(context, "准备金账户  " + text("reserve") + "  应当存入  " + text("required"), x, y, 0xFFE8E8E8);
+            y = line(context, "发行准备金  " + text("reserveCurrencyName") + " ×" + text("issuanceReserve")
+                    + "  锁定 ×" + text("issuanceLocked"), x, y, 0xFFE8E8E8);
+            y = line(context, "持有  " + text("holding"), x, y, 0xFFE8E8E8);
+            line(context, paused ? "兑付已暂停" : "兑付正常", x, y, paused ? 0xFFFF7070 : 0xFFB7C7B0);
             return;
         }
         if (level == Level.HOME || "savings".equals(category) || "deposit".equals(category) || "withdraw".equals(category)) {
@@ -215,6 +220,25 @@ public final class BankTerminalScreen extends Screen {
                 y = line(context, row.get("name").getAsString() + "  " + row.get("amount").getAsString(), x, y, 0xFFE8E8E8);
             }
         }
+    }
+
+    private int institutionCount() {
+        if (!data.has("institutions")) {
+            return 0;
+        }
+        return data.getAsJsonArray("institutions").size();
+    }
+
+    private int institutionLines(DrawContext context, int x, int y) {
+        if (!data.has("institutions")) {
+            return y;
+        }
+        JsonArray rows = data.getAsJsonArray("institutions");
+        for (int i = 0; i < rows.size(); i++) {
+            JsonObject row = rows.get(i).getAsJsonObject();
+            y = line(context, row.get("name").getAsString() + "  " + row.get("detail").getAsString(), x, y, 0xFFE8E8E8);
+        }
+        return y;
     }
 
     private int centralLines(DrawContext context, int x, int y, String field) {
@@ -289,9 +313,12 @@ public final class BankTerminalScreen extends Screen {
                     new ChoiceListWidget.Choice("hard", "定额兑付"));
         }
         if ("issuance".equals(category)) {
+            boolean paused = data.has("redemptionPaused") && data.get("redemptionPaused").getAsBoolean();
             return List.of(
                     new ChoiceListWidget.Choice("issue", "按发行准备金货币发行"),
                     new ChoiceListWidget.Choice("unbacked", "无发行准备金的货币发行"),
+                    new ChoiceListWidget.Choice("retire", "注销持有"),
+                    new ChoiceListWidget.Choice("freeze", paused ? "恢复兑付" : "暂停兑付"),
                     new ChoiceListWidget.Choice("reserve-deposit", "存入准备金账户"),
                     new ChoiceListWidget.Choice("reserve-withdraw", "取出准备金账户"));
         }
@@ -452,7 +479,12 @@ public final class BankTerminalScreen extends Screen {
             }
             case "issuance" -> {
                 if ("unbacked".equals(regime)) {
-                    BankUiClient.send("note-unbacked " + qty);
+                    BankUiClient.send("issue-unbacked " + qty);
+                } else if ("retire".equals(regime)) {
+                    BankUiClient.send("note-retire " + qty);
+                } else if ("freeze".equals(regime)) {
+                    boolean paused = data.has("redemptionPaused") && data.get("redemptionPaused").getAsBoolean();
+                    BankUiClient.send(paused ? "note-unfreeze" : "note-freeze");
                 } else if ("reserve-deposit".equals(regime)) {
                     BankUiClient.send("reserve-deposit " + qty);
                 } else if ("reserve-withdraw".equals(regime)) {
@@ -487,6 +519,9 @@ public final class BankTerminalScreen extends Screen {
     private String issuanceVerb() {
         return switch (regime) {
             case "unbacked" -> "无发行准备金的货币发行";
+            case "retire" -> "注销持有";
+            case "freeze" -> data.has("redemptionPaused") && data.get("redemptionPaused").getAsBoolean()
+                    ? "恢复兑付" : "暂停兑付";
             case "reserve-deposit" -> "存入准备金账户";
             case "reserve-withdraw" -> "取出准备金账户";
             default -> "货币发行";

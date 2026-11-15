@@ -4,6 +4,7 @@ import dev.jdguo.bank.currency.BankConfig;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.UUID;
 
@@ -60,8 +61,9 @@ class BankLedgerTest {
 
         books.deposit(player, "diamond", BigInteger.valueOf(4));
         TxResult over = books.withdraw(player, "diamond", BigInteger.TEN, true);
-        assertTrue(over.success());
-        assertEquals(BigInteger.valueOf(4), over.amount());
+        assertFalse(over.success());
+        assertEquals("insufficient_funds", over.code());
+        assertEquals(BigInteger.valueOf(4), books.balance(player, "diamond"));
         assertEquals(issuance, books.supply("diamond").reserve());
         books.checkInvariants();
     }
@@ -72,17 +74,18 @@ class BankLedgerTest {
         books.deposit(player, "copper", new BigInteger("5000"));
         BigInteger noteM1 = books.centralM1();
         BigInteger qty = BigInteger.ONE;
-        BigInteger expected = books.cost("copper", "diamond", qty);
+        BigDecimal settled = books.settlementCost("copper", "diamond", qty);
+        BigInteger expected = dev.jdguo.bank.ledger.Money.units(settled);
 
         TxResult result = books.exchange(player, "copper", "diamond", qty);
 
         assertTrue(result.success());
         assertEquals(expected, result.amount());
-        assertEquals(new BigInteger("5000").subtract(expected), books.balance(player, "copper"));
+        assertEquals(0, new BigDecimal("5000").subtract(settled).compareTo(books.balanceExact(player, "copper")));
         assertEquals(qty, books.balance(player, "diamond"));
-        assertEquals(new BigInteger("1001000"), books.supply("copper").reserve());
-        assertEquals(new BigInteger("20"), books.interestPool("copper"));
-        assertEquals(new BigInteger("999"), books.supply("diamond").reserve());
+        assertEquals(new BigInteger("1000000"), books.supply("copper").reserve());
+        assertEquals(0, new BigDecimal("19.9500").compareTo(books.interestPoolExact("copper")));
+        assertEquals(new BigInteger("1000"), books.supply("diamond").reserve());
         assertEquals(books.balance(player, "copper"), books.supply("copper").depositVault());
         assertEquals(qty, books.supply("diamond").depositVault());
         assertEquals(noteM1, books.centralM1());
@@ -92,29 +95,29 @@ class BankLedgerTest {
     @Test
     void exchangeIntoACommodityStopsAtFreeVaultHeadroom() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
-        books.deposit(player, "copper", new BigInteger("50000000"));
         books.setReserve("diamond", BigInteger.valueOf(2));
+        books.deposit(player, "copper", new BigInteger("500000"));
 
-        BigInteger rate = books.copperPerDiamond();
-        TxResult result = books.exchange(player, "copper", "diamond", BigInteger.TEN);
+        BigInteger reserve = books.supply("diamond").reserve();
+        TxResult result = books.exchange(player, "copper", "diamond", BigInteger.ONE);
 
-        assertTrue(result.success());
-        assertEquals(rate.multiply(BigInteger.valueOf(8)), result.copperPaid());
-        assertEquals(BigInteger.TWO, books.balance(player, "diamond"));
-        assertEquals(new BigInteger("50000000").subtract(result.amount()).add(result.copperPaid()),
-                books.balance(player, "copper"));
+        assertTrue(result.success(), result.code());
+        assertEquals(BigInteger.ZERO, result.copperPaid());
+        assertEquals(BigInteger.ONE, books.balance(player, "diamond"));
+        assertEquals(reserve, books.supply("diamond").reserve());
+        assertEquals(new BigInteger("500000").subtract(result.amount()), books.balance(player, "copper"));
         books.checkInvariants();
     }
 
     @Test
     void frozenConvertibilityBlocksPaperIntoHardCurrencyOnly() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
-        books.creditUnbacked(player, "note", new BigInteger("1000"));
+        books.creditHeld(player, "note", new BigInteger("1000"));
         books.deposit(player, "diamond", BigInteger.TEN);
         books.setFrozen(true);
 
         assertEquals("frozen", books.exchange(player, "note", "diamond", BigInteger.ONE).code());
-        assertTrue(books.exchange(player, "diamond", "note", BigInteger.ONE).success());
+        assertEquals("no_unallocated", books.exchange(player, "diamond", "note", BigInteger.ONE).code());
         assertTrue(books.withdraw(player, "diamond", BigInteger.ONE, false).success());
         books.checkInvariants();
     }
@@ -123,7 +126,7 @@ class BankLedgerTest {
     void hugeBalanceDoesNotOverflow() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         BigInteger huge = BigInteger.TEN.pow(100);
-        TxResult result = books.creditUnbacked(player, "note", huge);
+        TxResult result = books.creditHeld(player, "note", huge);
 
         assertTrue(result.success());
         assertEquals(huge, books.balance(player, "note"));
@@ -137,7 +140,7 @@ class BankLedgerTest {
     @Test
     void paperMovesBetweenM0AndDepositsWithoutChangingM1() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
-        books.creditUnbacked(player, "note", BigInteger.valueOf(100));
+        books.creditHeld(player, "note", BigInteger.valueOf(100));
         BigInteger m1 = books.centralM1();
         assertEquals(BigInteger.ZERO, books.centralM0());
         assertEquals(BigInteger.valueOf(100), m1);
@@ -162,19 +165,16 @@ class BankLedgerTest {
         BigInteger issuanceBefore = books.supply("diamond").reserve();
         assertEquals(BigInteger.ZERO, books.centralM1());
 
-        TxResult bought = books.exchange(player, "diamond", "note", BigInteger.valueOf(4));
-        assertTrue(bought.success(), bought.code());
-        assertEquals(BigInteger.valueOf(4), books.centralM1());
-        BigInteger afterBuy = books.supply("diamond").reserve();
-        assertEquals(issuanceBefore.add(bought.amount()).subtract(books.interestPool("diamond")), afterBuy);
-        assertTrue(books.interestPool("diamond").signum() > 0);
-        assertEquals(books.balance(player, "diamond"), books.supply("diamond").depositVault());
-
-        BigInteger issued = books.centralM1();
+        assertEquals("no_quote", books.exchange(player, "diamond", "note", BigInteger.valueOf(4)).code());
+        books.creditHeld(player, "note", BigInteger.valueOf(4));
+        BigInteger afterIssue = books.supply("diamond").reserve();
+        assertEquals(issuanceBefore, afterIssue);
+        BigDecimal notesBefore = books.balanceExact(player, "note");
         TxResult sold = books.exchange(player, "note", "diamond", BigInteger.ONE);
         assertTrue(sold.success(), sold.code());
-        assertEquals(issued.subtract(sold.amount()), books.centralM1());
-        assertEquals(afterBuy.subtract(BigInteger.ONE), books.supply("diamond").reserve());
+        assertTrue(books.balanceExact(player, "note").compareTo(notesBefore) < 0);
+        assertEquals(afterIssue.subtract(BigInteger.ONE), books.supply("diamond").reserve());
+        assertEquals(new BigInteger("11"), books.balance(player, "diamond"));
         books.checkInvariants();
     }
 
@@ -183,8 +183,8 @@ class BankLedgerTest {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         assertEquals(BigInteger.ZERO, books.centralM0());
         assertEquals(BigInteger.ZERO, books.centralM1());
-        assertEquals(new BigInteger("1000"), books.backedRoom(books.currency("note")));
-        books.creditUnbacked(player, "note", BigInteger.TEN);
+        assertEquals(new BigInteger("2000"), books.backedRoom(books.currency("note")));
+        books.creditHeld(player, "note", BigInteger.TEN);
         books.deposit(player, "diamond", BigInteger.TEN);
         assertEquals(BigInteger.TEN, books.centralM1());
         assertEquals(BigInteger.ZERO, books.centralM0());
@@ -197,7 +197,7 @@ class BankLedgerTest {
     void mixedOldLedgerSplitsSavingsFromIssuanceWithoutTouchingBalances() {
         BankBooks modern = BankBooks.create(BankConfig.defaults());
         modern.deposit(player, "copper", BigInteger.valueOf(64));
-        modern.creditUnbacked(player, "note", BigInteger.valueOf(5));
+        modern.creditHeld(player, "note", BigInteger.valueOf(5));
         com.google.gson.JsonObject root = com.google.gson.JsonParser.parseString(modern.toJson()).getAsJsonObject();
         com.google.gson.JsonObject copper = root.getAsJsonObject("supplies").getAsJsonObject("copper");
         copper.remove("depositVault");

@@ -33,11 +33,12 @@ class InterestTest {
         fresh.setAlpha("note", BigDecimal.ZERO);
         assertTrue(fresh.createPersonalNote(saver, "泉", false, BigInteger.ONE).success());
         fresh.setPersonalReserve(saver, "diamond", new BigInteger("400"));
-        fresh.creditUnbacked(saver, "note", new BigInteger("40"));
+        fresh.creditHeld(saver, "note", new BigInteger("40"));
         assertTrue(fresh.depositCentralReserve(saver, new BigInteger("40")).success());
         assertTrue(fresh.issuePersonalNote(saver, new BigInteger("400")).success());
         fresh.setFeeFraction(new BigDecimal("0.50"));
-        fresh.creditUnbacked(payer, "note", new BigInteger("200"));
+        fresh.deposit(payer, "copper", new BigInteger("5000"));
+        fresh.creditHeld(payer, "note", new BigInteger("200"));
         assertTrue(fresh.buyPersonalNote(payer, "泉", new BigInteger("100")).success());
         var series = fresh.personalNote(saver);
         BigInteger held = fresh.personalHolding(series.id(), saver);
@@ -68,7 +69,7 @@ class InterestTest {
     @Test
     void paperCountsInM1ButOnlyBookEntryEarnsInterest() {
         BankBooks books = fund(new BigInteger("20"));
-        books.creditUnbacked(saver, "note", new BigInteger("73000"));
+        books.creditHeld(saver, "note", new BigInteger("73000"));
         assertTrue(books.issueCentralPaper(saver, new BigInteger("36500")).result().success());
         BigInteger issuance = books.supply("diamond").reserve();
         books.accrueInterest(0);
@@ -88,7 +89,7 @@ class InterestTest {
     @Test
     void oneGameDayPaysBalanceTimesRateOver365() {
         BankBooks books = fund(new BigInteger("20"));
-        books.creditUnbacked(saver, "note", new BigInteger("36500"));
+        books.creditHeld(saver, "note", new BigInteger("36500"));
         books.accrueInterest(3);
         BankBooks.InterestDay day = books.accrueInterest(4);
 
@@ -102,17 +103,17 @@ class InterestTest {
     @Test
     void aShortPoolPaysProRataAndDoesNotMintTheRest() {
         BankBooks books = fund(new BigInteger("3"));
-        books.creditUnbacked(saver, "note", new BigInteger("36500"));
-        books.creditUnbacked(other, "note", new BigInteger("36500"));
+        books.creditHeld(saver, "note", new BigInteger("36500"));
+        books.creditHeld(other, "note", new BigInteger("36500"));
         BigInteger m1 = books.centralM1();
         BigInteger diamondIssuance = books.supply("diamond").reserve();
         books.accrueInterest(0);
         books.accrueInterest(1);
 
-        assertEquals(new BigInteger("36501"), books.balance(saver, "note"));
-        assertEquals(new BigInteger("36501"), books.balance(other, "note"));
-        assertEquals(m1.add(BigInteger.TWO), books.centralM1());
-        assertEquals(BigInteger.ONE, books.interestPool("note"));
+        assertEquals(0, new BigDecimal("36501.5000").compareTo(books.balanceExact(saver, "note")));
+        assertEquals(0, new BigDecimal("36501.5000").compareTo(books.balanceExact(other, "note")));
+        assertEquals(m1.add(new BigInteger("3")), books.centralM1());
+        assertEquals(0, BigDecimal.ZERO.compareTo(books.interestPoolExact("note")));
         assertEquals(diamondIssuance, books.supply("diamond").reserve());
         books.checkInvariants();
     }
@@ -122,28 +123,25 @@ class InterestTest {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         BigInteger m1 = new BigInteger("51");
         books.setAlpha("note", BigDecimal.ZERO);
-        books.creditUnbacked(payer, "note", m1);
+        books.creditHeld(payer, "note", new BigInteger("80"));
         BigInteger diamonds = books.supply("diamond").reserve();
 
         TxResult bought = books.exchange(payer, "note", "diamond", new BigInteger("50"));
 
         assertTrue(bought.success(), bought.code());
-        assertEquals(new BigInteger("51"), bought.amount());
-        assertEquals(BigInteger.ONE, books.interestPool("note"));
-        assertEquals(BigInteger.ONE, books.savingsPool("note"));
-        assertEquals(BigInteger.ZERO, books.balance(payer, "note"));
-        assertEquals(BigInteger.ZERO, books.centralM1());
-        assertEquals(books.centralM0().add(books.centralDeposits()), books.centralM1());
+        assertEquals(0, new BigDecimal("0.0400").compareTo(books.interestPoolExact("note")));
+        assertTrue(books.balance(payer, "note").compareTo(new BigInteger("80")) < 0);
         assertEquals(diamonds.subtract(new BigInteger("50")), books.supply("diamond").reserve());
+        assertEquals(books.centralM0().add(books.centralDeposits()), books.centralM1());
 
         BankBooks copperBooks = BankBooks.create(BankConfig.defaults());
         copperBooks.deposit(payer, "copper", new BigInteger("5000"));
         TxResult copper = copperBooks.exchange(payer, "copper", "diamond", BigInteger.ONE);
         assertTrue(copper.success(), copper.code());
-        assertEquals(new BigInteger("20"), copperBooks.interestPool("copper"));
-        assertEquals(copperBooks.supply("copper").depositVault().add(new BigInteger("20")), copperBooks.savingsPool("copper"));
-        assertEquals(new BigInteger("3980"), copperBooks.supply("copper").depositVault());
-        assertEquals(new BigInteger("1001000"), copperBooks.supply("copper").reserve());
+        assertEquals(0, new BigDecimal("19.9500").compareTo(copperBooks.interestPoolExact("copper")));
+        assertEquals(copperBooks.supply("copper").depositVault().add(copperBooks.interestPool("copper")), copperBooks.savingsPool("copper"));
+        assertEquals(0, new BigDecimal("3982.5500").compareTo(copperBooks.supply("copper").depositVaultExact()));
+        assertEquals(new BigInteger("1000000"), copperBooks.supply("copper").reserve());
         copperBooks.checkInvariants();
         books.checkInvariants();
     }
@@ -154,11 +152,12 @@ class InterestTest {
         books.setAlpha("note", BigDecimal.ZERO);
         assertTrue(books.createPersonalNote(saver, "泉", false, BigInteger.ONE).success());
         books.setPersonalReserve(saver, "diamond", new BigInteger("1000"));
-        books.creditUnbacked(saver, "note", new BigInteger("100"));
+        books.creditHeld(saver, "note", new BigInteger("100"));
         assertTrue(books.depositCentralReserve(saver, new BigInteger("100")).success());
         assertTrue(books.issuePersonalNote(saver, new BigInteger("1000")).success());
         books.setFeeFraction(new BigDecimal("0.50"));
-        books.creditUnbacked(payer, "note", new BigInteger("1000"));
+        books.deposit(payer, "copper", new BigInteger("5000"));
+        books.creditHeld(payer, "note", new BigInteger("1000"));
         assertTrue(books.buyPersonalNote(payer, "泉", new BigInteger("400")).success());
         var series = books.personalNote(saver);
         assertEquals(new BigInteger("200"), series.interestPool());
@@ -184,7 +183,7 @@ class InterestTest {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         assertTrue(books.createPersonalNote(saver, "泉", false, BigInteger.ONE).success());
         books.setPersonalReserve(saver, "diamond", BigInteger.TEN);
-        books.creditUnbacked(saver, "note", BigInteger.ONE);
+        books.creditHeld(saver, "note", BigInteger.ONE);
         assertTrue(books.depositCentralReserve(saver, BigInteger.ONE).success());
         assertTrue(books.issuePersonalNote(saver, BigInteger.TEN).success());
         JsonObject root = JsonParser.parseString(books.toJson()).getAsJsonObject();
@@ -203,7 +202,7 @@ class InterestTest {
     void oldLedgerKeepsBalancesAndStartsWithAnEmptyPool() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         books.deposit(saver, "diamond", BigInteger.TEN);
-        books.creditUnbacked(saver, "note", new BigInteger("40"));
+        books.creditHeld(saver, "note", new BigInteger("40"));
         JsonObject root = JsonParser.parseString(books.toJson()).getAsJsonObject();
         root.remove("interestRate");
         root.remove("interestPool");
@@ -226,13 +225,8 @@ class InterestTest {
     private BankBooks fund(BigInteger feeNotes) {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         books.setAlpha("note", BigDecimal.ZERO);
-        BigInteger diamonds = feeNotes.multiply(new BigInteger("50"));
-        BigInteger cost = diamonds.add(feeNotes);
-        books.creditUnbacked(payer, "note", cost);
-        TxResult result = books.exchange(payer, "note", "diamond", diamonds);
-        assertTrue(result.success(), result.code());
+        books.postRetainedFee("note", feeNotes);
         assertEquals(feeNotes, books.interestPool("note"));
-        assertEquals(BigInteger.ZERO, books.balance(payer, "note"));
         return books;
     }
 }

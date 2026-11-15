@@ -50,7 +50,7 @@ class NotePaperTest {
     @Test
     void issueDepositCopyAndAlreadyUsedCentralPaper() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
-        books.creditUnbacked(player, "note", BigInteger.valueOf(500));
+        books.creditHeld(player, "note", BigInteger.valueOf(500));
         BigInteger liability = books.supply("note").liability();
 
         PaperTake issued = books.issueCentralPaper(player, BigInteger.valueOf(64));
@@ -84,7 +84,7 @@ class NotePaperTest {
     @Test
     void extraCopiesAreNotCreditedAndAReloadStillRejectsThem() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
-        books.creditUnbacked(player, "note", BigInteger.TEN);
+        books.creditHeld(player, "note", BigInteger.TEN);
         assertTrue(books.issueCentralPaper(player, BigInteger.valueOf(4)).result().success());
         PresentedNote paper = new PresentedNote("note", null, BigInteger.ONE);
 
@@ -106,7 +106,7 @@ class NotePaperTest {
     @Test
     void mergingTwoWithdrawalsDoesNotMintAThird() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
-        books.creditUnbacked(player, "note", BigInteger.valueOf(30));
+        books.creditHeld(player, "note", BigInteger.valueOf(30));
         assertTrue(books.issueCentralPaper(player, BigInteger.TEN).result().success());
         assertTrue(books.issueCentralPaper(player, BigInteger.TEN).result().success());
         assertEquals(BigInteger.valueOf(20), books.paperOutstanding("note", null, BigInteger.ONE));
@@ -126,7 +126,7 @@ class NotePaperTest {
     void hugeAmountIsOneRepeatableFaceAndStillPaysOnce() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         BigInteger huge = BankBooks.MAX_PHYSICAL.add(BigInteger.ONE);
-        books.creditUnbacked(player, "note", huge.multiply(BigInteger.TWO));
+        books.creditHeld(player, "note", huge.multiply(BigInteger.TWO));
         PaperTake first = books.issueCentralPaper(player, huge);
         PaperTake second = books.issueCentralPaper(player, huge);
 
@@ -151,7 +151,7 @@ class NotePaperTest {
         books.setPersonalReserve(player, "diamond", BigInteger.valueOf(100));
         assertTrue(books.createPersonalNote(player, "Ada", false, BigInteger.ONE).success());
         PersonalNote note = books.personalNote(player);
-        books.creditUnbacked(player, "note", BigInteger.valueOf(2));
+        books.creditHeld(player, "note", BigInteger.valueOf(2));
         assertTrue(books.depositCentralReserve(player, BigInteger.valueOf(2)).success());
         assertTrue(books.issuePersonalNote(player, BigInteger.valueOf(20)).success());
 
@@ -186,7 +186,7 @@ class NotePaperTest {
     @Test
     void tamperedCurrencyIsNotPaid() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
-        books.creditUnbacked(player, "note", BigInteger.TEN);
+        books.creditHeld(player, "note", BigInteger.TEN);
         books.issueCentralPaper(player, BigInteger.TEN);
         PresentedNote forged = new PresentedNote("diamond", null, BigInteger.ONE);
 

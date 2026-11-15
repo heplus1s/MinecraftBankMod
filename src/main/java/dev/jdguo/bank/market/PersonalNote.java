@@ -10,10 +10,16 @@ public final class PersonalNote {
     private final UUID id;
     private final UUID issuer;
     private final String name;
-    private final NoteRegime regime;
+    private NoteRegime regime;
     /** Reserve and payout currency: diamond, copper, or note. */
-    private final String anchor;
+    private String anchor;
     private final BigInteger par;
+    /**
+     * Diamond price captured when the regime last changed.
+     * Float uses it as the opening price. A peg uses it as the official price and ignores later trades.
+     * Null on notes that still follow par.
+     */
+    private java.math.BigDecimal openingDiamonds;
     private BigInteger circulation = BigInteger.ZERO;
     private BigInteger buys = BigInteger.ZERO;
     private BigInteger sells = BigInteger.ZERO;
@@ -28,6 +34,8 @@ public final class PersonalNote {
     private BigInteger interestPool = BigInteger.ZERO;
     /** Last Minecraft day this series was settled. -1 until the first tick anchors it. */
     private long interestDay = -1L;
+    /** Issuer-controlled halt of this series only. Absent on older saves, which stay open. */
+    private boolean redemptionPaused;
 
     /** Floating note. {@code copperPar} chooses whether par is copper or diamonds. */
     public PersonalNote(UUID id, UUID issuer, String name, boolean copperPar, BigInteger par) {
@@ -62,6 +70,7 @@ public final class PersonalNote {
     public long closedAtEpochMs() { return closedAtEpochMs; }
     public BigInteger interestPool() { return interestPool; }
     public long interestDay() { return interestDay; }
+    public boolean redemptionPaused() { return redemptionPaused; }
 
     public void addDrawn(BigInteger amount) {
         if (amount != null && amount.signum() > 0) {
@@ -87,10 +96,22 @@ public final class PersonalNote {
         this.drawn = drawn == null ? BigInteger.ZERO : drawn;
     }
 
+    public java.math.BigDecimal openingDiamonds() { return openingDiamonds; }
+
+    /** Posts a new regime without issuing notes or releasing collateral. */
+    public void adopt(NoteRegime regime, String anchor, java.math.BigDecimal openingDiamonds) {
+        this.regime = regime == null ? NoteRegime.FLOAT : regime;
+        if (anchor != null && !anchor.isBlank()) {
+            this.anchor = anchor;
+        }
+        this.openingDiamonds = openingDiamonds;
+    }
+
     public void setCirculation(BigInteger circulation) { this.circulation = circulation; }
     public void setBuys(BigInteger buys) { this.buys = buys; }
     public void setSells(BigInteger sells) { this.sells = sells; }
     public void setLocked(BigInteger locked) { this.locked = locked; }
+    public void setRedemptionPaused(boolean redemptionPaused) { this.redemptionPaused = redemptionPaused; }
     public void setInterestDay(long interestDay) { this.interestDay = interestDay; }
 
     public void addInterestPool(BigInteger delta) {
