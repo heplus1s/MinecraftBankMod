@@ -68,6 +68,40 @@ class RegimeSwitchTest {
     }
 
     @Test
+    void floatAndHardMayUseTheCentralNoteAndALockedCommodityCannotBeRenamed() {
+        BankBooks books = ready(new BigInteger("100"), new BigInteger("10"));
+        PersonalNote locked = books.personalNote(issuer);
+        RegimePreview renamed = books.switchPersonalRegime(issuer, NoteRegime.FLOAT, "note");
+        assertFalse(renamed.allowed());
+        assertTrue(renamed.reason().contains("已锁定"));
+        assertTrue(renamed.reason().contains("不能改记到"));
+        assertTrue(renamed.reason().contains("银行券"));
+        assertEquals("diamond", locked.anchor());
+
+        BankBooks fresh = BankBooks.create(BankConfig.defaults());
+        assertTrue(fresh.createPersonalNote(issuer, "浮券", NoteRegime.FLOAT, "note", BigInteger.ONE).success());
+        assertEquals("central_reserve", fresh.issuePersonalNote(issuer, new BigInteger("4")).code());
+        fresh.creditHeld(issuer, "note", new BigInteger("4"));
+        assertTrue(fresh.postIssuanceReserve(issuer, new BigInteger("4"), true).success());
+        assertEquals(BigInteger.ZERO, fresh.personalReserve(issuer, "note"));
+        assertEquals(new BigInteger("4"), fresh.centralReserve(issuer));
+        assertTrue(fresh.issuePersonalNote(issuer, new BigInteger("4")).success());
+        assertEquals(NoteRegime.FLOAT, fresh.personalNote(issuer).regime());
+        assertEquals("note", fresh.personalNote(issuer).anchor());
+
+        assertTrue(fresh.createPersonalNote(buyer, "固券", NoteRegime.HARD, "note", BigInteger.ONE).success());
+        assertEquals(NoteRegime.HARD, fresh.personalNote(buyer).regime());
+        assertEquals("note", fresh.personalNote(buyer).anchor());
+
+        JsonObject snapshot = JsonParser.parseString(
+                BankUiSnapshot.json(fresh, issuer, false, "savings", false)).getAsJsonObject();
+        assertEquals(3, snapshot.getAsJsonArray("anchors").size());
+        assertEquals("实物货币", snapshot.getAsJsonArray("anchors").get(0).getAsJsonObject().get("group").getAsString());
+        assertEquals("发行货币", snapshot.getAsJsonArray("anchors").get(2).getAsJsonObject().get("group").getAsString());
+        assertEquals("银行券", snapshot.getAsJsonArray("anchors").get(2).getAsJsonObject().get("name").getAsString());
+    }
+
+    @Test
     void hardSwitchIsRefusedWhenTheLockCannotRedeemFace() {
         BankBooks books = ready(new BigInteger("100"), new BigInteger("20"));
         PersonalNote note = books.personalNote(issuer);

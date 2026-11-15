@@ -1978,7 +1978,7 @@ public final class BankBooks {
             return refused(regime, anchor, "「" + name + "」已经破产，不能改汇率制度。");
         }
         if (regime == null || !validAnchor(regime, anchor)) {
-            return refused(regime, anchor, "请指定 float、peg 或 hard。计价货币用 diamond 或 copper，联系汇率制还可以用 note。");
+            return refused(regime, anchor, "请指定 float、peg 或 hard。计价货币用 diamond、copper 或 note。");
         }
         if (suspended(note)) {
             return refused(regime, anchor, "「" + name + "」的兑付已经暂停，不能改汇率制度。");
@@ -2007,7 +2007,7 @@ public final class BankBooks {
                         + CompactFormat.formatRate(faceDiamonds) + " 钻石，两者不一致。固定汇率制要求现价与面额相同");
             }
             BigInteger faceCover = face.multiply(note.circulation());
-            if (haveLock.compareTo(faceCover) < 0) {
+            if (!"note".equals(anchor) && haveLock.compareTo(faceCover) < 0) {
                 gaps.add("已锁定的" + anchorZh(anchor) + " ×" + CompactFormat.format(haveLock)
                         + " 不足以按面额兑付全部流通 ×" + CompactFormat.format(note.circulation())
                         + "，尚缺 ×" + CompactFormat.format(faceCover.subtract(haveLock)));
@@ -2094,7 +2094,7 @@ public final class BankBooks {
         if (circulation.signum() <= 0 || par.signum() <= 0) {
             return BigInteger.ZERO;
         }
-        if (regime == NoteRegime.PEG && "note".equals(anchor)) {
+        if ("note".equals(anchor)) {
             return BigInteger.ZERO;
         }
         if (regime == NoteRegime.HARD) {
@@ -2106,15 +2106,18 @@ public final class BankBooks {
         return ceiling(par.multiply(circulation), personalNoteCoverage);
     }
 
-    /** Central 银行券 are required only when 联系汇率制 is anchored to the note itself. */
+    /**
+     * A 银行券 anchor is counted in the central-note reserve account, for every regime.
+     * Commodity anchors do not use that account.
+     */
     private BigInteger centralNeed(NoteRegime regime, String anchor, BigInteger par, BigInteger circulation) {
-        if (circulation.signum() <= 0 || par.signum() <= 0) {
+        if (circulation.signum() <= 0 || par.signum() <= 0 || !"note".equals(anchor)) {
             return BigInteger.ZERO;
         }
-        if (regime == NoteRegime.PEG && "note".equals(anchor)) {
-            return par.multiply(circulation);
+        if (regime == NoteRegime.FLOAT) {
+            return ceiling(par.multiply(circulation), personalNoteCoverage);
         }
-        return BigInteger.ZERO;
+        return par.multiply(circulation);
     }
 
     private BigInteger pegValue(String anchor, BigInteger par, BigInteger circulation) {
@@ -2141,11 +2144,12 @@ public final class BankBooks {
         return value.signum() < 0 ? BigInteger.ZERO : value;
     }
 
-    private static List<String> anchorsOf(NoteRegime regime) {
-        if (regime == NoteRegime.PEG) {
-            return List.of("diamond", "copper", "note");
+    /** Every regime may use one of these anchors. Shop and market goods are not anchors. */
+    public static List<String> anchorsOf(NoteRegime regime) {
+        if (regime == null) {
+            return List.of();
         }
-        return List.of("diamond", "copper");
+        return List.of("diamond", "copper", "note");
     }
 
     public static String regimeZh(NoteRegime regime) {
@@ -2173,8 +2177,7 @@ public final class BankBooks {
             return false;
         }
         return switch (regime) {
-            case FLOAT, HARD -> "diamond".equals(anchor) || "copper".equals(anchor);
-            case PEG -> "diamond".equals(anchor) || "copper".equals(anchor) || "note".equals(anchor);
+            case FLOAT, PEG, HARD -> "diamond".equals(anchor) || "copper".equals(anchor) || "note".equals(anchor);
         };
     }
 
@@ -2911,13 +2914,13 @@ public final class BankBooks {
         if (circulation.signum() <= 0) {
             return BigInteger.ZERO;
         }
+        if ("note".equals(note.reserveCurrency())) {
+            return BigInteger.ZERO;
+        }
         if (note.regime() == NoteRegime.HARD) {
             return note.par().multiply(circulation);
         }
         if (note.regime() == NoteRegime.PEG) {
-            if ("note".equals(note.reserveCurrency())) {
-                return BigInteger.ZERO;
-            }
             return ceiling(note.par().multiply(circulation), PEG_COMMODITY_COVERAGE);
         }
         BigDecimal raw = new BigDecimal(note.par().multiply(circulation)).multiply(personalNoteCoverage, FxMath.MC);
@@ -3119,8 +3122,8 @@ public final class BankBooks {
         if (note == null || circulation.signum() <= 0 || note.par().signum() <= 0) {
             return BigInteger.ZERO;
         }
-        if (note.regime() == NoteRegime.PEG && "note".equals(note.reserveCurrency())) {
-            return circulation.multiply(note.par());
+        if ("note".equals(note.reserveCurrency())) {
+            return centralNeed(note.regime(), "note", note.par(), circulation);
         }
         return BigInteger.ZERO;
     }

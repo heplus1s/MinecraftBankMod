@@ -151,6 +151,7 @@ public final class BankUiSnapshot {
             }
         }
         o.add("notes", notes);
+        o.add("anchors", allowedAnchors());
         PersonalNote own = books.personalNote(player);
         if (own != null) {
             o.addProperty("personal", own.name());
@@ -267,6 +268,23 @@ public final class BankUiSnapshot {
             switches.add(choice);
         }
         row.add("switches", switches);
+        return row;
+    }
+
+    /** Currencies a personal note may use as its single anchor. Shop and market goods are not included. */
+    private static JsonArray allowedAnchors() {
+        JsonArray anchors = new JsonArray();
+        anchors.add(anchorChoice("diamond", "钻石", "实物货币"));
+        anchors.add(anchorChoice("copper", "铜锭", "实物货币"));
+        anchors.add(anchorChoice("note", "银行券", "发行货币"));
+        return anchors;
+    }
+
+    private static JsonObject anchorChoice(String id, String name, String group) {
+        JsonObject row = new JsonObject();
+        row.addProperty("id", id);
+        row.addProperty("name", name);
+        row.addProperty("group", group);
         return row;
     }
 

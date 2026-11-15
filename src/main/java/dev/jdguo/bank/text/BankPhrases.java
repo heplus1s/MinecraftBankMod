@@ -738,8 +738,8 @@ public final class BankPhrases {
 
     public static Spoken noteSwitchUsage() {
         return line(Tone.RED,
-                "用法是 note-switch float、note-switch peg diamond、note-switch peg copper、note-switch peg note，或 note-switch hard diamond。",
-                "Use note-switch float, note-switch peg diamond, note-switch peg copper, note-switch peg note, or note-switch hard diamond.");
+                "用法是 note-switch float、peg 或 hard，后面可加 diamond、copper 或 note。",
+                "Use note-switch float, peg, or hard, then diamond, copper, or note.");
     }
 
     public static Spoken regimeSwitch(RegimePreview preview) {
