@@ -777,6 +777,10 @@ public final class BankPhrases {
         return noteRejected(redemption == null ? "" : redemption.code());
     }
 
+    public static Spoken personalMarketDone(String message) {
+        return line(Tone.GREEN, message, message);
+    }
+
     public static Spoken noteRejected(String code) {
         return switch (code == null ? "" : code) {
             case "name" -> line(Tone.RED, "名字最多三个汉字或英文字母。", "The name can be at most three Chinese characters or English letters.");
@@ -786,6 +790,11 @@ public final class BankPhrases {
             case "central_reserve" -> line(Tone.RED, "央行准备金账户不足，新发行暂停。通兑仍按已锁定的准备金办理。", "The central-bank reserve account is short, so new issuance is paused. Redemption still pays from locked reserves.");
             case "funds" -> line(Tone.RED, "你的账户余额不足。", "Your balance isn't enough.");
             case "empty" -> line(Tone.RED, "对方没有这么多券可成交。", "The other side doesn't have that many notes.");
+            case "transfer_player" -> line(Tone.RED, "没有找到这个在线玩家。", "That player is not online.");
+            case "market_external" -> line(Tone.RED, "请用 /market note 挂单或买入，通兑仍可在银行办理。", "Use /market note to list or buy. Redemption remains available at the bank.");
+            case "offer_empty" -> line(Tone.RED, "没有足够数量的单笔挂单。", "No single listing has enough notes.");
+            case "offer_minimum" -> line(Tone.RED, "订单低于最小结算金额 0.0001 银行券，请提高数量。", "Total is below 0.0001 bank notes. Increase the quantity.");
+            case "unlisted_funds" -> line(Tone.RED, "未挂单的持有量不足，请先减少挂单。", "Your unlisted holdings are insufficient. Reduce your listing first.");
             case "self" -> line(Tone.RED, "不能和自己买卖自己的券。", "You can't trade your own note with yourself.");
             case "pair" -> line(Tone.RED, "不能用同一张个人银行券互换。", "Pick two different personal notes.");
             case "quote" -> line(Tone.RED, "这个数量换不成整张，换一个数量。", "That amount doesn't buy a whole note. Try another amount.");

@@ -59,6 +59,7 @@ public final class BankBooks {
     private final Map<UUID, PersonalNote> personalNotes = new LinkedHashMap<>();
     /** Commodity units a bankrupt issuer still owes the central bank. */
     private final Map<UUID, Map<String, BigInteger>> issuerDebt = new LinkedHashMap<>();
+    private final Map<UUID, Map<UUID, BigInteger>> personalOffers = new LinkedHashMap<>();
     private final Map<UUID, Map<UUID, BigInteger>> personalHoldings = new LinkedHashMap<>();
     private final CheckBook checks = new CheckBook();
     /** Sheets of stackable paper still out. Keyed by series, not by individual item. */
@@ -1893,6 +1894,7 @@ public final class BankBooks {
         } else {
             row.put(player, whole);
         }
+        limitPersonalOffer(noteId, player, whole);
         Map<UUID, BigDecimal> fractions = holdingFraction.computeIfAbsent(noteId, id -> new LinkedHashMap<>());
         if (frac.signum() == 0) {
             fractions.remove(player);
@@ -2559,6 +2561,146 @@ public final class BankBooks {
         }
     }
 
+    public BigInteger personalOffered(UUID noteId, UUID holder) {
+        return personalOffers.getOrDefault(noteId, Map.of()).getOrDefault(holder, BigInteger.ZERO)
+                .min(personalHolding(noteId, holder));
+    }
+
+    public TxResult browsePersonalOffers(UUID viewer) {
+        List<String> active = personalNotes.values().stream()
+                .filter(note -> !note.bankrupt())
+                .filter(note -> availablePersonalOffer(note.id(), viewer).signum() > 0)
+                .map(note -> note.name() + " ×" + availablePersonalOffer(note.id(), viewer))
+                .toList();
+        return TxResult.ok(BigInteger.valueOf(active.size()), active.isEmpty()
+                ? "目前没有可买入的个人币挂单。" : "可买入个人币（最大单笔）：" + String.join("、", active));
+    }
+
+    public TxResult viewPersonalOffers(UUID viewer, String name) {
+        PersonalNote note = personalNoteByName(name);
+        if (note == null || note.bankrupt()) {
+            return TxResult.fail(note == null ? "none" : "bankrupt", "");
+        }
+        return TxResult.ok(availablePersonalOffer(note.id(), viewer), "「" + note.name()
+                + "」持有 " + personalHolding(note.id(), viewer)
+                + "，我的挂单 " + personalOffered(note.id(), viewer)
+                + "，可买入的最大单笔数量 " + availablePersonalOffer(note.id(), viewer) + "。");
+    }
+
+    /** Largest single listing the buyer may fill without partial execution. */
+    public BigInteger availablePersonalOffer(UUID noteId, UUID buyer) {
+        return personalOffers.getOrDefault(noteId, Map.of()).keySet().stream()
+                .filter(seller -> !seller.equals(buyer))
+                .map(seller -> personalOffered(noteId, seller))
+                .max(BigInteger::compareTo).orElse(BigInteger.ZERO);
+    }
+
+    public TxResult listPersonal(UUID holder, String name, BigInteger amount) {
+        PersonalNote note = personalNoteByName(name);
+        if (note == null) {
+            return TxResult.fail("none", "");
+        }
+        if (note.bankrupt() && amount.signum() != 0) {
+            return TxResult.fail("bankrupt", "");
+        }
+        if (amount.signum() < 0 || personalHolding(note.id(), holder).compareTo(amount) < 0) {
+            return TxResult.fail("funds", "");
+        }
+        setPersonalOffer(note.id(), holder, amount);
+        return TxResult.ok(amount, "「" + note.name() + "」挂单数量已设为 " + amount + "。");
+    }
+
+    public TxResult transferPersonal(UUID sender, UUID recipient, String name, BigInteger amount) {
+        PersonalNote note = personalNoteByName(name);
+        if (note == null || note.bankrupt()) {
+            return TxResult.fail(note == null ? "none" : "bankrupt", "");
+        }
+        if (sender.equals(recipient) || amount.signum() <= 0) {
+            return TxResult.fail(sender.equals(recipient) ? "self" : "par", "");
+        }
+        BigInteger free = personalHolding(note.id(), sender).subtract(personalOffered(note.id(), sender));
+        if (free.compareTo(amount) < 0) {
+            return TxResult.fail("unlisted_funds", "");
+        }
+        addHolding(note.id(), sender, amount.negate());
+        addHolding(note.id(), recipient, amount);
+        return TxResult.ok(amount, "已转出「" + note.name() + "」×" + amount + "。");
+    }
+
+    public TxResult quoteListedPersonal(UUID buyer, String name, BigInteger amount) {
+        return settleListedPersonal(buyer, name, amount, null);
+    }
+
+    public TxResult buyListedPersonal(UUID buyer, String name, BigInteger amount, BigDecimal maximum) {
+        if (maximum == null || maximum.signum() <= 0 || maximum.scale() > Money.SCALE) {
+            return TxResult.fail("par", "");
+        }
+        return settleListedPersonal(buyer, name, amount, maximum);
+    }
+
+    private TxResult settleListedPersonal(UUID buyer, String name, BigInteger amount, BigDecimal maximum) {
+        PersonalNote note = personalNoteByName(name);
+        if (note == null || note.bankrupt()) {
+            return TxResult.fail(note == null ? "none" : "bankrupt", "");
+        }
+        if (amount.signum() <= 0) {
+            return TxResult.fail("par", "");
+        }
+        UUID seller = listedPersonalCounterparty(note.id(), buyer, amount);
+        if (seller == null) {
+            return TxResult.fail("offer_empty", "");
+        }
+        BigDecimal notesPerDiamond = unitsPer("note", "diamond");
+        if (notesPerDiamond == null || notesPerDiamond.signum() <= 0) {
+            return TxResult.fail("market", "");
+        }
+        BigDecimal total = personalDiamondPrice(note).multiply(notesPerDiamond, FxMath.MC)
+                .multiply(new BigDecimal(amount), FxMath.MC);
+        if (total.compareTo(Money.UNIT) < 0) {
+            return TxResult.fail("offer_minimum", "");
+        }
+        BigDecimal payment = Money.of(total);
+        if (maximum == null) {
+            return TxResult.ok(amount, "买入「" + note.name() + "」×" + amount
+                    + "，当前应付银行券 " + Money.stored(payment) + "。");
+        }
+        if (payment.compareTo(maximum) > 0) {
+            return TxResult.fail("offer_price_moved", "");
+        }
+        if (balanceExact(buyer, "note").compareTo(payment) < 0) {
+            return TxResult.fail("funds", "");
+        }
+        debitBalance(buyer, "note", payment);
+        creditBalance(seller, "note", payment);
+        setPersonalOffer(note.id(), seller, personalOffered(note.id(), seller).subtract(amount));
+        addHolding(note.id(), seller, amount.negate());
+        addHolding(note.id(), buyer, amount);
+        note.addBuy(amount);
+        retainTradeFee(note, seller, amount);
+        return TxResult.ok(amount, "已买入「" + note.name() + "」×" + amount
+                + "，支付银行券 " + Money.stored(payment) + "。");
+    }
+
+    private UUID listedPersonalCounterparty(UUID noteId, UUID buyer, BigInteger amount) {
+        return personalOffers.getOrDefault(noteId, Map.of()).keySet().stream()
+                .filter(seller -> !seller.equals(buyer) && personalOffered(noteId, seller).compareTo(amount) >= 0)
+                .findFirst().orElse(null);
+    }
+
+    private void setPersonalOffer(UUID noteId, UUID holder, BigInteger amount) {
+        if (amount.signum() > 0) {
+            personalOffers.computeIfAbsent(noteId, ignored -> new LinkedHashMap<>()).put(holder, amount);
+            return;
+        }
+        Map<UUID, BigInteger> row = personalOffers.get(noteId);
+        if (row != null) {
+            row.remove(holder);
+            if (row.isEmpty()) {
+                personalOffers.remove(noteId);
+            }
+        }
+    }
+
     public NoteTrade buyPersonalNote(UUID buyer, String name, BigInteger amount) {
         return tradePersonalNote(buyer, name, amount, true);
     }
@@ -3054,6 +3196,14 @@ public final class BankBooks {
             }
         } else {
             row.put(player, next);
+        }
+        limitPersonalOffer(noteId, player, next);
+    }
+
+    private void limitPersonalOffer(UUID noteId, UUID player, BigInteger remaining) {
+        BigInteger offered = personalOffers.getOrDefault(noteId, Map.of()).getOrDefault(player, BigInteger.ZERO);
+        if (offered.compareTo(remaining) > 0) {
+            setPersonalOffer(noteId, player, remaining);
         }
     }
 
@@ -3551,6 +3701,13 @@ public final class BankBooks {
             }
         }
         root.add("personalHoldings", holdingJson);
+        JsonObject offerJson = new JsonObject();
+        personalOffers.forEach((noteId, offers) -> {
+            JsonObject row = new JsonObject();
+            offers.forEach((holder, amount) -> row.addProperty(holder.toString(), amount.toString()));
+            offerJson.add(noteId.toString(), row);
+        });
+        root.add("personalOffers", offerJson);
 
         JsonArray checkJson = new JsonArray();
         for (CheckRecord record : checks.all()) {
@@ -3795,6 +3952,18 @@ public final class BankBooks {
                     books.personalHoldings.put(noteId, row);
                 }
             }
+        }
+        if (root.has("personalOffers")) {
+            root.getAsJsonObject("personalOffers").entrySet().forEach(entry -> {
+                UUID noteId = UUID.fromString(entry.getKey());
+                if (books.personalNotes.containsKey(noteId)) {
+                    entry.getValue().getAsJsonObject().entrySet().forEach(offer -> {
+                        UUID holder = UUID.fromString(offer.getKey());
+                        BigInteger amount = new BigInteger(offer.getValue().getAsString());
+                        books.setPersonalOffer(noteId, holder, amount.min(books.personalHolding(noteId, holder)));
+                    });
+                }
+            });
         }
         if (root.has("notePaper")) {
             for (Map.Entry<String, JsonElement> entry : root.getAsJsonObject("notePaper").entrySet()) {

@@ -1,5 +1,6 @@
 package dev.jdguo.bank.net;
 
+import dev.jdguo.bank.api.MarketSettlement;
 import dev.jdguo.bank.ledger.BankBooks;
 import dev.jdguo.bank.persistence.BankRuntime;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
@@ -67,7 +68,8 @@ public final class BankUiNetwork {
             return;
         }
         BankBooks books = BankRuntime.books();
-        String json = BankUiSnapshot.json(books, player.getUuid(), session.admin, session.page, session.confirm);
+        String json = BankUiSnapshot.json(books, player.getUuid(), session.admin, session.page, session.confirm,
+                MarketSettlement.externalPersonalMarket());
         PacketByteBuf buf = PacketByteBufs.create();
         buf.writeString(json, 32767);
         ServerPlayNetworking.send(player, SYNC, buf);

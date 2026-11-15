@@ -3,7 +3,9 @@ package dev.jdguo.bank.api;
 import dev.jdguo.bank.ledger.BankBooks;
 import dev.jdguo.bank.ledger.TxResult;
 import dev.jdguo.bank.persistence.BankRuntime;
+import net.fabricmc.loader.api.FabricLoader;
 
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.UUID;
 
@@ -30,6 +32,33 @@ public final class MarketSettlement {
 
     public static TxResult refundLandGrant(UUID payer, String currency, BigInteger amount, String reference) {
         return post(reference, books -> books.refundLandGrant(payer, currency, amount));
+    }
+
+    public static boolean externalPersonalMarket() {
+        return FabricLoader.getInstance().isModLoaded("marketmod");
+    }
+
+    public static TxResult personalOffers(UUID viewer, String name) {
+        return read(books -> name == null ? books.browsePersonalOffers(viewer) : books.viewPersonalOffers(viewer, name));
+    }
+
+    public static TxResult quotePersonal(UUID buyer, String name, BigInteger amount) {
+        return read(books -> books.quoteListedPersonal(buyer, name, amount));
+    }
+
+    public static TxResult listPersonal(UUID holder, String name, BigInteger amount) {
+        return post("personal-listing", books -> books.listPersonal(holder, name, amount));
+    }
+
+    public static TxResult buyPersonal(UUID buyer, String name, BigInteger amount, BigDecimal maximum) {
+        return post("personal-purchase", books -> books.buyListedPersonal(buyer, name, amount, maximum));
+    }
+
+    private static TxResult read(Movement movement) {
+        if (BankRuntime.state == null) {
+            return TxResult.fail("bank_not_ready", "Ledger is not loaded");
+        }
+        return movement.apply(BankRuntime.books());
     }
 
     private static TxResult post(String reference, Movement movement) {

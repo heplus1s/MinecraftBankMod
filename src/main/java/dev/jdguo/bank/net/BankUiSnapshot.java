@@ -21,10 +21,16 @@ public final class BankUiSnapshot {
     private BankUiSnapshot() {}
 
     public static String json(BankBooks books, UUID player, boolean admin, String page, boolean confirm) {
+        return json(books, player, admin, page, confirm, false);
+    }
+
+    static String json(BankBooks books, UUID player, boolean admin, String page, boolean confirm,
+                       boolean externalPersonalMarket) {
         JsonObject o = new JsonObject();
         o.addProperty("page", page == null ? "savings" : page);
         o.addProperty("admin", admin);
         o.addProperty("confirm", confirm);
+        o.addProperty("externalPersonalMarket", externalPersonalMarket);
         o.addProperty("status", books.statusLabel());
         o.addProperty("copper", Money.stored(books.balanceExact(player, "copper")));
         o.addProperty("diamond", Money.stored(books.balanceExact(player, "diamond")));

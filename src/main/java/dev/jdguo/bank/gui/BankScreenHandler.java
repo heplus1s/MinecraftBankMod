@@ -1,5 +1,6 @@
 package dev.jdguo.bank.gui;
 
+import dev.jdguo.bank.api.MarketSettlement;
 import dev.jdguo.bank.currency.CurrencyDef;
 import dev.jdguo.bank.currency.CurrencyKind;
 import dev.jdguo.bank.instruments.CheckItems;
@@ -650,20 +651,29 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
 
     private void paintMarket() {
         BankBooks books = BankRuntime.books();
-        inventory.setStack(4, marker(Items.NAME_TAG,
-                Text.literal("个人银行券交易").formatted(Formatting.YELLOW, Formatting.BOLD),
-                List.of(Text.literal("Personal notes").formatted(Formatting.GRAY),
-                        Text.literal("买入、卖出、互换，或按市场价格兑付").formatted(Formatting.DARK_GRAY),
-                        Text.literal("特殊数量用 /bank note").formatted(Formatting.DARK_GRAY)),
-                "noop", 1));
-        inventory.setStack(10, marker(Items.EMERALD,
-                Text.literal("买入或卖出").formatted(marketMode == 0 ? Formatting.AQUA : Formatting.WHITE),
-                List.of(Text.literal("Against central notes").formatted(Formatting.GRAY)),
-                "pn:mode:0", 1));
-        inventory.setStack(11, marker(Items.PAPER,
-                Text.literal("互换").formatted(marketMode == 1 ? Formatting.AQUA : Formatting.WHITE),
-                List.of(Text.literal("Note for note").formatted(Formatting.GRAY)),
-                "pn:mode:1", 1));
+        boolean external = MarketSettlement.externalPersonalMarket();
+        if (external) {
+            marketMode = 2;
+            inventory.setStack(10, marker(Items.EMERALD, Text.literal("前往个人币市场"),
+                    List.of(Text.literal("挂单、撤单、询价或买入")), "pn:market-help", 1));
+            inventory.setStack(11, marker(Items.PAPER, Text.literal("转给玩家"),
+                    List.of(Text.literal("输入币名、在线玩家和数量")), "pn:transfer-help", 1));
+        } else {
+            inventory.setStack(4, marker(Items.NAME_TAG,
+                    Text.literal("个人银行券交易").formatted(Formatting.YELLOW, Formatting.BOLD),
+                    List.of(Text.literal("Personal notes").formatted(Formatting.GRAY),
+                            Text.literal("买入、卖出、互换，或按市场价格兑付").formatted(Formatting.DARK_GRAY),
+                            Text.literal("特殊数量用 /bank note").formatted(Formatting.DARK_GRAY)),
+                    "noop", 1));
+            inventory.setStack(10, marker(Items.EMERALD,
+                    Text.literal("买入或卖出").formatted(marketMode == 0 ? Formatting.AQUA : Formatting.WHITE),
+                    List.of(Text.literal("Against central notes").formatted(Formatting.GRAY)),
+                    "pn:mode:0", 1));
+            inventory.setStack(11, marker(Items.PAPER,
+                    Text.literal("互换").formatted(marketMode == 1 ? Formatting.AQUA : Formatting.WHITE),
+                    List.of(Text.literal("Note for note").formatted(Formatting.GRAY)),
+                    "pn:mode:1", 1));
+        }
         inventory.setStack(12, marker(Items.GOLD_INGOT,
                 Text.literal("兑付").formatted(marketMode == 2 ? Formatting.AQUA : Formatting.WHITE),
                 List.of(Text.literal("Redeem at the market price").formatted(Formatting.GRAY)),
@@ -750,6 +760,21 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
     private void personalAction(ServerPlayerEntity player, String action) {
         BankBooks books = BankRuntime.books();
         UUID uuid = player.getUuid();
+        if ("pn:market-help".equals(action) || "pn:transfer-help".equals(action)) {
+            boolean marketHelp = "pn:market-help".equals(action);
+            List<PersonalNote> notes = new ArrayList<>(books.personalNotes());
+            String transfer = "/bank note transfer ";
+            if (!notes.isEmpty()) {
+                transfer += "\"" + notes.get(Math.floorMod(marketIndex, notes.size())).name() + "\" ";
+            }
+            String command = marketHelp ? "/market note" : transfer;
+            player.closeHandledScreen();
+            player.sendMessage(Text.literal(marketHelp ? "点击输入 /market note" : "点击填写个人币转账")
+                    .styled(style -> style.withClickEvent(new net.minecraft.text.ClickEvent(
+                            net.minecraft.text.ClickEvent.Action.SUGGEST_COMMAND,
+                            command))), false);
+            return;
+        }
         if ("pn:bankrupt".equals(action)) {
             bankruptConfirm = true;
             tell(player, BankPhrases.noteBankruptAsk());
@@ -798,6 +823,10 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
             return;
         }
         if (action.startsWith("pn:swap:")) {
+            if (MarketSettlement.externalPersonalMarket()) {
+                tell(player, BankPhrases.noteRejected("market_external"));
+                return;
+            }
             List<PersonalNote> notes = new ArrayList<>(books.personalNotes());
             if (notes.size() < 2) {
                 tell(player, BankPhrases.noteRejected("pair"));
@@ -888,6 +917,10 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         }
         boolean buy = action.startsWith("pn:buy:");
         if (buy || action.startsWith("pn:sell:")) {
+            if (MarketSettlement.externalPersonalMarket()) {
+                tell(player, BankPhrases.noteRejected("market_external"));
+                return;
+            }
             List<PersonalNote> notes = new ArrayList<>(books.personalNotes());
             if (notes.isEmpty()) {
                 tell(player, BankPhrases.noteRejected("none"));
