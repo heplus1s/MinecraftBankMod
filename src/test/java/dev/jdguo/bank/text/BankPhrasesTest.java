@@ -10,6 +10,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BankPhrasesTest {
@@ -25,7 +26,8 @@ class BankPhrasesTest {
         assertEquals("银行券", books.currency("note").name());
         assertEquals("bank note", books.currency("note").nameEn());
         assertEquals(0, BigDecimal.ONE.compareTo(books.currency("note").parPerBacking()));
-        assertEquals(0, BigDecimal.ONE.compareTo(books.unitsPer("note", "diamond")));
+        assertNull(books.unitsPer("note", "diamond"));
+        assertNull(books.unitsPer("diamond", "note"));
         assertEquals(new BigInteger("1000"), books.supply("note").reserve());
     }
 

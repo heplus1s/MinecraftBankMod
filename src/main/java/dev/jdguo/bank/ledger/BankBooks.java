@@ -125,8 +125,10 @@ public final class BankBooks {
     private BigDecimal personalNoteCoverage = BigDecimal.ONE;
     /** Live copper ingots for one diamond. Absent until the opening books can quote it. */
     private BigDecimal liveCopperPerDiamond;
-    /** Live central notes for one diamond. Absent until the opening books can quote it. */
+    /** Live central notes for one diamond. Absent when the official quote has no inverse. */
     private BigDecimal liveNotesPerDiamond;
+    /** Official diamonds for one 银行券. Null when no notes are outstanding. */
+    private BigDecimal officialDiamondsPerNote;
     /** Shop's book balance of a personal note, keyed by the note id. */
     private final Map<UUID, BigDecimal> shopPersonal = new LinkedHashMap<>();
     /** Fractional personal-note holding above the whole-note map. */
@@ -365,7 +367,6 @@ public final class BankBooks {
         CurrencyDef note = primaryVirtual();
         if (note != null) {
             supply(note.id()).addLiability(Money.of(notes).negate());
-            nudgeNoteQuote(Money.of(notes).negate());
         }
         supply("diamond").addReserve(diamonds.negate());
         addSavings("diamond", diamonds);
@@ -410,7 +411,7 @@ public final class BankBooks {
                 nudgeCopperQuote(new BigDecimal(metalQty).divide(new BigDecimal(rate), 8, RoundingMode.HALF_UP).negate());
             }
         }
-        nudgeNoteQuote(gross.negate());
+        recomputeOfficialNoteQuote();
         return TxResult.ok(metalQty, "Redeemed notes for " + CompactFormat.format(metalQty) + " " + metal);
     }
 
@@ -546,7 +547,7 @@ public final class BankBooks {
         creditBalance(player, currency, amount);
         supply(currency).addLiability(amount);
         if (centralNote(def)) {
-            nudgeNoteQuote(new BigDecimal(amount));
+            recomputeOfficialNoteQuote();
         }
         return TxResult.ok(amount, "Issued unbacked " + label(def) + " " + CompactFormat.format(amount));
     }
@@ -567,7 +568,7 @@ public final class BankBooks {
         creditBalance(player, currency, posted);
         supply(currency).addLiability(posted);
         if (centralNote(def)) {
-            nudgeNoteQuote(posted);
+            recomputeOfficialNoteQuote();
         }
         return TxResult.ok(Money.units(posted), "Issued unbacked " + label(def) + " " + Money.stored(posted));
     }
@@ -596,7 +597,7 @@ public final class BankBooks {
         supply(currency).addLiability(amount);
         supply(currency).addReserve(amount);
         if (centralNote(def)) {
-            nudgeNoteQuote(new BigDecimal(amount));
+            recomputeOfficialNoteQuote();
         }
         return TxResult.ok(amount, "Issued reserve-backed " + label(def) + " " + CompactFormat.format(amount)
                 + ", locked " + CompactFormat.format(lock) + " " + label(need(def.backing())));
@@ -634,7 +635,7 @@ public final class BankBooks {
             unlockIssuanceCollateral(def, unlock);
         }
         if (centralNote(def)) {
-            nudgeNoteQuote(new BigDecimal(amount).negate());
+            recomputeOfficialNoteQuote();
         }
         return TxResult.ok(amount, "Retired " + label(def) + " " + CompactFormat.format(amount));
     }
@@ -766,22 +767,30 @@ public final class BankBooks {
             return clampQuote(inverse(liveCopperPerDiamond));
         }
         if (noteId.equals(pay) && "diamond".equals(receive)) {
-            return clampQuote(liveNotesPerDiamond);
+            recomputeOfficialNoteQuote();
+            return liveNotesPerDiamond;
         }
         if ("diamond".equals(pay) && noteId.equals(receive)) {
-            return clampQuote(inverse(liveNotesPerDiamond));
+            recomputeOfficialNoteQuote();
+            return officialDiamondsPerNote;
         }
         if (noteId.equals(pay) && "copper".equals(receive)) {
+            recomputeOfficialNoteQuote();
             if (liveNotesPerDiamond == null || liveCopperPerDiamond == null || liveCopperPerDiamond.signum() == 0) {
                 return null;
             }
-            return clampQuote(liveNotesPerDiamond.divide(liveCopperPerDiamond, FxMath.MC));
+            BigDecimal notesPerCopper = liveNotesPerDiamond.divide(liveCopperPerDiamond, Money.SCALE, RoundingMode.HALF_UP);
+            return notesPerCopper.signum() > 0 ? notesPerCopper : null;
         }
         if ("copper".equals(pay) && noteId.equals(receive)) {
-            if (liveNotesPerDiamond == null || liveCopperPerDiamond == null || liveNotesPerDiamond.signum() == 0) {
+            recomputeOfficialNoteQuote();
+            if (officialDiamondsPerNote == null || liveCopperPerDiamond == null || liveCopperPerDiamond.signum() <= 0) {
                 return null;
             }
-            return clampQuote(liveCopperPerDiamond.divide(liveNotesPerDiamond, FxMath.MC));
+            if (officialDiamondsPerNote.signum() <= 0) {
+                return Money.ZERO;
+            }
+            return Money.of(liveCopperPerDiamond.multiply(officialDiamondsPerNote));
         }
         return null;
     }
@@ -812,9 +821,8 @@ public final class BankBooks {
     }
 
     /**
-     * Fills a missing official quote from the rate the books already imply.
-     * That is the same units-per figure the old reserve formula would have shown.
-     * A book with no positive basis keeps the quote absent. Personal-note prices are not touched.
+     * Fills a missing copper-per-diamond quote from the rate the reserve books already imply.
+     * The 银行券 quote is never taken from that old formula. It is always reserves over issuance.
      */
     private void fillMissingQuotes() {
         if (liveCopperPerDiamond == null || liveCopperPerDiamond.signum() <= 0) {
@@ -823,13 +831,48 @@ public final class BankBooks {
                 liveCopperPerDiamond = Money.of(implied);
             }
         }
-        String noteId = centralNoteId();
-        if (need(noteId) != null && (liveNotesPerDiamond == null || liveNotesPerDiamond.signum() <= 0)) {
-            BigDecimal implied = impliedUnitsPer(noteId, "diamond");
-            if (implied != null && implied.signum() > 0) {
-                liveNotesPerDiamond = Money.of(implied);
-            }
+        recomputeOfficialNoteQuote();
+    }
+
+    /**
+     * Official 「1 银行券 = R / L 钻石」.
+     * {@code L} is outstanding central-note liability. {@code R} is copper and diamond issuance
+     * reserves, locked as well as free, with copper converted at the live copper quote.
+     * Deposit vaults are not reserves. Nothing here applies a volume nudge.
+     */
+    private void recomputeOfficialNoteQuote() {
+        CurrencyDef note = primaryVirtual();
+        if (note == null || supplies.get(note.id()) == null) {
+            officialDiamondsPerNote = null;
+            liveNotesPerDiamond = null;
+            return;
         }
+        BigDecimal liabilities = supply(note.id()).liabilityExact();
+        if (liabilities.signum() <= 0) {
+            officialDiamondsPerNote = null;
+            liveNotesPerDiamond = null;
+            return;
+        }
+        BigDecimal reserves = issuanceDiamondEquivalent();
+        BigDecimal quote = reserves.divide(liabilities, Money.SCALE, RoundingMode.HALF_UP);
+        if (quote.signum() <= 0) {
+            officialDiamondsPerNote = Money.ZERO;
+            liveNotesPerDiamond = null;
+            return;
+        }
+        officialDiamondsPerNote = quote;
+        BigDecimal inverse = BigDecimal.ONE.divide(quote, Money.SCALE, RoundingMode.HALF_UP);
+        liveNotesPerDiamond = inverse.signum() > 0 ? inverse : null;
+    }
+
+    /** Diamond-equivalent issuance reserves. Locked metal stays inside. Deposit vaults do not. */
+    private BigDecimal issuanceDiamondEquivalent() {
+        BigDecimal diamonds = supplies.get("diamond") == null ? Money.ZERO : supply("diamond").reserveExact();
+        BigDecimal copper = supplies.get("copper") == null ? Money.ZERO : supply("copper").reserveExact();
+        if (liveCopperPerDiamond == null || liveCopperPerDiamond.signum() <= 0 || copper.signum() <= 0) {
+            return diamonds;
+        }
+        return diamonds.add(copper.divide(liveCopperPerDiamond, 8, RoundingMode.HALF_UP));
     }
 
     /** The quote the reserve books already imply. Null when either side has no positive basis. */
@@ -843,11 +886,7 @@ public final class BankBooks {
     private void nudgeCopperQuote(BigDecimal diamondDemand) {
         BigDecimal reference = new BigDecimal(supply("diamond").anchor().max(BigInteger.ONE));
         liveCopperPerDiamond = QuoteElasticity.nudge(liveCopperPerDiamond, diamondDemand, reference);
-    }
-
-    private void nudgeNoteQuote(BigDecimal noteSupplyIncrease) {
-        BigDecimal reference = new BigDecimal(supply(centralNoteId()).anchor().max(BigInteger.ONE));
-        liveNotesPerDiamond = QuoteElasticity.nudge(liveNotesPerDiamond, noteSupplyIncrease, reference);
+        recomputeOfficialNoteQuote();
     }
 
     public BigDecimal abundance(String id) {
@@ -1310,20 +1349,18 @@ public final class BankBooks {
     }
 
     private void nudgeForReserveTransfer(String currency, BigDecimal amount, boolean fromDeposits) {
-        if (liveCopperPerDiamond == null) {
-            return;
+        if (liveCopperPerDiamond != null && liveCopperPerDiamond.signum() > 0) {
+            BigDecimal diamonds;
+            int sign = fromDeposits ? 1 : -1;
+            if ("diamond".equals(currency)) {
+                diamonds = amount.multiply(BigDecimal.valueOf(sign)).negate();
+                nudgeCopperQuote(diamonds);
+            } else if ("copper".equals(currency)) {
+                diamonds = amount.divide(liveCopperPerDiamond, 8, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(sign));
+                nudgeCopperQuote(diamonds);
+            }
         }
-        BigDecimal diamonds;
-        int sign = fromDeposits ? 1 : -1;
-        if ("diamond".equals(currency)) {
-            diamonds = amount.multiply(BigDecimal.valueOf(sign)).negate();
-            nudgeCopperQuote(diamonds);
-        } else if ("copper".equals(currency) && liveCopperPerDiamond.signum() > 0) {
-            diamonds = amount.divide(liveCopperPerDiamond, 8, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(sign));
-            nudgeCopperQuote(diamonds);
-        } else if (centralNoteId().equals(currency) || "note".equals(currency)) {
-            nudgeNoteQuote(amount.multiply(BigDecimal.valueOf(fromDeposits ? -1 : 1)));
-        }
+        recomputeOfficialNoteQuote();
     }
 
     /**
@@ -1646,6 +1683,7 @@ public final class BankBooks {
         }
         self.setAnchor(opening);
         self.setReserve(newReserve);
+        recomputeOfficialNoteQuote();
     }
 
     /** Raw vault stock. Does not move the opening anchor. `/bank reserve` uses {@link #setOpeningReserve}. */
@@ -1661,6 +1699,7 @@ public final class BankBooks {
             throw new IllegalArgumentException("below_locked");
         }
         self.setReserve(reserve);
+        recomputeOfficialNoteQuote();
     }
 
     /**
@@ -2050,7 +2089,7 @@ public final class BankBooks {
                 : commodity;
         BigDecimal notes = unitsPer("note", "diamond");
         if (notes == null || notes.signum() <= 0) {
-            notes = BigDecimal.ONE;
+            return BigInteger.ZERO;
         }
         BigInteger value = diamonds.multiply(notes, FxMath.MC).setScale(0, RoundingMode.CEILING).toBigInteger();
         return value.signum() < 0 ? BigInteger.ZERO : value;
@@ -2989,7 +3028,7 @@ public final class BankBooks {
                 : commodity;
         BigDecimal notes = unitsPer("note", "diamond");
         if (notes == null || notes.signum() <= 0) {
-            notes = BigDecimal.ONE;
+            return BigInteger.ZERO;
         }
         BigInteger value = diamonds.multiply(notes, FxMath.MC).setScale(0, RoundingMode.CEILING).toBigInteger();
         return value.signum() < 0 ? BigInteger.ZERO : value;
@@ -3133,12 +3172,17 @@ public final class BankBooks {
     }
 
     public String toJson() {
+        recomputeOfficialNoteQuote();
         JsonObject root = new JsonObject();
         root.addProperty("version", SNAPSHOT_VERSION);
         root.addProperty("numeraire", numeraire);
         root.addProperty("fee", feeFraction.toPlainString());
         if (liveCopperPerDiamond != null) {
             root.addProperty("liveCopperPerDiamond", liveCopperPerDiamond.toPlainString());
+        }
+        if (officialDiamondsPerNote != null) {
+            root.addProperty("diamondsPerNote", officialDiamondsPerNote.signum() == 0
+                    ? "0" : officialDiamondsPerNote.toPlainString());
         }
         if (liveNotesPerDiamond != null) {
             root.addProperty("liveNotesPerDiamond", liveNotesPerDiamond.toPlainString());

@@ -172,6 +172,7 @@ class SecondaryMarketTest {
         BigDecimal purchaseB = books.personalDiamondPrice(noteB);
         assertEquals(0, BigDecimal.ONE.compareTo(purchaseA));
         assertEquals(0, BigDecimal.ONE.compareTo(purchaseB));
+        books.creditUnbacked(buyer, "note", new BigInteger("2000"));
 
         SwapTrade bought = books.swapPersonalNotes(issuerA, "Aa", "Bb", BigInteger.TEN);
 

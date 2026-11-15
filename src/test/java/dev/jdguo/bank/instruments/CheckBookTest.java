@@ -61,6 +61,8 @@ class CheckBookTest {
     @Test
     void namedPayeeIsRejectedForAnyoneElseAndStaysOutstanding() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
+        books.setReserve("copper", BigInteger.ZERO);
+        books.setReserve("diamond", new BigInteger("40"));
         books.creditUnbacked(issuer, "note", BigInteger.valueOf(20));
         TxResult issued = books.issueCheck(issuer, "note", BigInteger.valueOf(20), "Steve", holder, true);
         PresentedCheck paper = new PresentedCheck(issued.instrumentId(), "note", BigInteger.valueOf(20), issuer, holder);
@@ -68,7 +70,7 @@ class CheckBookTest {
         assertEquals("wrong_payee", books.redeemCheck(stranger, paper).code());
         assertTrue(books.redeemCheck(holder, paper).success());
         assertEquals(BigInteger.ZERO, books.balance(holder, "note"));
-        assertTrue(books.balance(holder, "diamond").add(books.balance(holder, "copper")).signum() > 0);
+        assertEquals(new BigInteger("40"), books.balance(holder, "diamond"));
         books.checkInvariants();
     }
 

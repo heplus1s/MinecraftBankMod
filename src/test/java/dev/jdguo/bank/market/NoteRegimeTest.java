@@ -23,6 +23,7 @@ class NoteRegimeTest {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         PersonalNote pay = open(books, issuerA, "Aa", NoteRegime.FLOAT, "diamond", BigInteger.ONE, BigInteger.TEN, BigInteger.TEN);
         PersonalNote receive = open(books, issuerB, "Bb", NoteRegime.FLOAT, "diamond", BigInteger.ONE, BigInteger.TEN, BigInteger.TEN);
+        books.creditUnbacked(buyer, "note", new BigInteger("2000"));
         BigDecimal beforeA = books.personalDiamondPrice(pay);
         BigDecimal beforeB = books.personalDiamondPrice(receive);
 

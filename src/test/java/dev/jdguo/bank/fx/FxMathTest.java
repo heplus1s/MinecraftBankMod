@@ -16,7 +16,8 @@ class FxMathTest {
     void openingCopperPerDiamondMatchesTheDatapackDisplayRate() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         assertEquals(0, new BigDecimal("1000").compareTo(books.unitsPer("copper", "diamond")));
-        assertEquals(0, BigDecimal.ONE.compareTo(books.unitsPer("note", "diamond")));
+        assertNull(books.unitsPer("note", "diamond"));
+        assertNull(books.unitsPer("diamond", "note"));
     }
 
     @Test

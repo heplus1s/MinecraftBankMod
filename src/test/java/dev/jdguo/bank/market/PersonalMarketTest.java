@@ -10,6 +10,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PersonalMarketTest {
@@ -53,7 +54,7 @@ class PersonalMarketTest {
     @Test
     void issueNeedsPersonalReservesAndOpensAtOneDiamond() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
-        assertEquals(0, BigDecimal.ONE.compareTo(books.unitsPer("note", "diamond")));
+        assertNull(books.unitsPer("note", "diamond"));
         books.createPersonalNote(issuer, "泉", false, BigInteger.ONE);
         assertEquals("reserve", books.issuePersonalNote(issuer, BigInteger.TEN).code());
         books.setPersonalReserve(issuer, "diamond", BigInteger.TEN);

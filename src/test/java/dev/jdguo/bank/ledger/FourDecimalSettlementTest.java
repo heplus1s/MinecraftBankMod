@@ -16,8 +16,8 @@ class FourDecimalSettlementTest {
 
     @Test
     void exchangeRefusesWhenTheNoteBalanceCannotCoverOneCopper() {
-        BankBooks books = priced(new BigDecimal("0.01"));
-        assertTrue(books.creditUnbacked(player, "note", new BigDecimal("0.009")).success());
+        BankBooks books = priced(new BigDecimal("0.009"));
+        assertEquals(0, new BigDecimal("0.0100").compareTo(books.settlementCost("note", "copper", BigInteger.ONE)));
         BigDecimal notes = books.balanceExact(player, "note");
         BigDecimal liability = books.supply("note").liabilityExact();
 
@@ -34,14 +34,13 @@ class FourDecimalSettlementTest {
 
     @Test
     void exchangePostsTheWholeCopperWhenTheFourDecimalPriceIsCovered() {
-        BankBooks books = priced(new BigDecimal("0.01"));
-        assertTrue(books.creditUnbacked(player, "note", new BigDecimal("0.0100")).success());
+        BankBooks books = priced(new BigDecimal("0.0100"));
         BigInteger copperReserve = books.supply("copper").reserve();
+        assertEquals(0, new BigDecimal("0.0100").compareTo(books.settlementCost("note", "copper", BigInteger.ONE)));
 
         TxResult bought = books.exchange(player, "note", "copper", BigInteger.ONE);
 
         assertTrue(bought.success(), bought.code());
-        assertEquals(0, new BigDecimal("0.0100").compareTo(books.settlementCost("note", "copper", BigInteger.ONE)));
         assertEquals(0, BigDecimal.ZERO.compareTo(books.balanceExact(player, "note")));
         assertEquals(0, BigDecimal.ONE.compareTo(books.balanceExact(player, "copper")));
         assertEquals(copperReserve.subtract(BigInteger.ONE), books.supply("copper").reserve());
@@ -93,11 +92,16 @@ class FourDecimalSettlementTest {
         assertTrue(json.contains("\"copper\":\"0\""));
     }
 
-    private static BankBooks priced(BigDecimal notePerCopper) {
+    /**
+     * Outstanding notes are sized so one copper costs {@code 0.0100} notes at reserves over issuance.
+     * The player's own balance is only the part named here.
+     */
+    private BankBooks priced(BigDecimal playerNotes) {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         books.setFeeFraction(BigDecimal.ZERO);
-        books.setClampMin(notePerCopper);
-        books.setClampMax(notePerCopper);
+        UUID others = UUID.fromString("55555555-5555-5555-5555-555555555555");
+        assertTrue(books.creditUnbacked(player, "note", playerNotes).success());
+        assertTrue(books.creditUnbacked(others, "note", new BigDecimal("20000").subtract(playerNotes)).success());
         return books;
     }
 }

@@ -129,7 +129,7 @@ class InterestTest {
         TxResult bought = books.exchange(payer, "note", "diamond", new BigInteger("50"));
 
         assertTrue(bought.success(), bought.code());
-        assertTrue(books.interestPool("note").signum() > 0);
+        assertEquals(0, new BigDecimal("0.0400").compareTo(books.interestPoolExact("note")));
         assertTrue(books.balance(payer, "note").compareTo(new BigInteger("80")) < 0);
         assertEquals(diamonds.subtract(new BigInteger("50")), books.supply("diamond").reserve());
         assertEquals(books.centralM0().add(books.centralDeposits()), books.centralM1());

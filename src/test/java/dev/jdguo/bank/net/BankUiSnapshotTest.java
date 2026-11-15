@@ -10,6 +10,7 @@ import dev.jdguo.bank.text.BankPhrases;
 import org.junit.jupiter.api.Test;
 
 import dev.jdguo.bank.ledger.CompactFormat;
+import dev.jdguo.bank.ledger.Money;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -18,7 +19,6 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -78,11 +78,11 @@ class BankUiSnapshotTest {
         assertEquals("1000", currency(o, "copper").get("rate").getAsString());
         assertEquals("1000", currency(o, "copper").get("unitsPerDiamond").getAsString());
         assertEquals("1", currency(o, "diamond").get("rate").getAsString());
-        assertEquals(CompactFormat.formatRate(books.unitsPer("note", "diamond")), currency(o, "note").get("rate").getAsString());
-        assertEquals("1", currency(o, "note").get("rate").getAsString());
-        assertEquals(CompactFormat.formatRate(books.unitsPer("diamond", "note")), o.get("diamondsPerNote").getAsString());
-        assertEquals("1", o.get("diamondsPerNote").getAsString());
-        assertEquals("1", currency(o, "note").get("diamondsPerNote").getAsString());
+        assertEquals(Money.stored(books.unitsPer("note", "diamond")), currency(o, "note").get("rate").getAsString());
+        assertEquals("0.002", currency(o, "note").get("rate").getAsString());
+        assertEquals(Money.stored(books.unitsPer("diamond", "note")), o.get("diamondsPerNote").getAsString());
+        assertEquals("500", o.get("diamondsPerNote").getAsString());
+        assertEquals("500", currency(o, "note").get("diamondsPerNote").getAsString());
         assertFalse(currency(o, "copper").has("diamondsPerNote"));
     }
 
@@ -139,27 +139,34 @@ class BankUiSnapshotTest {
     void personalNotePriceIsCentralBankNotesAndAMissingQuoteIsOmitted() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         UUID player = UUID.randomUUID();
+        assertFalse(JsonParser.parseString(BankUiSnapshot.json(books, player, false, "savings", false))
+                .getAsJsonObject().has("diamondsPerNote"));
+        books.creditUnbacked(player, "note", new BigInteger("2000"));
         assertTrue(books.createPersonalNote(player, "泉", false, BigInteger.ONE).success());
         PersonalNote note = books.personalNote(player);
         BigDecimal central = books.personalDiamondPrice(note).multiply(books.unitsPer("note", "diamond"), FxMath.MC);
 
         JsonObject quoted = JsonParser.parseString(BankUiSnapshot.json(books, player, false, "savings", false)).getAsJsonObject();
         JsonObject row = personal(quoted, "泉");
-        assertEquals(CompactFormat.formatRate(central), row.get("price").getAsString());
+        assertEquals(Money.stored(central), row.get("price").getAsString());
         assertEquals("1", row.get("price").getAsString());
         assertEquals(CompactFormat.formatRate(books.personalDiamondPrice(note)), row.get("diamondPrice").getAsString());
         assertEquals("1000", quoted.get("copperPerDiamond").getAsString());
+        assertEquals("1", quoted.get("diamondsPerNote").getAsString());
 
         books.creditUnbacked(player, "note", new BigInteger("1000"));
         JsonObject weak = JsonParser.parseString(BankUiSnapshot.json(books, player, false, "savings", false)).getAsJsonObject();
-        assertEquals(CompactFormat.formatRate(books.unitsPer("note", "diamond")), currency(weak, "note").get("rate").getAsString());
-        assertEquals(CompactFormat.formatRate(books.unitsPer("diamond", "note")), weak.get("diamondsPerNote").getAsString());
-        assertNotEquals("2", currency(weak, "note").get("rate").getAsString());
+        assertEquals(Money.stored(books.unitsPer("note", "diamond")), currency(weak, "note").get("rate").getAsString());
+        assertEquals(Money.stored(books.unitsPer("diamond", "note")), weak.get("diamondsPerNote").getAsString());
+        assertEquals("0.6667", weak.get("diamondsPerNote").getAsString());
 
         books.setReserve("diamond", BigInteger.ZERO);
-        JsonObject stillQuoted = JsonParser.parseString(BankUiSnapshot.json(books, player, false, "savings", false)).getAsJsonObject();
-        assertTrue(stillQuoted.has("copperPerDiamond"));
-        assertTrue(stillQuoted.has("diamondsPerNote"));
+        books.setReserve("copper", BigInteger.ZERO);
+        JsonObject unbacked = JsonParser.parseString(BankUiSnapshot.json(books, player, false, "savings", false)).getAsJsonObject();
+        assertTrue(unbacked.has("copperPerDiamond"));
+        assertEquals("0", unbacked.get("diamondsPerNote").getAsString());
+        assertFalse(currency(unbacked, "note").has("rate"));
+        assertEquals(0, new BigDecimal(books.centralM1()).compareTo(books.centralM2()));
     }
 
     private static JsonObject central(JsonObject snapshot, String id) {

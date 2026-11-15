@@ -16,7 +16,6 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -34,11 +33,14 @@ class QuoteAndReserveTest {
         BigDecimal vault = books.supply("diamond").depositVaultExact();
 
         BigDecimal notesBefore = books.balanceExact(player, "note");
+        BigDecimal quote = books.unitsPer("diamond", "note");
+        BigDecimal cost = books.settlementCost("note", "diamond", BigInteger.ONE);
         TxResult redeemed = books.exchange(player, "note", "diamond", BigInteger.ONE);
 
         assertTrue(redeemed.success(), redeemed.code());
-        assertTrue(books.balanceExact(player, "note").compareTo(notesBefore) < 0);
-        assertTrue(books.balanceExact(player, "note").compareTo(new BigDecimal("3")) < 0);
+        assertEquals(0, new BigDecimal("500").compareTo(quote));
+        assertEquals(0, notesBefore.subtract(cost).compareTo(books.balanceExact(player, "note")));
+        assertTrue(cost.compareTo(BigDecimal.ONE) < 0);
         assertEquals(BigInteger.ONE, books.balance(player, "diamond"));
         assertEquals(otherDiamonds, books.balance(other, "diamond"));
         assertEquals(reserve.subtract(BigInteger.ONE), books.supply("diamond").reserve());
@@ -71,19 +73,21 @@ class QuoteAndReserveTest {
     }
 
     @Test
-    void sellingCopperMakesCopperCheaperAndThereIsNoParLeveller() {
+    void aCopperTradeDoesNotAddItsOwnNudgeOnTopOfTheNoteQuote() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
-        BigDecimal before = books.unitsPer("note", "diamond");
-        assertEquals(0, BigDecimal.ONE.compareTo(before));
-        books.creditUnbacked(player, "note", new BigInteger("1000"));
-        BigDecimal after = books.unitsPer("note", "diamond");
-        assertTrue(after.compareTo(before) > 0);
-        assertTrue(after.compareTo(new BigDecimal("1.02")) < 0);
-        assertNotEquals(0, new BigDecimal("2").compareTo(after));
+        books.creditUnbacked(player, "note", new BigInteger("2000"));
+        books.deposit(player, "copper", new BigInteger("5000000"));
+        assertEquals(0, BigDecimal.ONE.compareTo(books.unitsPer("diamond", "note")));
 
-        books.retire(player, "note", new BigInteger("1"));
-        assertTrue(books.unitsPer("note", "diamond").compareTo(after) < 0);
-        assertTrue(books.unitsPer("note", "diamond").compareTo(BigDecimal.ONE) > 0);
+        assertTrue(books.exchange(player, "copper", "diamond", BigInteger.ONE).success());
+
+        BigDecimal copperQuote = books.unitsPer("copper", "diamond");
+        assertTrue(copperQuote.compareTo(new BigDecimal("1000")) > 0);
+        BigDecimal reserves = books.supply("diamond").reserveExact()
+                .add(books.supply("copper").reserveExact().divide(copperQuote, 8, java.math.RoundingMode.HALF_UP));
+        BigDecimal expected = reserves.divide(books.supply("note").liabilityExact(), 4, java.math.RoundingMode.HALF_UP);
+        assertEquals(0, expected.compareTo(books.unitsPer("diamond", "note")));
+        assertTrue(BigDecimal.ONE.subtract(expected).abs().compareTo(new BigDecimal("0.01")) < 0);
     }
 
     @Test
@@ -166,29 +170,31 @@ class QuoteAndReserveTest {
         BankBooks loaded = BankBooks.fromJson(root.toString(), BankConfig.defaults());
 
         assertEquals(0, new BigDecimal("1000").compareTo(loaded.unitsPer("copper", "diamond")));
-        assertEquals(0, BigDecimal.ONE.compareTo(loaded.unitsPer("note", "diamond")));
+        assertNull(loaded.unitsPer("note", "diamond"));
+        assertNull(loaded.unitsPer("diamond", "note"));
         JsonObject plain = JsonParser.parseString(BankUiSnapshot.json(loaded, player, false, "savings", false)).getAsJsonObject();
         JsonObject admin = JsonParser.parseString(BankUiSnapshot.json(loaded, player, true, "management", false)).getAsJsonObject();
         assertEquals("1000", plain.get("copperPerDiamond").getAsString());
-        assertEquals("1", plain.get("diamondsPerNote").getAsString());
+        assertFalse(plain.has("diamondsPerNote"));
         assertEquals("1000", admin.get("copperPerDiamond").getAsString());
-        assertEquals("1", admin.get("diamondsPerNote").getAsString());
+        assertFalse(admin.has("diamondsPerNote"));
         assertEquals("management", admin.get("page").getAsString());
         assertTrue(admin.get("admin").getAsBoolean());
         assertFalse(plain.get("admin").getAsBoolean());
     }
 
     @Test
-    void printedNotesKeepTheOldImpliedNoteQuoteWhenTheStoredQuoteIsMissing() {
+    void aStoredVolumeNudgeIsNotKeptWhenTheBooksAreReadAgain() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         books.creditUnbacked(player, "note", new BigInteger("1000"));
         JsonObject root = JsonParser.parseString(books.toJson()).getAsJsonObject();
-        root.remove("liveCopperPerDiamond");
-        root.remove("liveNotesPerDiamond");
+        root.addProperty("liveNotesPerDiamond", "9");
+        root.addProperty("diamondsPerNote", "9");
 
         BankBooks loaded = BankBooks.fromJson(root.toString(), BankConfig.defaults());
 
-        assertEquals(0, new BigDecimal("2").compareTo(loaded.unitsPer("note", "diamond")));
+        assertEquals(0, new BigDecimal("2").compareTo(loaded.unitsPer("diamond", "note")));
+        assertEquals(0, new BigDecimal("0.5").compareTo(loaded.unitsPer("note", "diamond")));
         assertEquals(0, new BigDecimal("1000").compareTo(loaded.unitsPer("copper", "diamond")));
     }
 }

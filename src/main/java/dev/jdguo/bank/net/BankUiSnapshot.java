@@ -35,7 +35,7 @@ public final class BankUiSnapshot {
         putQuote(o, "copperPerDiamond", quoted(books, "copper", "diamond"));
         CurrencyDef centralNote = books.primaryVirtual();
         if (centralNote != null) {
-            putQuote(o, "diamondsPerNote", quoted(books, "diamond", centralNote.id()));
+            putDiamondsPerNote(o, books, centralNote.id());
         }
         JsonArray currencies = new JsonArray();
         JsonArray accounts = new JsonArray();
@@ -48,10 +48,14 @@ public final class BankUiSnapshot {
             row.addProperty("balance", shown);
             // rate / unitsPerDiamond: units of this currency for one numeraire or one diamond.
             // diamondsPerNote, on the central note only: diamonds for one 银行券.
-            putQuote(row, "rate", quoted(books, def.id(), books.numeraire()));
-            putQuote(row, "unitsPerDiamond", quoted(books, def.id(), "diamond"));
-            if (centralNote != null && def.id().equals(centralNote.id())) {
-                putQuote(row, "diamondsPerNote", quoted(books, "diamond", def.id()));
+            boolean officialNote = centralNote != null && def.id().equals(centralNote.id());
+            if (officialNote) {
+                putStoredQuote(row, "rate", quoted(books, def.id(), books.numeraire()));
+                putStoredQuote(row, "unitsPerDiamond", quoted(books, def.id(), "diamond"));
+                putDiamondsPerNote(row, books, def.id());
+            } else {
+                putQuote(row, "rate", quoted(books, def.id(), books.numeraire()));
+                putQuote(row, "unitsPerDiamond", quoted(books, def.id(), "diamond"));
             }
             currencies.add(row);
             JsonObject account = new JsonObject();
@@ -185,6 +189,22 @@ public final class BankUiSnapshot {
             return null;
         }
         return rate;
+    }
+
+    /** Official 「1 银行券 = xxx 钻石」, including 0. Omitted only when no notes are outstanding. */
+    private static void putDiamondsPerNote(JsonObject row, BankBooks books, String noteId) {
+        BigDecimal quote = books.unitsPer("diamond", noteId);
+        if (quote == null) {
+            return;
+        }
+        row.addProperty("diamondsPerNote", Money.stored(quote));
+    }
+
+    private static void putStoredQuote(JsonObject row, String key, BigDecimal rate) {
+        if (rate == null || rate.signum() <= 0) {
+            return;
+        }
+        row.addProperty(key, Money.stored(rate));
     }
 
     private static void putQuote(JsonObject row, String key, BigDecimal rate) {
