@@ -65,6 +65,7 @@ public final class BankUiService {
             case "deposit-transfer" -> depositTransfer(player, books, parts);
             case "note-create" -> create(player, books, parts);
             case "note-switch" -> switchRegime(player, books, parts);
+            case "note-policy", "note-reserve-switch", "note-recovery-return" -> clearingAction(player, parts);
             case "note-issue" -> issue(player, books, parts, false);
             case "note-unbacked", "issue-unbacked" -> issue(player, books, parts, true);
             case "note-retire" -> retire(player, books, parts);
@@ -98,6 +99,34 @@ public final class BankUiService {
         if (BankUiNetwork.session(player) != null) {
             BankUiNetwork.sync(player);
         }
+    }
+
+    private static void clearingAction(ServerPlayerEntity player, String[] parts) {
+        try {
+            TxResult result;
+            if ("note-policy".equals(parts[0]) && parts.length == 5) {
+                NoteRegime regime = NoteRegime.valueOf(parts[1].toUpperCase(java.util.Locale.ROOT));
+                BigDecimal target = exactPositive(parts[2]), lower = exactPositive(parts[3]), upper = exactPositive(parts[4]);
+                result = BankRuntime.transact(book -> book.setPersonalPolicy(player.getUuid(), regime, target, lower, upper));
+            } else if ("note-reserve-switch".equals(parts[0]) && parts.length == 2) {
+                result = BankRuntime.transact(book -> book.switchPersonalReserve(player.getUuid(), parts[1]));
+            } else if ("note-recovery-return".equals(parts[0]) && parts.length == 2) {
+                BigDecimal quantity = exactPositive(parts[1]);
+                result = BankRuntime.transact(book -> book.returnRecoveredPersonal(player.getUuid(), quantity));
+            } else throw new IllegalArgumentException("arguments");
+            player.sendMessage(net.minecraft.text.Text.literal(result.success()
+                    ? "设置已保存。" : "未执行：" + result.code()), false);
+        } catch (IllegalArgumentException invalid) {
+            player.sendMessage(net.minecraft.text.Text.literal("参数无效，请使用正数（最多四位小数），区间下限 ≤ 目标 ≤ 上限。"), false);
+        }
+    }
+
+    private static BigDecimal exactPositive(String text) {
+        if (text == null || text.length() > 40) throw new IllegalArgumentException("amount");
+        BigDecimal value = new BigDecimal(text);
+        if (value.signum() <= 0 || value.scale() > 4 || value.precision() > 32 || value.scale() < 0)
+            throw new IllegalArgumentException("amount");
+        return value;
     }
 
     private static void page(ServerPlayerEntity player, BankUiNetwork.Session session, String[] parts) {
@@ -554,13 +583,7 @@ public final class BankUiService {
         if (amount == null) {
             return;
         }
-        Redemption result = books.redeemPersonal(player.getUuid(), parts[1], amount, parts[2]);
-        if (!result.success()) {
-            tell(player, BankPhrases.redeemRefusal(result));
-            return;
-        }
-        BankRuntime.save();
-        tell(player, BankPhrases.noteRedeem(result, books, player.getUuid()));
+        PersonalRedemptionService.redeem(player, parts[1], new BigDecimal(amount));
     }
 
     private static void bankrupt(ServerPlayerEntity player, BankBooks books, BankUiNetwork.Session session) {
@@ -581,11 +604,20 @@ public final class BankUiService {
         if (parts.length < 2) {
             return;
         }
-        BigInteger amount = amount(player, parts[1], null, null);
-        if (amount == null) {
+        if (deposit) {
+            try {
+                BigDecimal quantity = exactPositive(parts[1]);
+                TxResult posted = BankRuntime.transact(book -> book.depositPersonalReserveExact(player.getUuid(), quantity));
+                player.sendMessage(net.minecraft.text.Text.literal(posted.success()
+                        ? "准备金已存入 " + quantity.toPlainString() + "。" : "未存入：" + posted.code()), false);
+            } catch (IllegalArgumentException invalid) {
+                player.sendMessage(net.minecraft.text.Text.literal("请输入正数，最多四位小数。"), false);
+            }
             return;
         }
-        TxResult result = books.postIssuanceReserve(player.getUuid(), amount, deposit);
+        BigInteger amount = amount(player, parts[1], null, null);
+        if (amount == null) return;
+        TxResult result = books.postIssuanceReserve(player.getUuid(), amount, false);
         if (!result.success()) {
             tellReserve(player, books, result);
             return;

@@ -797,48 +797,13 @@ public final class BankCommands {
         } catch (RuntimeException error) {
             return fail(source, BankPhrases.amountProblem(error.getMessage()));
         }
-        UUID player = source.getPlayerOrThrow().getUuid();
-        Redemption result = books().redeemPersonal(player, name, amount, currency);
-        if (!result.success()) {
-            return fail(source, BankPhrases.redeemRefusal(result));
-        }
-        BankRuntime.save();
-        return ok(source, BankPhrases.noteRedeem(result, books(), player));
+        return dev.jdguo.bank.net.PersonalRedemptionService.redeem(source.getPlayerOrThrow(), name,
+                new BigDecimal(amount)) ? 1 : 0;
     }
 
     private static int redeemPaper(ServerCommandSource source, String currency) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
-        ServerPlayerEntity player = source.getPlayerOrThrow();
-        ItemStack hand = player.getMainHandStack();
-        if (!NotePaper.tagged(hand)) {
-            return fail(source, BankPhrases.failure(BankPhrases.Kind.DEPOSIT, "not_note", null, null));
-        }
-        PresentedNote presented = NotePaper.read(hand);
-        if (presented == null) {
-            player.getInventory().setStack(player.getInventory().selectedSlot, ItemStack.EMPTY);
-            return fail(source, BankPhrases.failure(BankPhrases.Kind.DEPOSIT, "note_tampered", null, null));
-        }
-        if (presented.central()) {
-            return fail(source, BankPhrases.failure(BankPhrases.Kind.DEPOSIT, "not_note", null, null));
-        }
-        Redemption result = books().redeemPersonalPaper(
-                player.getUuid(), presented.personalNote(), presented.face(), BigInteger.valueOf(hand.getCount()), currency);
-        if ("note_spent".equals(result.code()) || "note_tampered".equals(result.code())) {
-            player.getInventory().setStack(player.getInventory().selectedSlot, ItemStack.EMPTY);
-        } else if (result.success()) {
-            int left = hand.getCount() - result.sheetsTaken().intValue();
-            if (left <= 0) {
-                player.getInventory().setStack(player.getInventory().selectedSlot, ItemStack.EMPTY);
-            } else {
-                hand.setCount(left);
-            }
-        }
-        if (!result.success()) {
-            return fail(source, "note_spent".equals(result.code()) || "note_tampered".equals(result.code())
-                    ? BankPhrases.failure(BankPhrases.Kind.DEPOSIT, result.code(), null, null)
-                    : BankPhrases.redeemRefusal(result));
-        }
-        BankRuntime.save();
-        return ok(source, BankPhrases.noteRedeem(result, books(), player.getUuid()));
+        dev.jdguo.bank.net.PersonalRedemptionService.paperInstructions(source.getPlayerOrThrow());
+        return 0;
     }
 
     private static int noteRate(ServerCommandSource source, String name) throws com.mojang.brigadier.exceptions.CommandSyntaxException {

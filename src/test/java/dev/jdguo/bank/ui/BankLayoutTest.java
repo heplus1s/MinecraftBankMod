@@ -52,6 +52,8 @@ class BankLayoutTest {
                     BankLayout.PlayerControls controls = BankLayout.playerControls(height, rows);
                     assertTrue(controls.drawerY() >= BankLayout.contentTop(), controls.toString());
                     assertTrue(controls.amountBelowDrawers(rows), width + "x" + height + " rows " + rows + " " + controls);
+                    assertTrue(controls.quickY() >= controls.fieldY() + 20, "input border needs a four-pixel gap");
+                    assertTrue(controls.actionY() >= controls.quickY() + 22, "shortcut row needs a four-pixel gap");
                     assertTrue(controls.actionY() + 18 <= BankLayout.contentBottom(height), controls.toString());
                     int openRoom = controls.fieldY() - 12 - (controls.drawerY() + (rows - 1) * 24);
                     assertTrue(openRoom >= 36, "open drawer room " + openRoom + " " + controls);

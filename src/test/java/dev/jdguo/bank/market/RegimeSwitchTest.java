@@ -95,7 +95,7 @@ class RegimeSwitchTest {
 
         JsonObject snapshot = JsonParser.parseString(
                 BankUiSnapshot.json(fresh, issuer, false, "savings", false)).getAsJsonObject();
-        assertEquals(3, snapshot.getAsJsonArray("anchors").size());
+        assertEquals(4, snapshot.getAsJsonArray("anchors").size());
         assertEquals("实物货币", snapshot.getAsJsonArray("anchors").get(0).getAsJsonObject().get("group").getAsString());
         assertEquals("发行货币", snapshot.getAsJsonArray("anchors").get(2).getAsJsonObject().get("group").getAsString());
         assertEquals("银行券", snapshot.getAsJsonArray("anchors").get(2).getAsJsonObject().get("name").getAsString());
@@ -119,7 +119,7 @@ class RegimeSwitchTest {
     }
 
     @Test
-    void hardSwitchIsRefusedWhenTheLiveQuoteHasLeftFace() {
+    void ownershipTradingDoesNotArtificiallyDisqualifyHardSwitch() {
         BankBooks books = ready(new BigInteger("100"), new BigInteger("20"));
         books.deposit(buyer, "copper", new BigInteger("20000"));
         books.creditHeld(buyer, "note", new BigInteger("500"));
@@ -127,14 +127,12 @@ class RegimeSwitchTest {
         var bought = books.buyPersonalNote(buyer, "泉", new BigInteger("20"));
         assertTrue(bought.success(), bought.code());
         PersonalNote note = books.personalNote(issuer);
-        assertTrue(books.personalDiamondPrice(note).compareTo(BigDecimal.ONE) > 0);
+        assertEquals(0, books.personalDiamondPrice(note).compareTo(BigDecimal.ONE));
 
         RegimePreview refused = books.switchPersonalRegime(issuer, NoteRegime.HARD, null);
 
-        assertFalse(refused.allowed(), refused.reason());
-        assertEquals(NoteRegime.FLOAT, note.regime());
-        assertTrue(refused.reason().contains("现价"));
-        assertTrue(refused.reason().contains("面额"));
+        assertTrue(refused.allowed(), refused.reason());
+        assertEquals(NoteRegime.HARD, note.regime());
         assertEquals(new BigInteger("100"), note.locked());
     }
 

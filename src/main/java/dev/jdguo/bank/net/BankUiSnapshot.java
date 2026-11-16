@@ -127,7 +127,13 @@ public final class BankUiSnapshot {
             CurrencyDef note = books.primaryVirtual();
             String noteId = note == null ? "note" : note.id();
             String noteName = note == null || note.name() == null || note.name().isBlank() ? "银行券" : note.name();
-            institutions.add(institution("商店经营账户", noteName, books.shopOperating(noteId)));
+            institutions.add(institutionExact("商店经营账户", noteName, books.shopOperatingExact(noteId)));
+            for (PersonalNote personal : books.personalNotes()) {
+                BigDecimal held = books.shopOperatingExact("personal:" + personal.id());
+                if (held.signum() > 0) {
+                    institutions.add(institutionExact("商店经营账户", personal.name(), held));
+                }
+            }
             institutions.add(institution("土地出让账户", noteName, books.landGrant(noteId)));
             for (CurrencyDef def : books.currencies()) {
                 if (def.id().equals(noteId)) {
@@ -136,6 +142,19 @@ public final class BankUiSnapshot {
                 BigInteger held = books.landGrant(def.id());
                 if (held.signum() > 0) {
                     institutions.add(institution("土地出让账户", def.name(), held));
+                }
+            }
+            for (String account : java.util.List.of("shop", "land")) {
+                for (var asset : books.systemSettlementAssets(account).entrySet()) {
+                    var def = books.currency(asset.getKey());
+                    String title = "shop".equals(account) ? "商店结算资产" : "土地结算资产";
+                    JsonObject row = institutionExact(title, def == null ? asset.getKey() : def.name(), asset.getValue());
+                    BigDecimal rate = "note".equals(asset.getKey()) ? BigDecimal.ONE : books.unitsPer("note", asset.getKey());
+                    if (rate != null && rate.signum() > 0) {
+                        row.addProperty("detail", row.get("detail").getAsString() + "（估值 "
+                                + Money.stored(asset.getValue().multiply(rate, FxMath.MC)) + " 银行券，非现金余额）");
+                    }
+                    institutions.add(row);
                 }
             }
             o.add("institutions", institutions);
@@ -159,7 +178,17 @@ public final class BankUiSnapshot {
             }
         }
         o.add("notes", notes);
-        o.add("anchors", allowedAnchors());
+        JsonArray anchorOptions = allowedAnchors();
+        for (PersonalNote candidate : books.personalNotes()) {
+            if (candidate.bankrupt() || candidate.issuer().equals(player)) continue;
+            JsonObject option = new JsonObject();
+            option.addProperty("id", "personal:" + candidate.id());
+            option.addProperty("name", candidate.name());
+            option.addProperty("label", candidate.name());
+            option.addProperty("group", "个人发行货币");
+            anchorOptions.add(option);
+        }
+        o.add("anchors", anchorOptions);
         PersonalNote own = books.personalNote(player);
         if (own != null) {
             o.addProperty("personal", own.name());
@@ -254,6 +283,42 @@ public final class BankUiSnapshot {
         row.addProperty("centralRequired", whole(books.requiredCentralReserve(note)));
         putIssuanceReserve(row, books, player, note);
         row.addProperty("circulation", whole(note.circulation()));
+        // Series-wide totals; reserves back liabilities, not additional money supply.
+        row.addProperty("m0", whole(books.personalM0(note)));
+        row.addProperty("m1", Money.stored(books.personalActiveExact(note)));
+        row.addProperty("m2", Money.stored(books.personalActiveExact(note)));
+        row.addProperty("m2Basis", "当前无独立准货币账户，M2 与 M1 相同");
+        row.addProperty("reserveAmount", Money.stored(books.effectiveBackingExact(note)));
+        row.addProperty("reserveCurrency", note.reserveCurrency());
+        row.addProperty("clearingEnabled", true);
+        row.addProperty("reserveChanging", books.personalReserveSwitching(note.id()));
+        row.addProperty("recovered", Money.stored(books.personalRecovered(note.id())));
+        var policy = books.personalPolicy(note.id());
+        row.addProperty("policyTarget", policy.target().toPlainString());
+        row.addProperty("pegLower", policy.lower().toPlainString());
+        row.addProperty("pegUpper", policy.upper().toPlainString());
+        BigDecimal active = books.personalActiveExact(note);
+        if (active.signum() > 0 && !books.personalReserveSwitching(note.id())) {
+            row.addProperty("supportRate", books.effectiveBackingExact(note).divide(active, FxMath.MC).stripTrailingZeros().toPlainString());
+        }
+        JsonArray history = new JsonArray();
+        for (JsonObject event : books.personalSettlements(note.id(), 5)) {
+            JsonObject item = new JsonObject();
+            item.addProperty("time", java.time.Instant.ofEpochMilli(event.get("timestamp").getAsLong()).toString());
+            boolean outbound = event.has("kind") && "personal-outbound".equals(event.get("kind").getAsString());
+            boolean reversed = "reversed".equals(event.get("status").getAsString());
+            StringBuilder details = new StringBuilder(reversed ? "已撤销：" : outbound ? "反向结算：" : "兑付结算：");
+            for (var entry : event.getAsJsonArray("legs")) {
+                JsonObject leg = entry.getAsJsonObject();
+                details.append(leg.get("notes").getAsString()).append(" 币 → ")
+                        .append(leg.get("reserve").getAsString()).append(" ").append(leg.get("anchor").getAsString()).append("；");
+            }
+            details.append(outbound ? "系统支出 " : event.has("delivery") ? "个人储蓄入账 " : "系统入账 ").append(event.get("amount").getAsString()).append(" ")
+                    .append(event.get("currency").getAsString());
+            item.addProperty("summary", details.toString());
+            history.add(item);
+        }
+        row.add("settlements", history);
         row.addProperty("holding", whole(books.personalHolding(note.id(), player)));
         row.addProperty("redemptionPaused", note.redemptionPaused());
         row.addProperty("face", whole(note.par()));
@@ -350,6 +415,13 @@ public final class BankUiSnapshot {
             return null;
         }
         return fraction.multiply(new BigDecimal("100")).stripTrailingZeros().toPlainString() + "%";
+    }
+
+    private static JsonObject institutionExact(String account, String currency, BigDecimal amount) {
+        JsonObject row = new JsonObject();
+        row.addProperty("name", account);
+        row.addProperty("detail", currency + "  " + Money.stored(amount));
+        return row;
     }
 
     private static JsonObject institution(String account, String currency, BigInteger amount) {

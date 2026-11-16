@@ -30,6 +30,15 @@ public final class BankUiNetwork {
     private BankUiNetwork() {}
 
     public static void register() {
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register(server -> {
+            if (BankRuntime.state == null || server.getTicks() % 20 != 0) return;
+            long checkpoint = BankRuntime.books().checkpoint();
+            for (var entry : sessions.entrySet()) {
+                if (entry.getValue().lastCheckpoint == checkpoint) continue;
+                ServerPlayerEntity online = server.getPlayerManager().getPlayer(entry.getKey());
+                if (online != null && wantsUi(online)) sync(online);
+            }
+        });
         ServerPlayNetworking.registerGlobalReceiver(HELLO, (server, player, handler, buf, response) -> {
             final int version;
             try { version = buf.readVarInt(); } catch (RuntimeException invalid) { return; }
@@ -78,6 +87,7 @@ public final class BankUiNetwork {
         PacketByteBuf buf = PacketByteBufs.create();
         buf.writeString(json, 32767);
         ServerPlayNetworking.send(player, SYNC, buf);
+        session.lastCheckpoint = books.checkpoint();
     }
 
     static Session session(ServerPlayerEntity player) {
@@ -93,6 +103,7 @@ public final class BankUiNetwork {
         final boolean admin;
         String page = "savings";
         boolean confirm;
+        long lastCheckpoint = -1;
 
         Session(String outlet, boolean admin) {
             this.outlet = outlet;

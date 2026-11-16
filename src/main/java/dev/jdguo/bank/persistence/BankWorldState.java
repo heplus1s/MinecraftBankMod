@@ -18,7 +18,7 @@ import java.nio.file.StandardCopyOption;
 public final class BankWorldState extends PersistentState {
     public static final String ID = "bankmod";
 
-    private final BankBooks books;
+    private BankBooks books;
 
     public BankWorldState(BankBooks books) {
         this.books = books;
@@ -26,6 +26,32 @@ public final class BankWorldState extends PersistentState {
 
     public BankBooks books() {
         return books;
+    }
+
+    /** Publishes a prepared ledger only after its complete checkpoint is durable. */
+    public boolean commit(BankBooks candidate) {
+        Path path = backupPath(BankRuntime.server);
+        if (path == null) return false;
+        try {
+            Files.createDirectories(path.getParent());
+            Path tmp = path.resolveSibling(path.getFileName() + ".transaction.tmp");
+            byte[] bytes = candidate.toJson().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            try (var channel = java.nio.channels.FileChannel.open(tmp,
+                    java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING,
+                    java.nio.file.StandardOpenOption.WRITE)) {
+                var buffer = java.nio.ByteBuffer.wrap(bytes);
+                while (buffer.hasRemaining()) channel.write(buffer);
+                channel.force(true);
+            }
+            // Never silently downgrade economic commits to a non-atomic replacement.
+            Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            books = candidate;
+            markDirty();
+            return true;
+        } catch (IOException error) {
+            BankRuntime.LOGGER.error("银行事务未提交，保留原账本", error);
+            return false;
+        }
     }
 
     public static BankWorldState get(MinecraftServer server) {

@@ -50,7 +50,12 @@ public final class ShopOperatingAccount {
 
     /** Four-decimal balance expected by the shop's live bridge. */
     public BigDecimal balance(String currency) {
-        return BankRuntime.books().shopOperatingExact(currency);
+        if (currency != null && currency.startsWith("personal:")) {
+            try { return BankRuntime.books().personalSystemCapacity(UUID.fromString(currency.substring(9)), "shop"); }
+            catch (IllegalArgumentException invalid) { return BigDecimal.ZERO; }
+        }
+        return BankRuntime.books().shopOperatingExact(currency)
+                .add(BankRuntime.books().systemSettlementBalance("shop", currency));
     }
 
     /** Four-decimal player balance; never truncate fractional spending power. */
@@ -69,6 +74,21 @@ public final class ShopOperatingAccount {
         if (!"note".equals(currency) && !noteId.equals(currency)) return BigDecimal.ZERO;
         return books.balanceExact(player, noteId);
     }
+
+    /** Receipt-backed durable payment used by the integrated shop. */
+    public TxResult transferReferenced(UUID player, String currency, BigDecimal amount, boolean playerPaysShop, String reference) {
+        return BankRuntime.transact(books -> books.transferShopReferenced(player, currency, amount, playerPaysShop, reference));
+    }
+
+    public TxResult rollback(String reference) {
+        return BankRuntime.transact(books -> books.rollbackShopPayment(reference));
+    }
+
+    public String receiptStatus(String reference) {
+        return BankRuntime.state == null ? "unavailable" : BankRuntime.books().settlementStatus(reference);
+    }
+
+    public boolean durablePayments() { return true; }
 
     /**
      * Moves whole units inside the savings pool.

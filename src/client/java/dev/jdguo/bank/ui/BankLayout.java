@@ -241,14 +241,14 @@ public final class BankLayout {
         int drawerY = contentTop() + 26;
         int openSlot = 20 + 72;
         int fieldY = drawerY + (rows - 1) * 24 + openSlot + 12;
-        int quickY = fieldY + 16;
-        int actionY = quickY + 18;
+        int quickY = fieldY + 20;
+        int actionY = quickY + 22;
         if (actionY + 18 > bottom) {
             int overflow = actionY + 18 - bottom;
             openSlot = Math.max(38, openSlot - overflow);
             fieldY = drawerY + (rows - 1) * 24 + openSlot + 12;
-            quickY = fieldY + 16;
-            actionY = quickY + 18;
+            quickY = fieldY + 20;
+            actionY = quickY + 22;
         }
         if (actionY + 18 > bottom) {
             int lift = Math.min(actionY + 18 - bottom, Math.max(0, drawerY - contentTop()));

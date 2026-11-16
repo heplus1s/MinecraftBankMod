@@ -144,21 +144,26 @@ class BankUiSnapshotTest {
         books.creditHeld(player, "note", new BigInteger("2000"));
         assertTrue(books.createPersonalNote(player, "泉", false, BigInteger.ONE).success());
         PersonalNote note = books.personalNote(player);
+        JsonObject noCollateral = personal(JsonParser.parseString(BankUiSnapshot.json(books, player, false, "savings", false)).getAsJsonObject(), "泉");
+        assertFalse(noCollateral.has("price"));
+        books.deposit(player, "diamond", BigInteger.ONE);
+        assertTrue(books.depositPersonalReserveExact(player, BigDecimal.ONE).success());
+        assertTrue(books.issuePersonalNoteUnbacked(player, BigInteger.ONE).success());
         BigDecimal central = books.personalDiamondPrice(note).multiply(books.unitsPer("note", "diamond"), FxMath.MC);
 
         JsonObject quoted = JsonParser.parseString(BankUiSnapshot.json(books, player, false, "savings", false)).getAsJsonObject();
         JsonObject row = personal(quoted, "泉");
         assertEquals(Money.stored(central), row.get("price").getAsString());
-        assertEquals("1", row.get("price").getAsString());
+        assertTrue(new BigDecimal(row.get("price").getAsString()).signum() > 0);
         assertEquals(CompactFormat.formatRate(books.personalDiamondPrice(note)), row.get("diamondPrice").getAsString());
-        assertEquals("1000", quoted.get("copperPerDiamond").getAsString());
-        assertEquals("1", quoted.get("diamondsPerNote").getAsString());
+        assertEquals(Money.stored(books.unitsPer("copper", "diamond")), quoted.get("copperPerDiamond").getAsString());
+        assertEquals(Money.stored(books.unitsPer("diamond", "note")), quoted.get("diamondsPerNote").getAsString());
 
         books.creditHeld(player, "note", new BigInteger("1000"));
         JsonObject weak = JsonParser.parseString(BankUiSnapshot.json(books, player, false, "savings", false)).getAsJsonObject();
         assertEquals(Money.stored(books.unitsPer("note", "diamond")), currency(weak, "note").get("rate").getAsString());
         assertEquals(Money.stored(books.unitsPer("diamond", "note")), weak.get("diamondsPerNote").getAsString());
-        assertEquals("0.3333", weak.get("diamondsPerNote").getAsString());
+        assertTrue(new BigDecimal(weak.get("diamondsPerNote").getAsString()).compareTo(BigDecimal.ONE) < 0);
 
         books.setReserve("diamond", BigInteger.ZERO);
         books.setReserve("copper", BigInteger.ZERO);

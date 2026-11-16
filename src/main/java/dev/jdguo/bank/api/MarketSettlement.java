@@ -23,15 +23,31 @@ public final class MarketSettlement {
     private MarketSettlement() {}
 
     public static TxResult transfer(UUID from, UUID to, String currency, BigInteger amount, String reference) {
-        return postReferenced(reference, "transfer|" + from + "|" + to + "|" + currency + "|" + amount, amount, books -> books.transferSavings(from, to, currency, amount));
+        return postReferenced(reference, "transfer|" + from + "|" + to + "|" + currency + "|" + amount, amount, books -> currency != null && currency.startsWith("personal:")
+                ? books.transferPersonalExact(from, to, currency, new BigDecimal(amount))
+                : books.transferSavings(from, to, currency, amount));
     }
 
     public static TxResult creditLandGrant(UUID payer, String currency, BigInteger amount, String reference) {
-        return postReferenced(reference, "grant|" + payer + "|" + currency + "|" + amount, amount, books -> books.creditLandGrant(payer, currency, amount));
+        return postReferenced(reference, "grant|" + payer + "|" + currency + "|" + amount, amount, books -> currency != null && currency.startsWith("personal:")
+                ? books.settlePersonalToSystem(payer, UUID.fromString(currency.substring(9)), new BigDecimal(amount), "land", reference)
+                : books.creditLandGrant(payer, currency, amount));
     }
 
     public static TxResult refundLandGrant(UUID payer, String currency, BigInteger amount, String reference) {
-        return postReferenced(reference, "refund-grant|" + payer + "|" + currency + "|" + amount, amount, books -> books.refundLandGrant(payer, currency, amount));
+        return postReferenced(reference, "refund-grant|" + payer + "|" + currency + "|" + amount, amount, books -> currency != null && currency.startsWith("personal:")
+                ? reverseGrant(books, payer, currency, amount, reference)
+                : books.refundLandGrant(payer, currency, amount));
+    }
+
+    private static TxResult reverseGrant(BankBooks books, UUID payer, String currency, BigInteger amount, String reference) {
+        if (reference == null || !reference.startsWith("refund:")) return TxResult.fail("bad_reference", "");
+        String original = "market-pay:" + reference.substring("refund:".length());
+        var receipt = books.personalSettlementReceipt(original);
+        String expected = payer + "|" + currency.substring(9) + "|" + amount + "|land";
+        if (receipt == null || !expected.equals(receipt.get("signature").getAsString()))
+            return TxResult.fail("reference_conflict", "Refund does not match original payment");
+        return books.reversePersonalSettlement(original);
     }
 
     public static boolean externalPersonalMarket() {
@@ -77,13 +93,8 @@ public final class MarketSettlement {
         if (!validReference(reference)) {
             return TxResult.fail("bad_reference", "");
         }
-        return read(books -> {
-            TxResult result = books.postMarketMovement(reference, fingerprint, amount, () -> movement.apply(books));
-            if (result.success() && !BankRuntime.saveMarket()) {
-                return TxResult.fail("bank_pending", "Could not persist the receipt");
-            }
-            return result;
-        });
+        return BankRuntime.transact(books ->
+                books.postMarketMovement(reference, fingerprint, amount, () -> movement.apply(books)));
     }
 
     private static TxResult post(String reference, Movement movement) {
