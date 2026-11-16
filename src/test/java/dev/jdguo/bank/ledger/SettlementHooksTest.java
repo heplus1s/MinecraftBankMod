@@ -284,6 +284,56 @@ class SettlementHooksTest {
     }
 
     @Test
+    void decimalShopReadHooksMatchSettlementAndSurviveReload() throws Exception {
+        BankBooks books = BankBooks.create(BankConfig.defaults());
+        books.creditHeld(buyer, "note", new java.math.BigDecimal("1.0000"));
+        BankRuntime.state = new BankWorldState(books);
+        try {
+            Class<?> type = Class.forName("dev.jdguo.bank.market.ShopOperatingAccount");
+            Object account = type.getMethod("get").invoke(null);
+            Method playerBalance = type.getMethod("playerBalance", UUID.class, String.class);
+            Method balance = type.getMethod("balance", String.class);
+            Method transfer = type.getMethod("transfer", UUID.class, String.class,
+                    java.math.BigDecimal.class, boolean.class);
+            transfer.invoke(account, buyer, "note", new java.math.BigDecimal("0.0600"), true);
+            assertEquals(0, new java.math.BigDecimal("0.9400").compareTo(
+                    (java.math.BigDecimal) playerBalance.invoke(account, buyer, "note")));
+            assertEquals(0, new java.math.BigDecimal("0.0600").compareTo(
+                    (java.math.BigDecimal) balance.invoke(account, "note")));
+            // This is the shop's affordability check: an integer fallback incorrectly returns zero.
+            assertTrue(((java.math.BigDecimal) playerBalance.invoke(account, buyer, "note"))
+                    .compareTo(new java.math.BigDecimal("0.0600")) >= 0);
+            assertTrue(books.createPersonalNote(buyer, "Tst", false, BigInteger.ONE).success());
+            UUID series = books.personalNote(buyer).id();
+            books.setPersonalReserve(buyer, "diamond", new BigInteger("3"));
+            assertTrue(books.issuePersonalNote(buyer, new BigInteger("2")).success());
+            String personal = "personal:" + series;
+            transfer.invoke(account, buyer, personal, new java.math.BigDecimal("1.5000"), true);
+            assertEquals(0, new java.math.BigDecimal("0.5000").compareTo(
+                    (java.math.BigDecimal) playerBalance.invoke(account, buyer, personal)));
+            assertEquals(0, new java.math.BigDecimal("1.5000").compareTo(
+                    (java.math.BigDecimal) balance.invoke(account, personal)));
+            BankRuntime.state = new BankWorldState(BankBooks.fromJson(books.toJson(), BankConfig.defaults()));
+            assertEquals(0, new java.math.BigDecimal("0.9400").compareTo(
+                    (java.math.BigDecimal) playerBalance.invoke(account, buyer, "note")));
+            assertEquals(0, new java.math.BigDecimal("0.0600").compareTo(
+                    (java.math.BigDecimal) balance.invoke(account, "note")));
+            assertEquals(0, new java.math.BigDecimal("0.5000").compareTo(
+                    (java.math.BigDecimal) playerBalance.invoke(account, buyer, personal)));
+            assertEquals(0, new java.math.BigDecimal("1.5000").compareTo(
+                    (java.math.BigDecimal) balance.invoke(account, personal)));
+            Object returned = transfer.invoke(account, buyer, personal, new java.math.BigDecimal("0.2500"), false);
+            assertTrue((Boolean) returned.getClass().getMethod("success").invoke(returned));
+            assertEquals(0, new java.math.BigDecimal("0.7500").compareTo(
+                    (java.math.BigDecimal) playerBalance.invoke(account, buyer, personal)));
+            assertEquals(0, new java.math.BigDecimal("1.2500").compareTo(
+                    (java.math.BigDecimal) balance.invoke(account, personal)));
+        } finally {
+            BankRuntime.state = null;
+        }
+    }
+
+    @Test
     void publicHooksMatchTheShopAndMarketMethodLists() throws Exception {
         assertNull(ShopOperatingAccount.get());
         assertEquals("bank_not_ready", MarketSettlement.transfer(buyer, seller, "note", BigInteger.ONE, "sale:1").code());

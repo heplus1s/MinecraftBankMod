@@ -13,9 +13,13 @@ public static ShopOperatingAccount get()
 public String currencyId()
 public BigInteger balance()
 public BigInteger playerBalance(UUID player)
+public BigDecimal balance(String currency)
+public BigDecimal playerBalance(UUID player, String currency)
 public TxResult transfer(UUID player, BigInteger amount, boolean playerPaysShop)
 public TxResult transfer(UUID player, String currency, BigDecimal amount, boolean playerPaysShop)
 ```
+
+带 currency 的余额查询返回四位小数，与 transfer 使用相同币种标识。中央券经营账户小数、个人券经营账户和持有人小数余额均写入存档，旧档缺少这些字段时按零读取。
 
 四位小数的过户见 `docs/bank-hooks.md`。`currency` 为 `note` 或 `personal:<uuid>`。余额不够则整笔拒绝。
 

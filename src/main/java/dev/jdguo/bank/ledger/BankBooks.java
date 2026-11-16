@@ -1286,6 +1286,23 @@ public final class BankBooks {
         return aggregate(shopOperating, currency);
     }
 
+    /** Exact shop balance using the same currency tokens as transferShop. */
+    public BigDecimal shopOperatingExact(String currency) {
+        if (currency == null) return Money.ZERO;
+        if (currency.startsWith("personal:")) {
+            try {
+                return Money.of(shopPersonal.getOrDefault(
+                        UUID.fromString(currency.substring("personal:".length())), Money.ZERO));
+            } catch (IllegalArgumentException error) {
+                return Money.ZERO;
+            }
+        }
+        CurrencyDef note = primaryVirtual();
+        String noteId = note == null ? "note" : note.id();
+        if (!"note".equals(currency) && !noteId.equals(currency)) return Money.ZERO;
+        return Money.of(shopExact(noteId));
+    }
+
     private BigDecimal shopExact(String currency) {
         return Money.of(shopOperating(currency)).add(shopFraction.getOrDefault(currency, Money.ZERO));
     }
@@ -3610,6 +3627,17 @@ public final class BankBooks {
         interestDust.forEach((id, amount) -> dust.addProperty(id.toString(), amount.toPlainString()));
         root.add("interestDust", dust);
         writeAggregate(root, "shopOperating", shopOperating);
+        writeDust(root, "shopFraction", shopFraction);
+        JsonObject personalShop = new JsonObject();
+        shopPersonal.forEach((id, amount) -> personalShop.addProperty(id.toString(), Money.stored(amount)));
+        root.add("shopPersonal", personalShop);
+        JsonObject holderFractions = new JsonObject();
+        holdingFraction.forEach((id, row) -> {
+            JsonObject holders = new JsonObject();
+            row.forEach((holder, amount) -> holders.addProperty(holder.toString(), Money.stored(amount)));
+            holderFractions.add(id.toString(), holders);
+        });
+        root.add("holdingFraction", holderFractions);
         writeAggregate(root, "landGrant", landGrant);
         writeDust(root, "shopInterestDust", shopInterestDust);
         writeDust(root, "landInterestDust", landInterestDust);
@@ -3855,6 +3883,26 @@ public final class BankBooks {
                     .forEach(e -> books.interestDust.put(UUID.fromString(e.getKey()), new BigDecimal(e.getValue().getAsString())));
         }
         readAggregate(root, "shopOperating", books.shopOperating);
+        readDust(root, "shopFraction", books.shopFraction);
+        books.shopFraction.values().forEach(amount -> requireStoredAmount(amount, true));
+        if (root.has("shopPersonal")) {
+            root.getAsJsonObject("shopPersonal").entrySet().forEach(entry -> {
+                BigDecimal amount = Money.parse(entry.getValue().getAsString());
+                requireStoredAmount(amount, false);
+                books.shopPersonal.put(UUID.fromString(entry.getKey()), amount);
+            });
+        }
+        if (root.has("holdingFraction")) {
+            root.getAsJsonObject("holdingFraction").entrySet().forEach(entry -> {
+                Map<UUID, BigDecimal> row = new LinkedHashMap<>();
+                entry.getValue().getAsJsonObject().entrySet().forEach(holder -> {
+                    BigDecimal amount = Money.parse(holder.getValue().getAsString());
+                    requireStoredAmount(amount, true);
+                    row.put(UUID.fromString(holder.getKey()), amount);
+                });
+                books.holdingFraction.put(UUID.fromString(entry.getKey()), row);
+            });
+        }
         readAggregate(root, "landGrant", books.landGrant);
         readDust(root, "shopInterestDust", books.shopInterestDust);
         readDust(root, "landInterestDust", books.landInterestDust);
@@ -4184,6 +4232,12 @@ public final class BankBooks {
             book.remove(currency);
         } else {
             book.put(currency, next);
+        }
+    }
+
+    private static void requireStoredAmount(BigDecimal amount, boolean fraction) {
+        if (amount.signum() < 0 || (fraction && amount.compareTo(BigDecimal.ONE) >= 0)) {
+            throw new IllegalArgumentException("Invalid persisted settlement amount");
         }
     }
 

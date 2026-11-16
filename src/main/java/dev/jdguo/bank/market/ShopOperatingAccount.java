@@ -48,6 +48,28 @@ public final class ShopOperatingAccount {
         return BankRuntime.books().balance(player, currencyId());
     }
 
+    /** Four-decimal balance expected by the shop's live bridge. */
+    public BigDecimal balance(String currency) {
+        return BankRuntime.books().shopOperatingExact(currency);
+    }
+
+    /** Four-decimal player balance; never truncate fractional spending power. */
+    public BigDecimal playerBalance(UUID player, String currency) {
+        if (player == null || currency == null) return BigDecimal.ZERO;
+        BankBooks books = BankRuntime.books();
+        if (currency.startsWith("personal:")) {
+            try {
+                return books.personalHoldingExact(
+                        UUID.fromString(currency.substring("personal:".length())), player);
+            } catch (IllegalArgumentException error) {
+                return BigDecimal.ZERO;
+            }
+        }
+        String noteId = currencyId();
+        if (!"note".equals(currency) && !noteId.equals(currency)) return BigDecimal.ZERO;
+        return books.balanceExact(player, noteId);
+    }
+
     /**
      * Moves whole units inside the savings pool.
      *
