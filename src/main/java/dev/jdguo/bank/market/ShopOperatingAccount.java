@@ -79,6 +79,19 @@ public final class ShopOperatingAccount {
         return BankRuntime.transact(books -> books.transferShopReferenced(player, currency, amount, playerPaysShop, reference));
     }
 
+    /** Structured preview; no holdings, reserves, or recovered coins are changed. */
+    public String quoteIssuerPayout(UUID coin, BigDecimal centralBudget) {
+        if (BankRuntime.state == null) return "{\"success\":false,\"code\":\"bank_not_ready\"}";
+        return BankRuntime.books().quoteSystemPayout(coin, centralBudget).toString();
+    }
+
+    /** Atomically buys actually listed issuer coins and pays any remainder in central notes. */
+    public TxResult payIssuerOffer(UUID player, UUID coin, BigDecimal centralBudget,
+                                   String fingerprint, String reference) {
+        return BankRuntime.transact(books -> books.executeSystemPayout(
+                player, coin, centralBudget, fingerprint, reference));
+    }
+
     public TxResult rollback(String reference) {
         return BankRuntime.transact(books -> books.rollbackShopPayment(reference));
     }

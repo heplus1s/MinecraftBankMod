@@ -259,15 +259,19 @@ public final class BankPhrases {
     }
 
     public static Spoken settlementAccounts(BankBooks books) {
-        CurrencyDef note = books.primaryVirtual();
-        String noteId = note == null ? "note" : note.id();
-        String shopZh = "商店经营账户 " + nameZh(books, noteId) + " ×" + CompactFormat.format(books.shopOperating(noteId));
-        String shopEn = "Shop operating account " + nameEn(books, noteId) + " ×" + CompactFormat.format(books.shopOperating(noteId));
-        return line(Tone.AQUA,
-                shopZh + "。土地出让账户 " + holdingsZh(books, books::landGrant)
-                        + "。两户都是储蓄总池的分户，按活期存款计息，与发行准备金分开。",
-                shopEn + ". Land-grant account " + holdingsEn(books, books::landGrant)
-                        + ". Both are sub-accounts of the savings pool, earn demand-deposit interest, and stay apart from issuance reserves.");
+        List<String> zh = new ArrayList<>();
+        List<String> en = new ArrayList<>();
+        for (String account : List.of("shop", "land")) {
+            String zhLabel = "shop".equals(account) ? "商店经营账户" : "土地出让账户";
+            String enLabel = "shop".equals(account) ? "Shop account" : "Land account";
+            for (CurrencyDef currency : books.currencies()) {
+                BigDecimal available = books.systemAvailableBalance(account, currency.id());
+                zh.add(zhLabel + " " + nameZh(books, currency.id()) + "可用 " + available.toPlainString());
+                en.add(enLabel + " " + nameEn(books, currency.id()) + " available " + available.toPlainString());
+            }
+        }
+        return line(Tone.AQUA, String.join("；", zh) + "。两户独立记账，实物权益不是可花的央行券。",
+                String.join("; ", en) + ". Independent accounts; commodity rights are not spendable central notes.");
     }
 
     public static List<Spoken> supply(BankBooks books) {

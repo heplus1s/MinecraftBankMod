@@ -44,7 +44,7 @@ public final class RecursiveClearingRegression {
   ok(b.completeSystemPayment("one").success(),"completion replay");
   eq(b.personalSystemCapacity(top.id(),"shop"),"5");
   var reverseQuote=b.quotePersonalFromSystem(top.id(),d("5")); ok(reverseQuote.success(),"reverse quote"); eq(reverseQuote.amount(),"0.25");
-  ok(b.transferShopReferenced(z,"personal:"+top.id(),d("5"),false,"new-outbound").success(),"new reverse trade");
+  ok(b.settlePersonalFromSystem(z,top.id(),d("5"),"shop","new-outbound").success(),"legacy reverse receipt compatibility fixture");
   eq(b.personalHoldingExact(top.id(),z),"5"); eq(b.personalRecovered(top.id()),"0"); eq(b.personalRecovered(bottom.id()),"0");
   eq(b.systemSettlementBalance("shop","diamond"),"0"); b.checkInvariants();
   ok(b.transferShopReferenced(z,"personal:"+top.id(),d("5.0"),false,"new-outbound").success(),"outbound replay");

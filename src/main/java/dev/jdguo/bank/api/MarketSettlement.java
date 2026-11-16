@@ -56,6 +56,23 @@ public final class MarketSettlement {
         return BankRuntime.transact(books -> books.completeSystemPayment(reference));
     }
 
+    /** Same cash-funded payout policy for independent system accounts; never a player-market transfer. */
+    public static String quoteSystemPayout(String account, UUID coin, BigDecimal centralBudget) {
+        if (BankRuntime.state == null) return "{\"success\":false,\"code\":\"bank_not_ready\"}";
+        return BankRuntime.books().quoteSystemPayout(account, coin, centralBudget).toString();
+    }
+
+    public static TxResult executeSystemPayout(String account, UUID player, UUID coin,
+                                              BigDecimal centralBudget, String fingerprint, String reference) {
+        return BankRuntime.transact(books -> books.executeSystemPayout(
+                account, player, coin, centralBudget, fingerprint, reference));
+    }
+
+    /** Cancels only the referenced, still-escrowed payout; not a new currency purchase. */
+    public static TxResult rollbackSystemPayout(String reference) {
+        return BankRuntime.transact(books -> books.rollbackShopPayment(reference));
+    }
+
     public static boolean externalPersonalMarket() {
         return FabricLoader.getInstance().isModLoaded("marketmod");
     }
@@ -107,14 +124,9 @@ public final class MarketSettlement {
         if (!validReference(reference)) {
             return TxResult.fail("bad_reference", "Missing reference");
         }
-        if (BankRuntime.state == null) {
-            return TxResult.fail("bank_not_ready", "Ledger is not loaded");
-        }
-        TxResult result = movement.apply(BankRuntime.books());
-        if (result.success()) {
-            BankRuntime.save();
-        }
-        return result;
+        // Listing edits and fills share the same durable ledger boundary as shop
+        // on-demand subscriptions. Never expose an in-memory fill before saving it.
+        return BankRuntime.transact(movement::apply);
     }
 
     @FunctionalInterface

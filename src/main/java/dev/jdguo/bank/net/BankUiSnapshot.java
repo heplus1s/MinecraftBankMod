@@ -134,14 +134,14 @@ public final class BankUiSnapshot {
                     institutions.add(institutionExact("商店经营账户", personal.name(), held));
                 }
             }
-            institutions.add(institution("土地出让账户", noteName, books.landGrant(noteId)));
+            institutions.add(institutionExact("土地出让账户", noteName, books.landGrantExact(noteId)));
             for (CurrencyDef def : books.currencies()) {
                 if (def.id().equals(noteId)) {
                     continue;
                 }
-                BigInteger held = books.landGrant(def.id());
+                BigDecimal held = books.landGrantExact(def.id());
                 if (held.signum() > 0) {
-                    institutions.add(institution("土地出让账户", def.name(), held));
+                    institutions.add(institutionExact("土地出让账户", def.name(), held));
                 }
             }
             for (String account : java.util.List.of("shop", "land")) {

@@ -368,8 +368,18 @@ class SettlementHooksTest {
             Method transfer = market.getMethod("transfer", UUID.class, UUID.class, String.class, BigInteger.class, String.class);
             Method credit = market.getMethod("creditLandGrant", UUID.class, String.class, BigInteger.class, String.class);
             Method refund = market.getMethod("refundLandGrant", UUID.class, String.class, BigInteger.class, String.class);
+            assertNotNull(market.getMethod("quoteSystemPayout", String.class, UUID.class, BigDecimal.class));
+            assertNotNull(market.getMethod("executeSystemPayout", String.class, UUID.class, UUID.class,
+                    BigDecimal.class, String.class, String.class));
+            assertNotNull(market.getMethod("rollbackSystemPayout", String.class));
             String beforeUnreadyWrites = books.toJson();
             Method referencedShop = shopType.getMethod("transferReferenced", UUID.class, String.class, BigDecimal.class, boolean.class, String.class);
+            assertNotNull(shopType.getMethod("quoteIssuerPayout", UUID.class, BigDecimal.class));
+            Method issuerPayout = shopType.getMethod("payIssuerOffer", UUID.class, UUID.class,
+                    BigDecimal.class, String.class, String.class);
+            Object unreadyIssuerPayout = issuerPayout.invoke(account, buyer, UUID.randomUUID(),
+                    BigDecimal.ONE, "preview", "issuer-payout-test");
+            assertEquals("bank_not_ready", unreadyIssuerPayout.getClass().getMethod("code").invoke(unreadyIssuerPayout));
             assertNotNull(shopType.getMethod("completePayment", String.class));
             assertNotNull(shopType.getMethod("rollback", String.class));
             assertNotNull(shopType.getMethod("receiptStatus", String.class));
