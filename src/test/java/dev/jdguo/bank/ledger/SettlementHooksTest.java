@@ -30,6 +30,7 @@ class SettlementHooksTest {
     @AfterEach
     void detachLedger() {
         BankRuntime.state = null;
+        BankRuntime.server = null;
     }
 
     @Test
@@ -284,50 +285,62 @@ class SettlementHooksTest {
     }
 
     @Test
-    void decimalShopReadHooksMatchSettlementAndSurviveReload() throws Exception {
+    void decimalShopReadHooksMatchActualOfferCapacityAndSurviveReload() throws Exception {
         BankBooks books = BankBooks.create(BankConfig.defaults());
-        books.creditHeld(buyer, "note", new java.math.BigDecimal("1.0000"));
+        books.creditHeld(buyer, "note", new BigDecimal("1.0000"));
         BankRuntime.state = new BankWorldState(books);
+        BankRuntime.server = null;
         try {
             Class<?> type = Class.forName("dev.jdguo.bank.market.ShopOperatingAccount");
             Object account = type.getMethod("get").invoke(null);
             Method playerBalance = type.getMethod("playerBalance", UUID.class, String.class);
             Method balance = type.getMethod("balance", String.class);
-            Method transfer = type.getMethod("transfer", UUID.class, String.class,
-                    java.math.BigDecimal.class, boolean.class);
-            transfer.invoke(account, buyer, "note", new java.math.BigDecimal("0.0600"), true);
-            assertEquals(0, new java.math.BigDecimal("0.9400").compareTo(
-                    (java.math.BigDecimal) playerBalance.invoke(account, buyer, "note")));
-            assertEquals(0, new java.math.BigDecimal("0.0600").compareTo(
-                    (java.math.BigDecimal) balance.invoke(account, "note")));
-            // This is the shop's affordability check: an integer fallback incorrectly returns zero.
-            assertTrue(((java.math.BigDecimal) playerBalance.invoke(account, buyer, "note"))
-                    .compareTo(new java.math.BigDecimal("0.0600")) >= 0);
+            Method transfer = type.getMethod("transfer", UUID.class, String.class, BigDecimal.class, boolean.class);
+            Object central = transfer.invoke(account, buyer, "note", new BigDecimal("0.0600"), true);
+            assertTrue((Boolean) central.getClass().getMethod("success").invoke(central));
+            assertEquals(0, new BigDecimal("0.9400").compareTo((BigDecimal) playerBalance.invoke(account, buyer, "note")));
+            assertEquals(0, new BigDecimal("0.0600").compareTo((BigDecimal) balance.invoke(account, "note")));
+            assertTrue(((BigDecimal) playerBalance.invoke(account, buyer, "note")).compareTo(new BigDecimal("0.0600")) >= 0);
+
             assertTrue(books.createPersonalNote(buyer, "Tst", false, BigInteger.ONE).success());
             UUID series = books.personalNote(buyer).id();
-            books.setPersonalReserve(buyer, "diamond", new BigInteger("3"));
-            assertTrue(books.issuePersonalNote(buyer, new BigInteger("2")).success());
+            assertTrue(books.deposit(buyer, "diamond", new BigInteger("3")).success());
+            assertTrue(books.depositPersonalReserveExact(buyer, new BigDecimal("3")).success());
+            assertTrue(books.issuePersonalNoteUnbacked(buyer, new BigInteger("2")).success());
             String personal = "personal:" + series;
-            transfer.invoke(account, buyer, personal, new java.math.BigDecimal("1.5000"), true);
-            assertEquals(0, new java.math.BigDecimal("0.5000").compareTo(
-                    (java.math.BigDecimal) playerBalance.invoke(account, buyer, personal)));
-            assertEquals(0, new java.math.BigDecimal("1.5000").compareTo(
-                    (java.math.BigDecimal) balance.invoke(account, personal)));
+            String beforeLegacy = books.toJson();
+            Object refusedLegacy = transfer.invoke(account, buyer, personal, new BigDecimal("1.5000"), true);
+            assertEquals("durable_required", refusedLegacy.getClass().getMethod("code").invoke(refusedLegacy));
+            assertEquals(beforeLegacy, books.toJson());
+
+            // Read-hook fixture uses the real ledger core. It does not fake a server or claim a durable facade commit.
+            assertTrue(books.transferShopReferenced(buyer, personal, new BigDecimal("1.5000"), true, "decimal-purchase").success());
+            assertEquals(0, new BigDecimal("0.5000").compareTo((BigDecimal) playerBalance.invoke(account, buyer, personal)));
+            assertEquals(0, ((BigDecimal) balance.invoke(account, personal)).signum()); // Pending delivery assets cannot be reused.
+            assertTrue(books.completeSystemPayment("decimal-purchase").success());
+            assertEquals(0, BigDecimal.ZERO.compareTo((BigDecimal) balance.invoke(account, personal)));
+            assertEquals(0, new BigDecimal("2.2500").compareTo(books.systemSettlementBalance("shop", "diamond")));
+            assertEquals(BigInteger.ZERO, books.shopOperating("note")); // Only the earlier 0.06 fraction exists, no appraised notes were minted.
+
             BankRuntime.state = new BankWorldState(BankBooks.fromJson(books.toJson(), BankConfig.defaults()));
-            assertEquals(0, new java.math.BigDecimal("0.9400").compareTo(
-                    (java.math.BigDecimal) playerBalance.invoke(account, buyer, "note")));
-            assertEquals(0, new java.math.BigDecimal("0.0600").compareTo(
-                    (java.math.BigDecimal) balance.invoke(account, "note")));
-            assertEquals(0, new java.math.BigDecimal("0.5000").compareTo(
-                    (java.math.BigDecimal) playerBalance.invoke(account, buyer, personal)));
-            assertEquals(0, new java.math.BigDecimal("1.5000").compareTo(
-                    (java.math.BigDecimal) balance.invoke(account, personal)));
-            Object returned = transfer.invoke(account, buyer, personal, new java.math.BigDecimal("0.2500"), false);
-            assertTrue((Boolean) returned.getClass().getMethod("success").invoke(returned));
-            assertEquals(0, new java.math.BigDecimal("0.7500").compareTo(
-                    (java.math.BigDecimal) playerBalance.invoke(account, buyer, personal)));
-            assertEquals(0, new java.math.BigDecimal("1.2500").compareTo(
-                    (java.math.BigDecimal) balance.invoke(account, personal)));
+            assertEquals(0, new BigDecimal("0.9400").compareTo((BigDecimal) playerBalance.invoke(account, buyer, "note")));
+            assertEquals(0, new BigDecimal("0.0600").compareTo((BigDecimal) balance.invoke(account, "note")));
+            assertEquals(0, new BigDecimal("0.5000").compareTo((BigDecimal) playerBalance.invoke(account, buyer, personal)));
+            assertEquals(0, BigDecimal.ZERO.compareTo((BigDecimal) balance.invoke(account, personal)));
+            BankBooks loaded = BankRuntime.books();
+            assertEquals("mixed_quote_required", loaded.transferShopReferenced(buyer, personal,
+                    new BigDecimal("0.2500"), false, "decimal-old-payout").code());
+            JsonObject payout = loaded.quoteSystemPayout(series, new BigDecimal("0.0500"));
+            assertEquals("0", payout.get("privateAmount").getAsString()); // No issuer-listed whole coin exists.
+            assertTrue(loaded.executeSystemPayout(buyer, series, new BigDecimal("0.0500"),
+                    payout.get("fingerprint").getAsString(), "decimal-payout").success());
+            assertTrue(loaded.completeSystemPayment("decimal-payout").success());
+            assertEquals(0, new BigDecimal("0.5000").compareTo((BigDecimal) playerBalance.invoke(account, buyer, personal)));
+            assertEquals(0, new BigDecimal("0.9900").compareTo((BigDecimal) playerBalance.invoke(account, buyer, "note")));
+            assertEquals(0, new BigDecimal("0.0100").compareTo((BigDecimal) balance.invoke(account, "note")));
+            assertEquals(0, BigDecimal.ZERO.compareTo((BigDecimal) balance.invoke(account, personal)));
+            assertEquals(0, new BigDecimal("2.2500").compareTo(loaded.systemSettlementBalance("shop", "diamond")));
+            loaded.checkInvariants();
         } finally {
             BankRuntime.state = null;
         }
@@ -343,6 +356,7 @@ class SettlementHooksTest {
         books.creditHeld(buyer, "note", new BigInteger("40"));
         books.deposit(buyer, "diamond", new BigInteger("6"));
         BankRuntime.state = new BankWorldState(books);
+        BankRuntime.server = null;
         try {
             Class<?> shopType = Class.forName("dev.jdguo.bank.market.ShopOperatingAccount");
             Method get = shopType.getMethod("get");
@@ -361,19 +375,40 @@ class SettlementHooksTest {
             Method transfer = market.getMethod("transfer", UUID.class, UUID.class, String.class, BigInteger.class, String.class);
             Method credit = market.getMethod("creditLandGrant", UUID.class, String.class, BigInteger.class, String.class);
             Method refund = market.getMethod("refundLandGrant", UUID.class, String.class, BigInteger.class, String.class);
+            assertNotNull(market.getMethod("quoteSystemPayout", String.class, UUID.class, BigDecimal.class));
+            assertNotNull(market.getMethod("executeSystemPayout", String.class, UUID.class, UUID.class,
+                    BigDecimal.class, String.class, String.class));
+            assertNotNull(market.getMethod("rollbackSystemPayout", String.class));
+            String beforeUnreadyWrites = books.toJson();
+            Method referencedShop = shopType.getMethod("transferReferenced", UUID.class, String.class, BigDecimal.class, boolean.class, String.class);
+            assertNotNull(shopType.getMethod("quoteIssuerPayout", UUID.class, BigDecimal.class));
+            Method issuerPayout = shopType.getMethod("payIssuerOffer", UUID.class, UUID.class,
+                    BigDecimal.class, String.class, String.class);
+            Object unreadyIssuerPayout = issuerPayout.invoke(account, buyer, UUID.randomUUID(),
+                    BigDecimal.ONE, "preview", "issuer-payout-test");
+            assertEquals("bank_not_ready", unreadyIssuerPayout.getClass().getMethod("code").invoke(unreadyIssuerPayout));
+            assertNotNull(shopType.getMethod("completePayment", String.class));
+            assertNotNull(shopType.getMethod("rollback", String.class));
+            assertNotNull(shopType.getMethod("receiptStatus", String.class));
+            Object unreadyShop = referencedShop.invoke(account, buyer, "note", BigDecimal.ONE, true, "unready-shop");
+            assertEquals("bank_not_ready", unreadyShop.getClass().getMethod("code").invoke(unreadyShop));
             Object paid = transfer.invoke(null, buyer, seller, "note", new BigInteger("5"), "sale:listing");
             Object land = credit.invoke(null, buyer, "diamond", new BigInteger("2"), "sale:land");
             Object undone = refund.invoke(null, buyer, "diamond", BigInteger.ONE, "refund:land");
-            assertTrue((Boolean) paid.getClass().getMethod("success").invoke(paid));
-            assertTrue((Boolean) land.getClass().getMethod("success").invoke(land));
-            assertTrue((Boolean) undone.getClass().getMethod("success").invoke(undone));
-            assertEquals("ok", paid.getClass().getMethod("code").invoke(paid));
-
-            assertEquals(new BigInteger("20"), books.balance(buyer, "note"));
-            assertEquals(new BigInteger("5"), books.balance(seller, "note"));
+            // A loaded in-memory state alone is insufficient for the new durable write API.
+            // Without an actual server-thread/filesystem transaction, all facade writes fail closed.
+            assertEquals("bank_not_ready", paid.getClass().getMethod("code").invoke(paid));
+            assertEquals("bank_not_ready", land.getClass().getMethod("code").invoke(land));
+            assertEquals("bank_not_ready", undone.getClass().getMethod("code").invoke(undone));
+            assertFalse((Boolean) paid.getClass().getMethod("success").invoke(paid));
+            assertFalse((Boolean) land.getClass().getMethod("success").invoke(land));
+            assertFalse((Boolean) undone.getClass().getMethod("success").invoke(undone));
+            assertEquals(beforeUnreadyWrites, books.toJson());
+            assertEquals(new BigInteger("25"), books.balance(buyer, "note"));
+            assertEquals(BigInteger.ZERO, books.balance(seller, "note"));
             assertEquals(new BigInteger("15"), books.shopOperating("note"));
-            assertEquals(BigInteger.ONE, books.landGrant("diamond"));
-            assertEquals(new BigInteger("5"), books.balance(buyer, "diamond"));
+            assertEquals(BigInteger.ZERO, books.landGrant("diamond"));
+            assertEquals(new BigInteger("6"), books.balance(buyer, "diamond"));
             assertEquals(new BigInteger("1000"), books.supply("diamond").reserve());
             assertEquals(new BigInteger("1000000"), books.supply("copper").reserve());
             books.checkInvariants();

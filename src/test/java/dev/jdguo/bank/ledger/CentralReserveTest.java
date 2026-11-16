@@ -51,7 +51,7 @@ class CentralReserveTest {
         books.creditHeld(buyer, "note", new BigInteger("50"));
         var bought = books.buyPersonalNote(buyer, "泉", BigInteger.TEN);
         assertTrue(bought.success(), bought.code());
-        var redeemed = books.redeemPersonal(buyer, "泉", BigInteger.TEN, "diamond");
+        var redeemed = books.redeemPersonalToSavings(buyer, books.personalNote(issuer).id(), java.math.BigDecimal.TEN, "central-cover-redeem");
         assertTrue(redeemed.success(), redeemed.code());
         assertEquals(BigInteger.ONE, books.centralReserve(issuer));
         books.checkInvariants();

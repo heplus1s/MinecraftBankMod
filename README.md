@@ -531,3 +531,12 @@ There's no stock market yet. If that gets built later, it will be a separate mod
 `./gradlew test` does not start the game. It mainly checks deposits, withdrawals, exchange, that bills redeem only once, that split or copied bank-note paper cannot mint extra value, that unbacked issuance depreciates notes, that backed issuance locks diamonds, and that huge numbers don't blow up the math.
 
 The license is MIT, copyright heplus1s. Minecraft is a trademark of Mojang. This project is not affiliated with Mojang.
+
+
+## 内置客户端界面
+
+本主模组 JAR 同时包含服务端逻辑与可选客户端界面。服务器安装后，原版客户端无需安装本模组即可使用原有命令/原版菜单。客户端安装同一 JAR 可启用增强界面；界面只在客户端入口加载，服务端保持交易权威。
+
+升级时请移除旧 `bankmod-ui` 独立 JAR；同时安装会由 Fabric Loader 明确拒绝，以避免重复接收器、快捷键和类冲突。不要保留同一主模组的两个版本。只安装本地客户端不会改变远端服务器数据；不支持相关网络通道的服务器不会接收本 UI 操作。
+
+兼容性验收仍需分别执行：专用服务器+原版客户端、Fabric空客户端、完整客户端、单人世界切换远程服务器、旧 UI 包并存的拒绝提示、协议不匹配时的基础入口。构建通过不等同于实际联机验收。

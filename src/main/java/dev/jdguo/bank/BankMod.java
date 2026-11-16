@@ -90,6 +90,18 @@ public final class BankMod implements ModInitializer {
             if (BankRuntime.state == null) {
                 return;
             }
+            // Only explicitly configured policies rebalance; old saves stay untouched.
+            if (server.getTicks() % 100 == 0) {
+                BankRuntime.transact(book -> {
+                    boolean changed = false;
+                    for (var series : book.personalNotes()) {
+                        var adjustment = book.rebalancePersonalPolicy(series.issuer());
+                        changed |= adjustment.success();
+                    }
+                    return changed ? dev.jdguo.bank.ledger.TxResult.ok(java.math.BigInteger.ZERO, "Policies adjusted")
+                            : dev.jdguo.bank.ledger.TxResult.fail("no_change", "");
+                });
+            }
             displays.tick(server);
             IssuerLevy.tick(server);
             long day = server.getOverworld().getTime() / 24000L;

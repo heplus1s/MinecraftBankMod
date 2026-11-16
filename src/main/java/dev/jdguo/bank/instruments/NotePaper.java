@@ -59,7 +59,12 @@ public final class NotePaper {
         if (!tagged(stack)) {
             return null;
         }
-        NbtCompound body = stack.getNbt().getCompound(TAG);
+        return readSignature(stack.getNbt());
+    }
+
+    static PresentedNote readSignature(NbtCompound root) {
+        if (root == null || !root.contains(TAG)) return null;
+        NbtCompound body = root.getCompound(TAG);
         try {
             BigInteger face = new BigInteger(body.getString("face"));
             if (face.signum() <= 0) {
@@ -80,6 +85,27 @@ public final class NotePaper {
         } catch (RuntimeException ignored) {
             return null;
         }
+    }
+
+    /** Refresh only the interacted stack; never scan inventories or change its identity/quantity. */
+    public static boolean refreshPersonalLabel(ItemStack stack, dev.jdguo.bank.ledger.BankBooks books) {
+        return tagged(stack) && refreshPersonalSignature(stack.getNbt(), books);
+    }
+
+    static boolean refreshPersonalSignature(NbtCompound root, dev.jdguo.bank.ledger.BankBooks books) {
+        PresentedNote paper = readSignature(root);
+        if (paper == null || paper.central() || books == null) return false;
+        var note = books.personalNoteById(paper.personalNote());
+        if (note == null) return false;
+        NbtCompound body = root.getCompound(TAG);
+        if (note.name().equals(body.getString("label"))) return false;
+        NbtCompound updated = signature(paper, note.name()).getCompound("display");
+        NbtCompound display = root.getCompound("display");
+        display.putString("Name", updated.getString("Name"));
+        display.put("Lore", updated.get("Lore").copy());
+        root.put("display", display);
+        body.putString("label", note.name());
+        return true;
     }
 
     /** Fills existing piles of the same paper first, then offers new piles of at most 64. */

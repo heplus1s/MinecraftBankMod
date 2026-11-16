@@ -68,7 +68,7 @@ class PersonalMarketTest {
     }
 
     @Test
-    void buyingAgainstCentralNotesMovesThePriceUp() {
+    void buyingAgainstCentralNotesDoesNotInventCollateralValue() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         books.createPersonalNote(issuer, "泉", false, BigInteger.ONE);
         books.setPersonalReserve(issuer, "diamond", BigInteger.TEN);
@@ -85,7 +85,7 @@ class PersonalMarketTest {
         assertEquals(new BigInteger("9"), books.personalHolding(books.personalNote(issuer).id(), issuer));
         assertEquals(BigInteger.TEN.subtract(bought.centralPaid()), books.balance(buyer, "note"));
         assertEquals(bought.centralPaid(), books.balance(issuer, "note"));
-        assertTrue(books.personalDiamondPrice(books.personalNote(issuer)).compareTo(before) > 0);
+        assertEquals(0, books.personalDiamondPrice(books.personalNote(issuer)).compareTo(before));
         books.checkInvariants();
     }
 

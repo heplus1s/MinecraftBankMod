@@ -98,8 +98,11 @@ class BankruptcyTest {
         books.creditHeld(issuer, "note", BigInteger.ONE);
         assertTrue(books.depositCentralReserve(issuer, BigInteger.ONE).success());
         assertTrue(books.issuePersonalNote(issuer, BigInteger.TEN).success());
-        Redemption paid = books.redeemPersonal(issuer, "Aa", new BigInteger("6"), "diamond");
-        assertTrue(paid.success(), paid.code());
+        // Historical pre-clearing save fixture: six previously drawn units remain old debt.
+        assertTrue(books.retirePersonalNote(issuer, new BigInteger("6")).success());
+        books.setPersonalReserve(issuer, "diamond", new BigInteger("4"));
+        books.personalNote(issuer).addDrawn(new BigInteger("6"));
+        books.deposit(issuer, "diamond", new BigInteger("6"));
         assertEquals(new BigInteger("6"), books.personalNote(issuer).drawn());
         assertEquals(new BigInteger("6"), books.balance(issuer, "diamond"));
         BigInteger stockAfterRedeem = books.supply("diamond").reserve();

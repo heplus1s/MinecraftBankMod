@@ -75,7 +75,9 @@ class PersonalReserveFundingTest {
     @Test
     void aNotePegStillUsesTheCentralBankNoteReserveAccount() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
-        assertTrue(books.createPersonalNote(issuer, "券锚", NoteRegime.PEG, "note", BigInteger.ONE).success());
+        assertTrue(books.createPersonalNote(issuer, "券锚", NoteRegime.PEG, "diamond", BigInteger.ONE).success());
+        // Legacy existing note-anchor currency remains supported; new creation is physical-only.
+        books.personalNote(issuer).adopt(NoteRegime.PEG, "note", null);
         assertTrue(books.creditHeld(issuer, "note", new BigInteger("12")).success());
         BigInteger liability = books.supply("note").liability();
 

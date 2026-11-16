@@ -75,6 +75,10 @@ class SecondaryMarketTest {
         books.deposit(buyer, "copper", new BigInteger("20000"));
         books.creditHeld(buyer, "note", new BigInteger("100"));
         assertTrue(books.buyPersonalNote(buyer, "Bb", BigInteger.TEN).success());
+        assertEquals(0, BigDecimal.ONE.compareTo(books.personalDiamondPrice(receive)));
+        // A real collateral deposit, not trading-flow inflation, creates the fractional cross rate.
+        assertTrue(books.deposit(issuerB, "diamond", BigInteger.ONE).success());
+        assertTrue(books.depositPersonalReserveExact(issuerB, BigDecimal.ONE).success());
         assertEquals(0, new BigDecimal("1.1").compareTo(books.personalDiamondPrice(receive)));
         books.deposit(issuerA, "copper", new BigInteger("2000"));
         books.creditHeld(issuerA, "note", new BigInteger("20"));
@@ -118,53 +122,58 @@ class SecondaryMarketTest {
     }
 
     @Test
-    void redemptionAtMarketPriceUnlocksReserveAndRetiresCirculation() {
+    void redemptionAtBackingPriceRecoversNotesAndCreditsSavingsWithoutDuplicatingCustody() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         PersonalNote note = issue(books, issuerA, "Aa", BigInteger.ONE, BigInteger.TEN, BigInteger.TEN);
         assertEquals(0, BigDecimal.ONE.compareTo(books.personalDiamondPrice(note)));
+        BigDecimal vault = books.supply("diamond").depositVaultExact();
+        assertEquals("route_to_savings", books.redeemPersonal(issuerA, "Aa", new BigInteger("4"), "diamond").code());
 
-        Redemption redeemed = books.redeemPersonal(issuerA, "Aa", new BigInteger("4"), "diamond");
+        TxResult redeemed = books.redeemPersonalToSavings(issuerA, note.id(), new BigDecimal("4"), "secondary-redeem");
 
         assertTrue(redeemed.success(), redeemed.code());
-        assertFalse(redeemed.discounted());
-        assertEquals(new BigInteger("4"), redeemed.diamonds());
-        assertEquals(BigInteger.ZERO, redeemed.copper());
-        assertEquals(new BigInteger("6"), note.circulation());
-        assertEquals(new BigInteger("6"), note.locked());
+        assertEquals(BigInteger.TEN, note.circulation()); // Issued total is auditable; recovered currency is not active.
+        assertEquals(0, new BigDecimal("6").compareTo(books.personalActiveExact(note)));
+        assertEquals(0, new BigDecimal("4").compareTo(books.personalRecovered(note.id())));
         assertEquals(new BigInteger("6"), books.personalReserve(issuerA, "diamond"));
         assertEquals(new BigInteger("6"), books.personalHolding(note.id(), issuerA));
         assertEquals(new BigInteger("4"), books.balance(issuerA, "diamond"));
         assertEquals(new BigInteger("1000"), books.supply("diamond").reserve());
-        assertEquals(new BigInteger("4"), books.supply("diamond").depositVault());
+        assertEquals(0, vault.compareTo(books.supply("diamond").depositVaultExact()));
+        assertEquals("settled", books.personalSettlementReceipt("secondary-redeem").get("status").getAsString());
+        assertFalse(books.noteHasPending(note.id()));
         books.checkInvariants();
     }
 
     @Test
-    void shortReserveRedeemsAtADiscountAndDoesNotPayMoreThanPosted() {
+    void dilutionRedemptionPaysOnlyRealBackingAndNeverTheTargetValue() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         PersonalNote note = issue(books, issuerB, "Bb", BigInteger.ONE, BigInteger.TEN, BigInteger.TEN);
+        // Explicit unbacked issuance lowers actual support from 1 to 0.5 without making assets.
+        assertTrue(books.issuePersonalNoteUnbacked(issuerB, BigInteger.TEN).success());
         books.deposit(buyer, "copper", new BigInteger("20000"));
         books.creditHeld(buyer, "note", new BigInteger("100"));
         assertTrue(books.buyPersonalNote(buyer, "Bb", BigInteger.TEN).success());
-        assertEquals(0, new BigDecimal("1.1").compareTo(books.personalDiamondPrice(note)));
-        BigDecimal market = books.personalDiamondPrice(note).multiply(BigDecimal.TEN);
+        assertEquals(0, new BigDecimal("0.5").compareTo(books.personalDiamondPrice(note)));
+        BigDecimal reserveBefore = books.effectiveBackingExact(note);
+        BigDecimal vaultBefore = books.supply("diamond").depositVaultExact();
 
-        Redemption redeemed = books.redeemPersonal(buyer, "Bb", BigInteger.TEN, "diamond");
+        TxResult redeemed = books.redeemPersonalToSavings(buyer, note.id(), BigDecimal.TEN, "diluted-redeem");
 
         assertTrue(redeemed.success(), redeemed.code());
-        assertTrue(redeemed.discounted());
-        assertEquals(BigInteger.TEN, redeemed.diamonds());
-        assertTrue(new BigDecimal(redeemed.diamonds()).compareTo(market) < 0);
-        assertEquals(BigInteger.ZERO, note.circulation());
-        assertEquals(BigInteger.ZERO, note.locked());
-        assertEquals(BigInteger.ZERO, books.personalReserve(issuerB, "diamond"));
+        assertEquals(0, new BigDecimal("5").compareTo(books.balanceExact(buyer, "diamond")));
+        assertTrue(books.balanceExact(buyer, "diamond").compareTo(reserveBefore) <= 0);
+        assertEquals(0, BigDecimal.TEN.compareTo(books.personalActiveExact(note)));
+        assertEquals(0, BigDecimal.TEN.compareTo(books.personalRecovered(note.id())));
+        assertEquals(new BigInteger("5"), books.personalReserve(issuerB, "diamond"));
         assertEquals(BigInteger.ZERO, books.personalHolding(note.id(), buyer));
-        assertEquals(BigInteger.TEN, books.balance(buyer, "diamond"));
+        assertEquals(0, vaultBefore.compareTo(books.supply("diamond").depositVaultExact()));
+        assertEquals(0, new BigDecimal("0.5").compareTo(books.personalDiamondPrice(note)));
         books.checkInvariants();
     }
 
     @Test
-    void payingWithAtoBuyBLiftsBAndLeansOnAThenASaleUsesTheNewQuote() {
+    void ownershipSwapDoesNotInventValueAndASaleUsesNewRealBackingQuote() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         PersonalNote noteA = issue(books, issuerA, "Aa", BigInteger.ONE, BigInteger.TEN, BigInteger.TEN);
         PersonalNote noteB = issue(books, issuerB, "Bb", BigInteger.ONE, BigInteger.TEN, BigInteger.TEN);
@@ -181,10 +190,8 @@ class SecondaryMarketTest {
         assertEquals(BigInteger.TEN, bought.receivedNotes());
         BigDecimal afterA = books.personalDiamondPrice(noteA);
         BigDecimal afterB = books.personalDiamondPrice(noteB);
-        assertTrue(afterB.compareTo(purchaseB) > 0, afterB.toPlainString());
-        assertTrue(afterA.compareTo(purchaseA) < 0, afterA.toPlainString());
-        assertEquals(0, new BigDecimal("1.1").compareTo(afterB));
-        assertEquals(0, new BigDecimal("0.9").compareTo(afterA));
+        assertEquals(0, afterB.compareTo(purchaseB));
+        assertEquals(0, afterA.compareTo(purchaseA));
         assertEquals(BigInteger.TEN, noteA.circulation());
         assertEquals(BigInteger.TEN, noteB.circulation());
         assertEquals(BigInteger.TEN, books.personalReserve(issuerA, "diamond"));
@@ -192,8 +199,10 @@ class SecondaryMarketTest {
 
         books.creditHeld(issuerB, "note", new BigInteger("50"));
         books.deposit(issuerB, "copper", new BigInteger("5000"));
+        assertTrue(books.deposit(issuerB, "diamond", BigInteger.ONE).success());
+        assertTrue(books.depositPersonalReserveExact(issuerB, BigDecimal.ONE).success());
         BigDecimal live = books.personalDiamondPrice(noteB);
-        assertEquals(0, afterB.compareTo(live));
+        assertTrue(live.compareTo(afterB) > 0);
         BigInteger[] atLive = cash(books, live, BigInteger.TEN);
         BigInteger[] atPurchase = cash(books, purchaseB, BigInteger.TEN);
         assertTrue(atLive[0].compareTo(atPurchase[0]) != 0 || atLive[1].compareTo(atPurchase[1]) != 0);
@@ -205,7 +214,7 @@ class SecondaryMarketTest {
         assertEquals(atLive[1], sold.copperPaid());
         assertEquals(BigInteger.ZERO, books.personalHolding(noteB.id(), issuerA));
         assertEquals(BigInteger.TEN, books.personalHolding(noteB.id(), issuerB));
-        assertTrue(books.personalDiamondPrice(noteB).compareTo(live) < 0);
+        assertEquals(0, books.personalDiamondPrice(noteB).compareTo(live));
         books.checkInvariants();
     }
 
@@ -248,8 +257,9 @@ class SecondaryMarketTest {
 
     private static PersonalNote issue(BankBooks books, UUID issuer, String name, BigInteger par,
                                       BigInteger reserve, BigInteger amount) {
-        books.setPersonalReserve(issuer, "diamond", reserve);
         assertTrue(books.createPersonalNote(issuer, name, false, par).success());
+        assertTrue(books.deposit(issuer, "diamond", reserve).success());
+        assertTrue(books.depositPersonalReserveExact(issuer, new BigDecimal(reserve)).success());
         BigInteger cover = amount.multiply(par.max(BigInteger.ONE));
         books.creditHeld(issuer, "note", cover);
         assertTrue(books.depositCentralReserve(issuer, cover).success());

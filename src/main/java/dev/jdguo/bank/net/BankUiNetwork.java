@@ -30,10 +30,21 @@ public final class BankUiNetwork {
     private BankUiNetwork() {}
 
     public static void register() {
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register(server -> {
+            if (BankRuntime.state == null || server.getTicks() % 20 != 0) return;
+            long checkpoint = BankRuntime.books().checkpoint();
+            for (var entry : sessions.entrySet()) {
+                if (entry.getValue().lastCheckpoint == checkpoint) continue;
+                ServerPlayerEntity online = server.getPlayerManager().getPlayer(entry.getKey());
+                if (online != null && wantsUi(online)) sync(online);
+            }
+        });
         ServerPlayNetworking.registerGlobalReceiver(HELLO, (server, player, handler, buf, response) -> {
-            int version = buf.readVarInt();
+            final int version;
+            try { version = buf.readVarInt(); } catch (RuntimeException invalid) { return; }
             server.execute(() -> {
                 versions.put(player.getUuid(), version);
+                if (version != PROTOCOL) sessions.remove(player.getUuid());
                 if (version == PROTOCOL && player.currentScreenHandler instanceof dev.jdguo.bank.gui.BankScreenHandler chest) {
                     String outlet = chest.outletName();
                     boolean admin = chest.remoteAdmin();
@@ -43,8 +54,11 @@ public final class BankUiNetwork {
             });
         });
         ServerPlayNetworking.registerGlobalReceiver(ACTION, (server, player, handler, buf, response) -> {
-            String action = buf.readString(200);
-            server.execute(() -> BankUiService.handle(player, action));
+            final String action;
+            try { action = buf.readString(200); } catch (RuntimeException invalid) { return; }
+            server.execute(() -> {
+                if (wantsUi(player)) BankUiService.handle(player, action);
+            });
         });
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             versions.remove(handler.player.getUuid());
@@ -58,6 +72,7 @@ public final class BankUiNetwork {
     }
 
     public static void open(ServerPlayerEntity player, String outlet, boolean admin) {
+        dev.jdguo.bank.instruments.NotePaper.refreshPersonalLabel(player.getMainHandStack(), BankRuntime.books());
         sessions.put(player.getUuid(), new Session(outlet, admin));
         sync(player);
     }
@@ -73,6 +88,7 @@ public final class BankUiNetwork {
         PacketByteBuf buf = PacketByteBufs.create();
         buf.writeString(json, 32767);
         ServerPlayNetworking.send(player, SYNC, buf);
+        session.lastCheckpoint = books.checkpoint();
     }
 
     static Session session(ServerPlayerEntity player) {
@@ -88,6 +104,7 @@ public final class BankUiNetwork {
         final boolean admin;
         String page = "savings";
         boolean confirm;
+        long lastCheckpoint = -1;
 
         Session(String outlet, boolean admin) {
             this.outlet = outlet;

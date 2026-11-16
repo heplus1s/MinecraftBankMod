@@ -23,15 +23,54 @@ public final class MarketSettlement {
     private MarketSettlement() {}
 
     public static TxResult transfer(UUID from, UUID to, String currency, BigInteger amount, String reference) {
-        return postReferenced(reference, "transfer|" + from + "|" + to + "|" + currency + "|" + amount, amount, books -> books.transferSavings(from, to, currency, amount));
+        return postReferenced(reference, "transfer|" + from + "|" + to + "|" + currency + "|" + amount, amount, books -> currency != null && currency.startsWith("personal:")
+                ? books.transferPersonalExact(from, to, currency, new BigDecimal(amount))
+                : books.transferSavings(from, to, currency, amount));
     }
 
     public static TxResult creditLandGrant(UUID payer, String currency, BigInteger amount, String reference) {
-        return postReferenced(reference, "grant|" + payer + "|" + currency + "|" + amount, amount, books -> books.creditLandGrant(payer, currency, amount));
+        return postReferenced(reference, "grant|" + payer + "|" + currency + "|" + amount, amount, books -> currency != null && currency.startsWith("personal:")
+                ? books.settlePersonalToSystem(payer, UUID.fromString(currency.substring(9)), new BigDecimal(amount), "land", reference)
+                : books.creditLandGrant(payer, currency, amount));
     }
 
     public static TxResult refundLandGrant(UUID payer, String currency, BigInteger amount, String reference) {
-        return postReferenced(reference, "refund-grant|" + payer + "|" + currency + "|" + amount, amount, books -> books.refundLandGrant(payer, currency, amount));
+        return postReferenced(reference, "refund-grant|" + payer + "|" + currency + "|" + amount, amount, books -> currency != null && currency.startsWith("personal:")
+                ? reverseGrant(books, payer, currency, amount, reference)
+                : books.refundLandGrant(payer, currency, amount));
+    }
+
+    private static TxResult reverseGrant(BankBooks books, UUID payer, String currency, BigInteger amount, String reference) {
+        if (reference == null || !reference.startsWith("refund:")) return TxResult.fail("bad_reference", "");
+        String original = "market-pay:" + reference.substring("refund:".length());
+        var receipt = books.personalSettlementReceipt(original);
+        String expected = payer + "|" + currency.substring(9) + "|" + amount + "|land";
+        if (receipt == null || !expected.equals(receipt.get("signature").getAsString()))
+            return TxResult.fail("reference_conflict", "Refund does not match original payment");
+        return books.reversePersonalSettlement(original);
+    }
+
+    /** Releases only assets whose land delivery has been durably confirmed by the market. */
+    public static TxResult completePayment(String reference) {
+        if (!validReference(reference)) return TxResult.fail("bad_reference", "");
+        return BankRuntime.transact(books -> books.completeSystemPayment(reference));
+    }
+
+    /** Same cash-funded payout policy for independent system accounts; never a player-market transfer. */
+    public static String quoteSystemPayout(String account, UUID coin, BigDecimal centralBudget) {
+        if (BankRuntime.state == null) return "{\"success\":false,\"code\":\"bank_not_ready\"}";
+        return BankRuntime.books().quoteSystemPayout(account, coin, centralBudget).toString();
+    }
+
+    public static TxResult executeSystemPayout(String account, UUID player, UUID coin,
+                                              BigDecimal centralBudget, String fingerprint, String reference) {
+        return BankRuntime.transact(books -> books.executeSystemPayout(
+                account, player, coin, centralBudget, fingerprint, reference));
+    }
+
+    /** Cancels only the referenced, still-escrowed payout; not a new currency purchase. */
+    public static TxResult rollbackSystemPayout(String reference) {
+        return BankRuntime.transact(books -> books.rollbackShopPayment(reference));
     }
 
     public static boolean externalPersonalMarket() {
@@ -77,27 +116,17 @@ public final class MarketSettlement {
         if (!validReference(reference)) {
             return TxResult.fail("bad_reference", "");
         }
-        return read(books -> {
-            TxResult result = books.postMarketMovement(reference, fingerprint, amount, () -> movement.apply(books));
-            if (result.success() && !BankRuntime.saveMarket()) {
-                return TxResult.fail("bank_pending", "Could not persist the receipt");
-            }
-            return result;
-        });
+        return BankRuntime.transact(books ->
+                books.postMarketMovement(reference, fingerprint, amount, () -> movement.apply(books)));
     }
 
     private static TxResult post(String reference, Movement movement) {
         if (!validReference(reference)) {
             return TxResult.fail("bad_reference", "Missing reference");
         }
-        if (BankRuntime.state == null) {
-            return TxResult.fail("bank_not_ready", "Ledger is not loaded");
-        }
-        TxResult result = movement.apply(BankRuntime.books());
-        if (result.success()) {
-            BankRuntime.save();
-        }
-        return result;
+        // Listing edits and fills share the same durable ledger boundary as shop
+        // on-demand subscriptions. Never expose an in-memory fill before saving it.
+        return BankRuntime.transact(movement::apply);
     }
 
     @FunctionalInterface

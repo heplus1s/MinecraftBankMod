@@ -56,7 +56,9 @@ class RegimeSwitchTest {
 
         BankBooks fresh = BankBooks.create(BankConfig.defaults());
         fresh.setAlpha("note", BigDecimal.ZERO);
-        assertTrue(fresh.createPersonalNote(issuer, "泉", NoteRegime.PEG, "note", BigInteger.ONE).success());
+        assertTrue(fresh.createPersonalNote(issuer, "泉", NoteRegime.PEG, "diamond", BigInteger.ONE).success());
+        // Legacy existing note-anchor currency remains supported; new creation is physical-only.
+        fresh.personalNote(issuer).adopt(NoteRegime.PEG, "note", null);
         assertEquals("central_reserve", fresh.issuePersonalNote(issuer, new BigInteger("100")).code());
         fresh.creditHeld(issuer, "note", new BigInteger("100"));
         assertTrue(fresh.depositCentralReserve(issuer, new BigInteger("100")).success());
@@ -79,7 +81,9 @@ class RegimeSwitchTest {
         assertEquals("diamond", locked.anchor());
 
         BankBooks fresh = BankBooks.create(BankConfig.defaults());
-        assertTrue(fresh.createPersonalNote(issuer, "浮券", NoteRegime.FLOAT, "note", BigInteger.ONE).success());
+        assertTrue(fresh.createPersonalNote(issuer, "浮券", NoteRegime.FLOAT, "diamond", BigInteger.ONE).success());
+        // Legacy existing note-anchor currency remains supported; new creation is physical-only.
+        fresh.personalNote(issuer).adopt(NoteRegime.FLOAT, "note", null);
         assertEquals("central_reserve", fresh.issuePersonalNote(issuer, new BigInteger("4")).code());
         fresh.creditHeld(issuer, "note", new BigInteger("4"));
         assertTrue(fresh.postIssuanceReserve(issuer, new BigInteger("4"), true).success());
@@ -89,13 +93,22 @@ class RegimeSwitchTest {
         assertEquals(NoteRegime.FLOAT, fresh.personalNote(issuer).regime());
         assertEquals("note", fresh.personalNote(issuer).anchor());
 
-        assertTrue(fresh.createPersonalNote(buyer, "固券", NoteRegime.HARD, "note", BigInteger.ONE).success());
+        assertTrue(fresh.createPersonalNote(buyer, "固券", NoteRegime.HARD, "diamond", BigInteger.ONE).success());
+        // Legacy existing note-anchor currency remains supported; new creation is physical-only.
+        fresh.personalNote(buyer).adopt(NoteRegime.HARD, "note", null);
         assertEquals(NoteRegime.HARD, fresh.personalNote(buyer).regime());
         assertEquals("note", fresh.personalNote(buyer).anchor());
 
         JsonObject snapshot = JsonParser.parseString(
                 BankUiSnapshot.json(fresh, issuer, false, "savings", false)).getAsJsonObject();
-        assertEquals(3, snapshot.getAsJsonArray("anchors").size());
+        assertEquals(5, snapshot.getAsJsonArray("anchors").size());
+        for (var candidate : snapshot.getAsJsonArray("anchors")) {
+            var option = candidate.getAsJsonObject();
+            if (option.get("id").getAsString().equals("personal:" + fresh.personalNote(issuer).id())) {
+                assertFalse(option.get("allowed").getAsBoolean());
+                assertFalse(option.get("reason").getAsString().isBlank());
+            }
+        }
         assertEquals("实物货币", snapshot.getAsJsonArray("anchors").get(0).getAsJsonObject().get("group").getAsString());
         assertEquals("发行货币", snapshot.getAsJsonArray("anchors").get(2).getAsJsonObject().get("group").getAsString());
         assertEquals("银行券", snapshot.getAsJsonArray("anchors").get(2).getAsJsonObject().get("name").getAsString());
@@ -119,7 +132,7 @@ class RegimeSwitchTest {
     }
 
     @Test
-    void hardSwitchIsRefusedWhenTheLiveQuoteHasLeftFace() {
+    void ownershipTradingDoesNotArtificiallyDisqualifyHardSwitch() {
         BankBooks books = ready(new BigInteger("100"), new BigInteger("20"));
         books.deposit(buyer, "copper", new BigInteger("20000"));
         books.creditHeld(buyer, "note", new BigInteger("500"));
@@ -127,14 +140,12 @@ class RegimeSwitchTest {
         var bought = books.buyPersonalNote(buyer, "泉", new BigInteger("20"));
         assertTrue(bought.success(), bought.code());
         PersonalNote note = books.personalNote(issuer);
-        assertTrue(books.personalDiamondPrice(note).compareTo(BigDecimal.ONE) > 0);
+        assertEquals(0, books.personalDiamondPrice(note).compareTo(BigDecimal.ONE));
 
         RegimePreview refused = books.switchPersonalRegime(issuer, NoteRegime.HARD, null);
 
-        assertFalse(refused.allowed(), refused.reason());
-        assertEquals(NoteRegime.FLOAT, note.regime());
-        assertTrue(refused.reason().contains("现价"));
-        assertTrue(refused.reason().contains("面额"));
+        assertTrue(refused.allowed(), refused.reason());
+        assertEquals(NoteRegime.HARD, note.regime());
         assertEquals(new BigInteger("100"), note.locked());
     }
 

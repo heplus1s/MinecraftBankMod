@@ -50,7 +50,16 @@ public final class ShopOperatingAccount {
 
     /** Four-decimal balance expected by the shop's live bridge. */
     public BigDecimal balance(String currency) {
-        return BankRuntime.books().shopOperatingExact(currency);
+        if (currency != null && currency.startsWith("personal:")) {
+            try {
+                BankBooks books = BankRuntime.books();
+                var quote = books.quoteSystemPayout(UUID.fromString(currency.substring(9)),
+                        books.systemAvailableBalance("shop", "note"));
+                return quote.get("success").getAsBoolean()
+                        ? new BigDecimal(quote.get("privateAmount").getAsString()) : BigDecimal.ZERO;
+            } catch (IllegalArgumentException invalid) { return BigDecimal.ZERO; }
+        }
+        return BankRuntime.books().systemAvailableBalance("shop", currency);
     }
 
     /** Four-decimal player balance; never truncate fractional spending power. */
@@ -70,6 +79,38 @@ public final class ShopOperatingAccount {
         return books.balanceExact(player, noteId);
     }
 
+    /** Receipt-backed durable payment used by the integrated shop. */
+    public TxResult transferReferenced(UUID player, String currency, BigDecimal amount, boolean playerPaysShop, String reference) {
+        return BankRuntime.transact(books -> books.transferShopReferenced(player, currency, amount, playerPaysShop, reference));
+    }
+
+    /** Structured preview; no holdings, reserves, or recovered coins are changed. */
+    public String quoteIssuerPayout(UUID coin, BigDecimal centralBudget) {
+        if (BankRuntime.state == null) return "{\"success\":false,\"code\":\"bank_not_ready\"}";
+        return BankRuntime.books().quoteSystemPayout(coin, centralBudget).toString();
+    }
+
+    /** Atomically buys actually listed issuer coins and pays any remainder in central notes. */
+    public TxResult payIssuerOffer(UUID player, UUID coin, BigDecimal centralBudget,
+                                   String fingerprint, String reference) {
+        return BankRuntime.transact(books -> books.executeSystemPayout(
+                player, coin, centralBudget, fingerprint, reference));
+    }
+
+    public TxResult rollback(String reference) {
+        return BankRuntime.transact(books -> books.rollbackShopPayment(reference));
+    }
+
+    public String receiptStatus(String reference) {
+        return BankRuntime.state == null ? "unavailable" : BankRuntime.books().settlementStatus(reference);
+    }
+
+    public TxResult completePayment(String reference) {
+        return BankRuntime.transact(books -> books.completeSystemPayment(reference));
+    }
+
+    public boolean durablePayments() { return true; }
+
     /**
      * Moves whole units inside the savings pool.
      *
@@ -88,6 +129,9 @@ public final class ShopOperatingAccount {
      * @return success, or {@code insufficient_funds}, {@code insufficient_shop}, or {@code bad_amount}
      */
     public TxResult transfer(UUID player, String currency, BigDecimal amount, boolean playerPaysShop) {
+        if (currency != null && currency.startsWith("personal:")) {
+            return TxResult.fail("durable_required", "个人币结算需要配套新版商店的引用交易接口");
+        }
         if (BankRuntime.state == null) {
             return TxResult.fail("bank_not_ready", "Ledger is not loaded");
         }

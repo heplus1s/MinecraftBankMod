@@ -1,7 +1,5 @@
-name: Build bank mod
-on:
-  push:
-  pull_request:
+name: Build integrated mod
+on: [push, pull_request]
 permissions:
   contents: read
 jobs:
@@ -13,9 +11,35 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Build and run unit tests
+      - name: Check client/server packaging
+        run: python3 scripts/check_embedded_ui.py
+      - name: Compile and test core plus client
         run: bash gradlew --no-daemon build
+      - name: Verify remapped release jar
+        run: python3 scripts/check_release_jar.py
       - uses: actions/upload-artifact@v4
         with:
-          name: bankmod-jars
-          path: build/libs/*.jar
+          name: integrated-mod-jars
+          path: build/libs/bankmod-1.0.2.jar
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: integrated-mod-jars
+          path: release-jars
+      - name: Publish versioned release without replacing existing tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view v1.0.2 >/dev/null 2>&1; then
+            echo "Release v1.0.2 already exists; refusing to replace it."
+            exit 1
+          fi
+          gh release create v1.0.2 release-jars/bankmod-1.0.2.jar --target "$GITHUB_SHA" --title "v1.0.2 内置客户端界面" --notes-file RELEASE_NOTES_1.0.2.md

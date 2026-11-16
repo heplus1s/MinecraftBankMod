@@ -232,6 +232,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
 
     private boolean canDeposit(ItemStack stack) {
         if (NotePaper.tagged(stack)) {
+            NotePaper.refreshPersonalLabel(stack, BankRuntime.books());
             return page == Page.DEPOSIT || (page == Page.MARKET && marketMode == 2);
         }
         if (CheckItems.read(stack) != null) {
@@ -723,12 +724,10 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         }
         if (marketMode == 2) {
             String payout = redeemPayout(listed);
-            boolean fixed = listed.regime() != NoteRegime.FLOAT;
             inventory.setStack(19, marker(Items.GOLD_INGOT,
-                    Text.literal(payoutLabel(payout)).formatted(Formatting.GOLD),
-                    List.of(Text.literal(fixed ? "Fixed by this note" : "Click to change the payout").formatted(Formatting.GRAY),
-                            Text.literal(fixed ? "按钉住汇率或面额兑付，发行准备金不足则停止" : "按市场价格兑付，从发行人的发行准备金支付").formatted(Formatting.DARK_GRAY)),
-                    fixed ? "noop" : "pn:payout", 1));
+                    Text.literal("按实际抵押物兑付到储蓄").formatted(Formatting.GOLD),
+                    List.of(Text.literal("逐层扣缴，按实际终币记账；不强换其他货币").formatted(Formatting.GRAY)),
+                    "noop", 1));
             for (int i = 0; i < NOTE_BUTTONS.length; i++) {
                 BigInteger amount = NOTE_BUTTONS[i];
                 inventory.setStack(29 + i, marker(Items.GOLD_NUGGET,
@@ -738,7 +737,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                         amount.intValue()));
             }
             inventory.setStack(13, marker(Items.SPECTRAL_ARROW,
-                    Text.literal("放入纸质银行券并兑付").formatted(Formatting.GOLD),
+                    Text.literal("纸币请先到存入页入账").formatted(Formatting.GOLD),
                     List.of(Text.literal("Copies are refused").formatted(Formatting.RED)),
                     "noop", 1));
             inventory.setStack(REDEEM_SLOT, ItemStack.EMPTY);
@@ -856,13 +855,8 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
             }
             marketIndex = Math.floorMod(marketIndex, notes.size());
             BigInteger amount = new BigInteger(parts[3]);
-            Redemption result = books.redeemPersonal(uuid, notes.get(marketIndex).name(), amount, parts[2]);
-            if (!result.success()) {
-                tell(player, BankPhrases.redeemRefusal(result));
-                return;
-            }
-            BankRuntime.save();
-            tell(player, BankPhrases.noteRedeem(result, books, uuid));
+            dev.jdguo.bank.net.PersonalRedemptionService.redeem(player, notes.get(marketIndex).name(),
+                    new java.math.BigDecimal(amount));
             return;
         }
         if (action.startsWith("pn:reserve:")) {
@@ -1396,39 +1390,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
     }
 
     private void redeemPresentedPaper(ServerPlayerEntity player, ItemStack stack, int deposit) {
-        PresentedNote presented = NotePaper.read(stack);
-        if (presented == null) {
-            inventory.setStack(deposit, ItemStack.EMPTY);
-            tell(player, BankPhrases.failure(BankPhrases.Kind.DEPOSIT, "note_tampered", null, null));
-            return;
-        }
-        if (presented.central()) {
-            tell(player, BankPhrases.failure(BankPhrases.Kind.DEPOSIT, "not_note", null, null));
-            return;
-        }
-        PersonalNote note = BankRuntime.books().personalNoteById(presented.personalNote());
-        String payout = note == null ? "diamond" : redeemPayout(note);
-        Redemption result = BankRuntime.books().redeemPersonalPaper(
-                player.getUuid(), presented.personalNote(), presented.face(), BigInteger.valueOf(stack.getCount()), payout);
-        if ("note_spent".equals(result.code()) || "note_tampered".equals(result.code())) {
-            inventory.setStack(deposit, ItemStack.EMPTY);
-        }
-        if (!result.success()) {
-            tell(player, "note_spent".equals(result.code()) || "note_tampered".equals(result.code())
-                    ? BankPhrases.failure(BankPhrases.Kind.DEPOSIT, result.code(), null, null)
-                    : BankPhrases.redeemRefusal(result));
-            return;
-        }
-        int taken = result.sheetsTaken().intValue();
-        int left = stack.getCount() - Math.max(0, taken);
-        if (left <= 0) {
-            inventory.setStack(deposit, ItemStack.EMPTY);
-        } else {
-            stack.setCount(left);
-            inventory.setStack(deposit, stack);
-        }
-        BankRuntime.save();
-        tell(player, BankPhrases.noteRedeem(result, BankRuntime.books(), player.getUuid()));
+        dev.jdguo.bank.net.PersonalRedemptionService.paperInstructions(player);
     }
 
     private void paintCreate() {

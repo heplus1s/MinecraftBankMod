@@ -116,10 +116,10 @@ class PersonalNoteControlsTest {
         assertEquals(BigInteger.TEN, note.circulation());
 
         assertTrue(books.setPersonalRedemptionPaused(issuer, false).success());
-        Redemption open = books.redeemPersonal(other, "屎币", BigInteger.ONE, "diamond");
+        var open = books.redeemPersonalToSavings(other, note.id(), BigDecimal.ONE, "unpaused-redeem");
         assertTrue(open.success(), open.code());
-        assertTrue(open.diamonds().signum() > 0);
-        assertEquals(new BigInteger("9"), note.circulation());
+        assertTrue(books.balanceExact(other, "diamond").signum() > 0);
+        assertEquals(0, books.personalActiveExact(note).compareTo(new BigDecimal("9")));
     }
 
     @Test

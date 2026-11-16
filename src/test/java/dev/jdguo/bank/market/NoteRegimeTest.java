@@ -19,7 +19,7 @@ class NoteRegimeTest {
     private final UUID buyer = UUID.fromString("33333333-3333-3333-3333-333333333333");
 
     @Test
-    void floatingQuoteMovesOnASwapAndRedemptionCanDiscount() {
+    void floatingBackingQuoteDoesNotMoveFromOwnershipTransfers() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         PersonalNote pay = open(books, issuerA, "Aa", NoteRegime.FLOAT, "diamond", BigInteger.ONE, BigInteger.TEN, BigInteger.TEN);
         PersonalNote receive = open(books, issuerB, "Bb", NoteRegime.FLOAT, "diamond", BigInteger.ONE, BigInteger.TEN, BigInteger.TEN);
@@ -30,8 +30,8 @@ class NoteRegimeTest {
         SwapTrade swap = books.swapPersonalNotes(issuerA, "Aa", "Bb", BigInteger.TEN);
 
         assertTrue(swap.success(), swap.code());
-        assertTrue(books.personalDiamondPrice(receive).compareTo(beforeB) > 0);
-        assertTrue(books.personalDiamondPrice(pay).compareTo(beforeA) < 0);
+        assertEquals(0, books.personalDiamondPrice(receive).compareTo(beforeB));
+        assertEquals(0, books.personalDiamondPrice(pay).compareTo(beforeA));
         assertEquals(BigInteger.TEN, books.personalReserve(issuerB, "diamond"));
         books.checkInvariants();
 
@@ -42,16 +42,16 @@ class NoteRegimeTest {
         var bought = later.buyPersonalNote(buyer, "Bb", BigInteger.TEN);
         assertTrue(bought.success(), bought.code());
         BigDecimal market = later.personalDiamondPrice(traded).multiply(BigDecimal.TEN);
-        Redemption redeemed = later.redeemPersonal(buyer, "Bb", BigInteger.TEN, "diamond");
-        assertTrue(redeemed.success(), redeemed.code());
-        assertTrue(redeemed.discounted());
-        assertTrue(new BigDecimal(redeemed.diamonds()).compareTo(market) < 0);
-        assertEquals(BigInteger.ZERO, traded.circulation());
+        assertEquals("route_to_savings", later.redeemPersonal(buyer, "Bb", BigInteger.TEN, "diamond").code());
+        assertTrue(later.redeemPersonalToSavings(buyer, traded.id(), BigDecimal.TEN, "float-redeem").success());
+        assertEquals(0, later.balanceExact(buyer, "diamond").compareTo(market));
+        assertEquals(0, later.personalActiveExact(traded).signum());
+        assertEquals(0, later.personalRecovered(traded.id()).compareTo(BigDecimal.TEN));
         later.checkInvariants();
     }
 
     @Test
-    void pegIgnoresFlowAndCapsRedemptionAtThePeg() {
+    void pegTargetDoesNotOverwriteActualBackingSettlement() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         PersonalNote peg = open(books, issuerB, "Bb", NoteRegime.PEG, "diamond", new BigInteger("2"), new BigInteger("20"), BigInteger.TEN);
         PersonalNote floating = open(books, issuerA, "Aa", NoteRegime.FLOAT, "diamond", BigInteger.ONE, BigInteger.TEN, BigInteger.TEN);
@@ -68,24 +68,20 @@ class NoteRegimeTest {
         assertTrue(swap.success(), swap.code());
         assertEquals(new BigInteger("2"), swap.paidNotes());
         assertEquals(0, new BigDecimal("2").compareTo(books.personalDiamondPrice(peg)));
-        assertTrue(books.personalDiamondPrice(floating).compareTo(BigDecimal.ONE) < 0);
+        assertEquals(0, books.personalDiamondPrice(floating).compareTo(BigDecimal.ONE));
 
         books.setPersonalReserve(issuerB, "diamond", new BigInteger("6"));
-        Redemption capped = books.redeemPersonal(buyer, "Bb", BigInteger.valueOf(5), "diamond");
-        assertTrue(capped.success(), capped.code());
-        assertEquals("capped", capped.code());
-        assertEquals(new BigInteger("3"), capped.retired());
-        assertEquals(new BigInteger("6"), capped.diamonds());
-        assertEquals(0, new BigDecimal("2").compareTo(books.personalDiamondPrice(peg)));
-        assertEquals(new BigInteger("7"), peg.circulation());
-        assertEquals(BigInteger.ZERO, books.personalReserve(issuerB, "diamond"));
-        assertEquals("suspended", books.redeemPersonal(buyer, "Bb", BigInteger.ONE, "diamond").code());
-        assertEquals("payout", books.redeemPersonal(buyer, "Bb", BigInteger.ONE, "copper").code());
+        assertEquals("route_to_savings", books.redeemPersonal(buyer, "Bb", BigInteger.valueOf(5), "diamond").code());
+        assertTrue(books.redeemPersonalToSavings(buyer, peg.id(), new BigDecimal("5"), "peg-redeem").success());
+        assertEquals(0, books.balanceExact(buyer, "diamond").compareTo(new BigDecimal("3")));
+        assertEquals(0, books.personalActiveExact(peg).compareTo(new BigDecimal("5")));
+        assertEquals(0, books.personalDiamondPrice(peg).compareTo(new BigDecimal("0.6")));
+        assertEquals(new BigInteger("3"), books.personalReserve(issuerB, "diamond"));
         books.checkInvariants();
     }
 
     @Test
-    void hardConvertibilityStaysAtFaceAndPaysOnlyTheBacking() {
+    void hardTargetStaysConfiguredWhileActualSettlementCanFall() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         open(books, issuerA, "Aa", NoteRegime.FLOAT, "diamond", BigInteger.ONE, BigInteger.TEN, BigInteger.TEN);
         books.setPersonalNoteCoverage(new BigDecimal("0.5"));
@@ -113,16 +109,12 @@ class NoteRegimeTest {
         assertTrue(face[0].compareTo(premium[0]) != 0 || face[1].compareTo(premium[1]) != 0);
 
         books.setPersonalReserve(issuerB, "diamond", new BigInteger("4"));
-        Redemption capped = books.redeemPersonal(buyer, "Bb", BigInteger.valueOf(8), "diamond");
-        assertTrue(capped.success(), capped.code());
-        assertEquals("capped", capped.code());
-        assertEquals(new BigInteger("4"), capped.retired());
-        assertEquals(new BigInteger("4"), capped.diamonds());
-        assertEquals(BigInteger.ZERO, capped.copper());
-        assertEquals(BigInteger.ZERO, capped.central());
-        assertEquals("payout", books.redeemPersonal(buyer, "Bb", BigInteger.ONE, "note").code());
-        assertEquals(0, BigDecimal.ONE.compareTo(books.personalDiamondPrice(hard)));
-        assertFalse(books.personalNote(issuerB).regime() == NoteRegime.FLOAT);
+        assertEquals("route_to_savings", books.redeemPersonal(buyer, "Bb", BigInteger.valueOf(8), "diamond").code());
+        assertTrue(books.redeemPersonalToSavings(buyer, hard.id(), new BigDecimal("8"), "hard-redeem").success());
+        assertEquals(0, books.balanceExact(buyer, "diamond").compareTo(new BigDecimal("3.2")));
+        assertEquals(0, books.personalActiveExact(hard).compareTo(new BigDecimal("2")));
+        assertEquals(0, books.personalDiamondPrice(hard).compareTo(new BigDecimal("0.4")));
+        assertEquals(NoteRegime.HARD, hard.regime());
         books.checkInvariants();
     }
 
