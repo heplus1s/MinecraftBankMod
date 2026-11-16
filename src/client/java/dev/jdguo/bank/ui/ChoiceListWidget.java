@@ -153,7 +153,7 @@ final class ChoiceListWidget extends AlwaysSelectedEntryListWidget<ChoiceListWid
         for (Row row : children()) {
             int rowY = innerTop + index * this.itemHeight - scroll;
             if (mouseY >= rowY && mouseY < rowY + this.itemHeight && rowY < this.bottom && rowY + this.itemHeight > innerTop) {
-                if (row.choice.section()) {
+                if (row.choice.section() || !row.choice.enabled()) {
                     return true;
                 }
                 setSelected(row);
@@ -195,11 +195,18 @@ final class ChoiceListWidget extends AlwaysSelectedEntryListWidget<ChoiceListWid
         }
         if (keep != null) {
             for (Row row : children()) {
-                if (keep.equals(row.choice.id)) {
+                if (keep.equals(row.choice.id) && row.choice.enabled()) {
                     setSelected(row);
                     break;
                 }
             }
+        }
+    }
+
+    @Override
+    public void setSelected(Row row) {
+        if (row == null || (!row.choice.section() && row.choice.enabled())) {
+            super.setSelected(row);
         }
     }
 
@@ -221,7 +228,7 @@ final class ChoiceListWidget extends AlwaysSelectedEntryListWidget<ChoiceListWid
             return;
         }
         for (Row row : children()) {
-            if (id.equals(row.choice.id)) {
+            if (id.equals(row.choice.id) && row.choice.enabled()) {
                 setSelected(row);
                 return;
             }
@@ -238,9 +245,10 @@ final class ChoiceListWidget extends AlwaysSelectedEntryListWidget<ChoiceListWid
         return getRowLeft() + getRowWidth();
     }
 
-    record Choice(String id, String label, boolean section) {
+    record Choice(String id, String label, boolean section, boolean enabled) {
+        Choice(String id, String label, boolean section) { this(id, label, section, !section); }
         Choice(String id, String label) {
-            this(id, label, false);
+            this(id, label, false, true);
         }
     }
 
@@ -258,14 +266,14 @@ final class ChoiceListWidget extends AlwaysSelectedEntryListWidget<ChoiceListWid
             if (!choice.section() && (selected || hovered)) {
                 context.fill(x, y, x + entryWidth, y + entryHeight - 1, selected ? 0xAA3A5A38 : 0x66333333);
             }
-            int color = choice.section() ? 0xFFE8D090 : 0xFFFFFFFF;
+            int color = choice.section() ? 0xFFE8D090 : choice.enabled() ? 0xFFFFFFFF : 0xFF777777;
             int textX = x + (choice.section() ? 4 : 12);
             context.drawText(MinecraftClient.getInstance().textRenderer, choice.label, textX, y + 4, color, true);
         }
 
         @Override
         public boolean mouseClicked(double mouseX, double mouseY, int button) {
-            if (!choice.section()) {
+            if (!choice.section() && choice.enabled()) {
                 setSelected(this);
             }
             return true;

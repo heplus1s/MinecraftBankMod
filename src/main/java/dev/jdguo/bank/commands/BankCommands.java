@@ -600,6 +600,7 @@ public final class BankCommands {
         if (!NotePaper.tagged(hand)) {
             return fail(source, BankPhrases.failure(BankPhrases.Kind.DEPOSIT, "not_note", null, null));
         }
+        NotePaper.refreshPersonalLabel(hand, books());
         PresentedNote presented = NotePaper.read(hand);
         if (presented == null) {
             player.getInventory().setStack(player.getInventory().selectedSlot, ItemStack.EMPTY);

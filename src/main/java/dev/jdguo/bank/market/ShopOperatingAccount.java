@@ -51,8 +51,13 @@ public final class ShopOperatingAccount {
     /** Four-decimal balance expected by the shop's live bridge. */
     public BigDecimal balance(String currency) {
         if (currency != null && currency.startsWith("personal:")) {
-            try { return BankRuntime.books().personalSystemCapacity(UUID.fromString(currency.substring(9)), "shop"); }
-            catch (IllegalArgumentException invalid) { return BigDecimal.ZERO; }
+            try {
+                BankBooks books = BankRuntime.books();
+                var quote = books.quoteSystemPayout(UUID.fromString(currency.substring(9)),
+                        books.systemAvailableBalance("shop", "note"));
+                return quote.get("success").getAsBoolean()
+                        ? new BigDecimal(quote.get("privateAmount").getAsString()) : BigDecimal.ZERO;
+            } catch (IllegalArgumentException invalid) { return BigDecimal.ZERO; }
         }
         return BankRuntime.books().systemAvailableBalance("shop", currency);
     }

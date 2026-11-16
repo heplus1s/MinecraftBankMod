@@ -19,6 +19,25 @@ class NotePaperTest {
     private final UUID other = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
 
     @Test
+    void renamedPaperRetainsUuidFaceAndOtherTags() {
+        BankBooks books = BankBooks.create(BankConfig.defaults());
+        books.createPersonalNote(player, "旧币", false, BigInteger.ONE);
+        var note = books.personalNote(player);
+        PresentedNote paper = new PresentedNote(null, note.id(), BigInteger.TEN);
+        var root = NotePaper.signature(paper, "旧币");
+        root.putString("custom", "keep");
+        root.getCompound("display").putInt("color", 123);
+        assertTrue(books.renamePersonalNote(player, note.id(), "新币", false).success());
+        assertEquals(paper, NotePaper.readSignature(root));
+        assertTrue(NotePaper.refreshPersonalSignature(root, books));
+        assertEquals(paper, NotePaper.readSignature(root));
+        assertEquals("keep", root.getString("custom"));
+        assertEquals(123, root.getCompound("display").getInt("color"));
+        assertTrue(root.getCompound("display").getString("Name").contains("新币"));
+        assertFalse(NotePaper.refreshPersonalSignature(root, books));
+    }
+
+    @Test
     void sameFaceCentralPaperSharesOneIdentityAndStacksAsAPile() {
         PresentedNote one = new PresentedNote("note", null, BigInteger.ONE);
         PresentedNote again = new PresentedNote("note", null, BigInteger.ONE);

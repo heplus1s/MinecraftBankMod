@@ -285,7 +285,7 @@ class SettlementHooksTest {
     }
 
     @Test
-    void decimalShopReadHooksMatchRealClearingCapacityAndSurviveReload() throws Exception {
+    void decimalShopReadHooksMatchActualOfferCapacityAndSurviveReload() throws Exception {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         books.creditHeld(buyer, "note", new BigDecimal("1.0000"));
         BankRuntime.state = new BankWorldState(books);
@@ -318,7 +318,7 @@ class SettlementHooksTest {
             assertEquals(0, new BigDecimal("0.5000").compareTo((BigDecimal) playerBalance.invoke(account, buyer, personal)));
             assertEquals(0, ((BigDecimal) balance.invoke(account, personal)).signum()); // Pending delivery assets cannot be reused.
             assertTrue(books.completeSystemPayment("decimal-purchase").success());
-            assertEquals(0, new BigDecimal("1.5000").compareTo((BigDecimal) balance.invoke(account, personal)));
+            assertEquals(0, BigDecimal.ZERO.compareTo((BigDecimal) balance.invoke(account, personal)));
             assertEquals(0, new BigDecimal("2.2500").compareTo(books.systemSettlementBalance("shop", "diamond")));
             assertEquals(BigInteger.ZERO, books.shopOperating("note")); // Only the earlier 0.06 fraction exists, no appraised notes were minted.
 
@@ -326,13 +326,20 @@ class SettlementHooksTest {
             assertEquals(0, new BigDecimal("0.9400").compareTo((BigDecimal) playerBalance.invoke(account, buyer, "note")));
             assertEquals(0, new BigDecimal("0.0600").compareTo((BigDecimal) balance.invoke(account, "note")));
             assertEquals(0, new BigDecimal("0.5000").compareTo((BigDecimal) playerBalance.invoke(account, buyer, personal)));
-            assertEquals(0, new BigDecimal("1.5000").compareTo((BigDecimal) balance.invoke(account, personal)));
+            assertEquals(0, BigDecimal.ZERO.compareTo((BigDecimal) balance.invoke(account, personal)));
             BankBooks loaded = BankRuntime.books();
-            assertTrue(loaded.transferShopReferenced(buyer, personal, new BigDecimal("0.2500"), false, "decimal-payout").success());
+            assertEquals("mixed_quote_required", loaded.transferShopReferenced(buyer, personal,
+                    new BigDecimal("0.2500"), false, "decimal-old-payout").code());
+            JsonObject payout = loaded.quoteSystemPayout(series, new BigDecimal("0.0500"));
+            assertEquals("0", payout.get("privateAmount").getAsString()); // No issuer-listed whole coin exists.
+            assertTrue(loaded.executeSystemPayout(buyer, series, new BigDecimal("0.0500"),
+                    payout.get("fingerprint").getAsString(), "decimal-payout").success());
             assertTrue(loaded.completeSystemPayment("decimal-payout").success());
-            assertEquals(0, new BigDecimal("0.7500").compareTo((BigDecimal) playerBalance.invoke(account, buyer, personal)));
-            assertEquals(0, new BigDecimal("1.2500").compareTo((BigDecimal) balance.invoke(account, personal)));
-            assertEquals(0, new BigDecimal("1.8750").compareTo(loaded.systemSettlementBalance("shop", "diamond")));
+            assertEquals(0, new BigDecimal("0.5000").compareTo((BigDecimal) playerBalance.invoke(account, buyer, personal)));
+            assertEquals(0, new BigDecimal("0.9900").compareTo((BigDecimal) playerBalance.invoke(account, buyer, "note")));
+            assertEquals(0, new BigDecimal("0.0100").compareTo((BigDecimal) balance.invoke(account, "note")));
+            assertEquals(0, BigDecimal.ZERO.compareTo((BigDecimal) balance.invoke(account, personal)));
+            assertEquals(0, new BigDecimal("2.2500").compareTo(loaded.systemSettlementBalance("shop", "diamond")));
             loaded.checkInvariants();
         } finally {
             BankRuntime.state = null;

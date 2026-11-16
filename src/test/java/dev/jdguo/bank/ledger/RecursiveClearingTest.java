@@ -20,8 +20,9 @@ class RecursiveClearingTest {
         books.issuePersonalNoteUnbacked(leafOwner, BigInteger.TEN);
         books.deposit(leafOwner, "diamond", BigInteger.TEN);
         assertTrue(books.depositPersonalReserveExact(leafOwner, BigDecimal.TEN).success());
-        assertTrue(books.createPersonalNote(owner, "枝", NoteRegime.FLOAT, "personal:" + leaf.id(), BigInteger.ONE).success());
+        assertTrue(books.createPersonalNote(owner, "枝", NoteRegime.FLOAT, "diamond", BigInteger.ONE).success());
         books.issuePersonalNoteUnbacked(owner, BigInteger.TEN);
+        assertTrue(books.switchPersonalReserve(owner, "personal:" + leaf.id()).success());
         assertTrue(books.transferPersonal(leafOwner, owner, "叶", BigInteger.valueOf(5)).success());
         assertTrue(books.listPersonal(owner, "叶", BigInteger.valueOf(5)).success());
         String before = books.toJson();

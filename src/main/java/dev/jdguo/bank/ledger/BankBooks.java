@@ -2167,17 +2167,31 @@ public final class BankBooks {
         try { return UUID.fromString(anchor.substring(9)); } catch (IllegalArgumentException ignored) { return null; }
     }
     private boolean baseAnchor(String anchor) { return "diamond".equals(anchor) || "copper".equals(anchor) || "note".equals(anchor); }
-    private boolean usableAnchor(PersonalNote root, String anchor) {
+    public record AnchorEligibility(boolean allowed, String code, String reason) {}
+    /** Read-only prospective edge check. Shared collateral branches are valid; a path back to this note is not. */
+    public AnchorEligibility personalReserveEligibility(UUID noteId, String anchor) {
+        PersonalNote root = personalNoteById(noteId);
+        if (root == null || root.bankrupt()) return new AnchorEligibility(false, "missing_or_closed", "当前货币不存在或已关闭");
+        if (noteHasPending(noteId)) return new AnchorEligibility(false, "delivery_pending", "当前货币有待完成交易");
+        return anchorEligibility(root, anchor);
+    }
+    private AnchorEligibility anchorEligibility(PersonalNote root, String anchor) {
         java.util.Set<UUID> visited = new java.util.HashSet<>();
         visited.add(root.id());
         for (int depth = 0; depth < 32; depth++) {
-            if (baseAnchor(anchor)) return true;
+            if (baseAnchor(anchor)) return new AnchorEligibility(true, "ok", "可用作准备金");
             UUID id = nestedId(anchor);
-            PersonalNote next = id == null ? null : personalNoteById(id);
-            if (next == null || next.bankrupt() || !visited.add(id)) return false;
+            if (id == null) return new AnchorEligibility(false, "unknown_anchor", "无法识别准备金币种");
+            if (!visited.add(id)) return new AnchorEligibility(false, "cycle", "候选货币的准备金链形成循环，不能选择");
+            PersonalNote next = personalNoteById(id);
+            if (next == null || next.bankrupt()) return new AnchorEligibility(false, "missing_or_closed", "准备金链含不存在或已关闭的货币");
+            if (noteHasPending(id)) return new AnchorEligibility(false, "delivery_pending", "准备金链有待完成交易");
             anchor = next.anchor();
         }
-        return false;
+        return new AnchorEligibility(false, "depth", "准备金链过深，不能选择");
+    }
+    private boolean usableAnchor(PersonalNote root, String anchor) {
+        return anchorEligibility(root, anchor).allowed();
     }
     public record ClearingLeg(UUID noteId, String anchor, BigDecimal notes, BigDecimal reserve) {}
     public record ClearingQuote(boolean success, String code, String currency, BigDecimal amount, java.util.List<ClearingLeg> legs) {
@@ -2296,7 +2310,9 @@ public final class BankBooks {
     /** Return collateral to its owner and pause this note until a new actual deposit arrives. */
     public TxResult switchPersonalReserve(UUID issuer, String anchor) {
         PersonalNote note = personalNote(issuer);
-        if (note == null || note.bankrupt() || noteHasPending(note.id()) || !usableAnchor(note, anchor)) return TxResult.fail("anchor", "Invalid collateral chain");
+        if (note == null) return TxResult.fail("missing_or_closed", "当前货币不存在");
+        AnchorEligibility eligibility = personalReserveEligibility(note.id(), anchor);
+        if (!eligibility.allowed()) return TxResult.fail(eligibility.code(), eligibility.reason());
         BigDecimal reserve = effectiveBackingExact(note); String old = note.anchor(); UUID nested = nestedId(old);
         if (nested == null) creditBalance(issuer, old, reserve);
         else setPersonalExact(nested, issuer, personalHoldingExact(nested, issuer).add(reserve));
@@ -2678,6 +2694,7 @@ public final class BankBooks {
         if (!PersonalMarket.validName(name)) {
             return NoteTrade.fail("name");
         }
+        if (systemCurrencyName(name)) return NoteTrade.fail("reserved_name");
         if (personalNote(issuer) != null) {
             return NoteTrade.fail("exists");
         }
@@ -2687,13 +2704,34 @@ public final class BankBooks {
         if (par == null || par.signum() <= 0) {
             return NoteTrade.fail("par");
         }
-        if (!validAnchor(regime, anchor)) {
-            return NoteTrade.fail("anchor");
+        if (!validAnchor(regime, anchor) || !("diamond".equals(anchor) || "copper".equals(anchor))) {
+            return NoteTrade.fail("initial_physical_reserve");
         }
         PersonalNote note = new PersonalNote(UUID.randomUUID(), issuer, name, regime, anchor, par);
         if (!usableAnchor(note, anchor)) return NoteTrade.fail("anchor");
         personalNotes.put(note.id(), note);
         return NoteTrade.ok(note, BigInteger.ZERO, BigInteger.ZERO);
+    }
+
+    private boolean systemCurrencyName(String name) {
+        String key = PersonalMarket.canonicalName(name);
+        for (CurrencyDef currency : currencies.values()) {
+            if (key.equals(PersonalMarket.canonicalName(currency.id()))
+                    || key.equals(PersonalMarket.canonicalName(currency.name()))) return true;
+        }
+        return false;
+    }
+    /** Display name only: all balances, offers, collateral and receipts retain their UUID identity. */
+    public TxResult renamePersonalNote(UUID actor, UUID noteId, String name, boolean operator) {
+        PersonalNote note = personalNoteById(noteId);
+        if (note == null) return TxResult.fail("none", "没有这张个人货币");
+        if (actor == null || (!operator && !actor.equals(note.issuer()))) return TxResult.fail("permission", "仅发行人或管理员可以改名");
+        if (!PersonalMarket.validName(name)) return TxResult.fail("name", "名称须为一至三个汉字或英文字母");
+        if (systemCurrencyName(name)) return TxResult.fail("reserved_name", "不能使用系统货币的名称");
+        PersonalNote other = personalNoteByName(name);
+        if (other != null && !other.id().equals(noteId)) return TxResult.fail("taken", "此名称已被使用");
+        note.rename(name);
+        return TxResult.ok(BigInteger.ZERO, "个人货币已改名");
     }
 
     /** Every other regime, and every valid peg anchor, without posting a switch. */
@@ -2748,6 +2786,8 @@ public final class BankBooks {
         if (regime == null || !validAnchor(regime, anchor)) {
             return refused(regime, anchor, "请指定 float、peg 或 hard。计价货币用 diamond、copper 或 note。");
         }
+        AnchorEligibility eligibility = personalReserveEligibility(note.id(), anchor);
+        if (!eligibility.allowed()) return refused(regime, anchor, eligibility.reason());
         if (suspended(note)) {
             return refused(regime, anchor, "「" + name + "」的兑付已经暂停，不能改汇率制度。");
         }

@@ -789,6 +789,7 @@ public final class BankPhrases {
         return switch (code == null ? "" : code) {
             case "name" -> line(Tone.RED, "名字最多三个汉字或英文字母。", "The name can be at most three Chinese characters or English letters.");
             case "taken" -> line(Tone.RED, "这个名字已经有人用了。", "That name is already taken.");
+            case "reserved_name" -> line(Tone.RED, "不能使用系统货币的名称。", "System currency names are reserved.");
             case "exists" -> line(Tone.RED, "你已经有一张个人银行券了。", "You already have a personal note.");
             case "reserve" -> line(Tone.RED, "个人准备金不够，还不能发行。", "Your personal reserve is not enough to issue that.");
             case "central_reserve" -> line(Tone.RED, "央行准备金账户不足，新发行暂停。通兑仍按已锁定的准备金办理。", "The central-bank reserve account is short, so new issuance is paused. Redemption still pays from locked reserves.");
@@ -803,6 +804,8 @@ public final class BankPhrases {
             case "pair" -> line(Tone.RED, "不能用同一张个人银行券互换。", "Pick two different personal notes.");
             case "quote" -> line(Tone.RED, "这个数量换不成整张，换一个数量。", "That amount doesn't buy a whole note. Try another amount.");
             case "payout" -> line(Tone.RED, "这种券不能兑成那种货币。", "That note cannot be redeemed into that currency.");
+            case "initial_physical_reserve" -> line(Tone.RED, "新建个人币须先选择钻石或铜作为实物抵押；创建后可切换到无循环的其他准备金。", "New personal currencies must initially use diamond or copper collateral; a valid acyclic anchor can be selected later.");
+            case "delivery_pending" -> line(Tone.RED, "这张货币还有待完成的交易，请先等待结算或恢复完成。", "This currency has a pending delivery; finish or recover it first.");
             case "anchor" -> line(Tone.RED, "这种汇率不能用这种货币。", "That regime cannot use that currency.");
             case "paused" -> line(Tone.RED, "这张个人银行券已暂停兑付。", "Redemption of this personal note is paused.");
             case "suspended" -> line(Tone.RED, "准备金不够按原价兑付，通兑暂停。", "Reserves cannot honor the official rate, so redemption is suspended.");

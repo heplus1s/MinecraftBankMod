@@ -72,6 +72,7 @@ public final class BankUiNetwork {
     }
 
     public static void open(ServerPlayerEntity player, String outlet, boolean admin) {
+        dev.jdguo.bank.instruments.NotePaper.refreshPersonalLabel(player.getMainHandStack(), BankRuntime.books());
         sessions.put(player.getUuid(), new Session(outlet, admin));
         sync(player);
     }

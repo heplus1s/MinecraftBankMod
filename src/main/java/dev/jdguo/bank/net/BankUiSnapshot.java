@@ -178,9 +178,10 @@ public final class BankUiSnapshot {
             }
         }
         o.add("notes", notes);
+        PersonalNote own = books.personalNote(player);
         JsonArray anchorOptions = allowedAnchors();
         for (PersonalNote candidate : books.personalNotes()) {
-            if (candidate.bankrupt() || candidate.issuer().equals(player)) continue;
+            if (candidate.bankrupt()) continue;
             JsonObject option = new JsonObject();
             option.addProperty("id", "personal:" + candidate.id());
             option.addProperty("name", candidate.name());
@@ -188,8 +189,15 @@ public final class BankUiSnapshot {
             option.addProperty("group", "个人发行货币");
             anchorOptions.add(option);
         }
+        if (own != null) {
+            for (var element : anchorOptions) {
+                JsonObject option = element.getAsJsonObject();
+                var eligibility = books.personalReserveEligibility(own.id(), option.get("id").getAsString());
+                option.addProperty("allowed", eligibility.allowed());
+                option.addProperty("reason", eligibility.reason());
+            }
+        }
         o.add("anchors", anchorOptions);
-        PersonalNote own = books.personalNote(player);
         if (own != null) {
             o.addProperty("personal", own.name());
             o.addProperty("regime", own.regime().name());
@@ -272,6 +280,8 @@ public final class BankUiSnapshot {
 
     private static JsonObject ownNote(BankBooks books, UUID player, PersonalNote note) {
         JsonObject row = new JsonObject();
+        row.addProperty("id", note.id().toString());
+        row.addProperty("canRename", note.issuer().equals(player));
         row.addProperty("name", note.name());
         row.addProperty("regime", note.regime().name());
         row.addProperty("regimeName", BankBooks.regimeZh(note.regime()));

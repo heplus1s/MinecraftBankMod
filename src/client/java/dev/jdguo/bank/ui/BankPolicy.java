@@ -16,8 +16,8 @@ public final class BankPolicy {
         return "note-policy " + kind + " " + token(rate) + " " + token(lo) + " " + token(hi);
     }
     private static BigDecimal positive(String text) {
-        if (text == null || !text.matches("[0-9]{1,16}(\\.[0-9]{1,8})?")) {
-            throw new IllegalArgumentException("汇率须为正数，最多 8 位小数。");
+        if (text == null || !text.matches("[0-9]{1,16}(\\.[0-9]{1,4})?")) {
+            throw new IllegalArgumentException("汇率须为正数，最多 4 位小数。");
         }
         BigDecimal value = new BigDecimal(text);
         if (value.signum() <= 0) throw new IllegalArgumentException("汇率必须大于零。");

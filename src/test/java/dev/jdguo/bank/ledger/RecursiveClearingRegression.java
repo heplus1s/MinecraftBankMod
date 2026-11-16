@@ -10,8 +10,9 @@ public final class RecursiveClearingRegression {
  static void eq(BigDecimal a,String b) { if(a.compareTo(d(b))!=0) throw new AssertionError(a+" != "+b); }
  static void ok(boolean v,String m) { if(!v) throw new AssertionError(m); }
  static PersonalNote coin(BankBooks b,UUID owner,String name,String anchor,int n) {
-  ok(b.createPersonalNote(owner,name,NoteRegime.FLOAT,anchor,BigInteger.ONE).success(),"create");
+  ok(b.createPersonalNote(owner,name,NoteRegime.FLOAT,"diamond",BigInteger.ONE).success(),"create");
   ok(b.issuePersonalNoteUnbacked(owner,BigInteger.valueOf(n)).success(),"issue");
+  if (!"diamond".equals(anchor)) ok(b.switchPersonalReserve(owner,anchor).success(),"switch anchor");
   return b.personalNote(owner);
  }
  public static void main(String[] args) {

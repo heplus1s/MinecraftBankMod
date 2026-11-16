@@ -17,7 +17,7 @@ import java.util.List;
  */
 public final class BankTerminalScreen extends Screen {
     private enum Page {
-        SAVINGS, DEPOSIT, WITHDRAW, EXCHANGE, ISSUE, REDEEM, MARKET, ISSUANCE, ISSUANCE_SWITCH, ISSUANCE_RESERVE,
+        SAVINGS, DEPOSIT, WITHDRAW, EXCHANGE, ISSUE, REDEEM, MARKET, ISSUANCE, ISSUANCE_SWITCH, ISSUANCE_RESERVE, ISSUANCE_RENAME,
         MANAGEMENT, MANAGEMENT_ADJUST, CONFIRM
     }
 
@@ -41,6 +41,7 @@ public final class BankTerminalScreen extends Screen {
     private String policyTarget;
     private String policyLower;
     private String policyUpper;
+    private String renameText = "";
     private int marketBalanceY = -1;
     private int bookScroll;
     private int issuanceScroll;
@@ -121,6 +122,7 @@ public final class BankTerminalScreen extends Screen {
             case ISSUANCE -> initIssuance();
             case ISSUANCE_SWITCH -> initIssuanceSwitch();
             case ISSUANCE_RESERVE -> initReserveSettings();
+            case ISSUANCE_RENAME -> initRenameSettings();
             default -> {
             }
         }
@@ -298,6 +300,10 @@ public final class BankTerminalScreen extends Screen {
         String regimeName = BankSnapshot.regimeName(data);
         y = paneText(pane, "当前发行制度：" + (regimeName == null ? BankBook.MISSING : regimeName), left, y, textWidth, 0xFFE6E6E6);
         JsonObject own = BankSnapshot.ownNote(data);
+        if ("true".equals(BankSnapshot.text(own, "canRename"))) {
+            y = paneButtons(pane, left, right, y + 4, List.of("修改货币名称"), List.of(() -> open(Page.ISSUANCE_RENAME)));
+            y += 6;
+        }
         for (String metric : List.of("m0", "m1", "m2")) {
             String value = BankSnapshot.text(own, metric);
             y = paneText(pane, metric.toUpperCase(java.util.Locale.ROOT) + "：" +
@@ -487,7 +493,7 @@ public final class BankTerminalScreen extends Screen {
     }
 
     private int issuanceTitleHeight() {
-        if (page == Page.ISSUANCE_SWITCH || page == Page.ISSUANCE_RESERVE) {
+        if (page == Page.ISSUANCE_SWITCH || page == Page.ISSUANCE_RESERVE || page == Page.ISSUANCE_RENAME) {
             return 16;
         }
         String personal = BankSnapshot.text(data, "personal");
@@ -529,6 +535,32 @@ public final class BankTerminalScreen extends Screen {
         switchRegime = regime;
         switchAnchor = anchor;
         send(BankActions.noteSwitch(regime, anchor));
+    }
+
+    private void initRenameSettings() {
+        BankLayout.Box port = issuancePort();
+        IssuancePane pane = new IssuancePane(port.x(), port.y(), port.width(), port.height(), this::toggleIssuanceDrawer, this::pickIssuanceDrawer);
+        issuancePane = pane;
+        int left = port.x() + 4, right = port.right() - 8, y = port.y() + 4;
+        y = paneButtons(pane, left, right, y, List.of("返回个人发行"), List.of(() -> open(Page.ISSUANCE)));
+        y = paneText(pane, "一至三个汉字或英文字母；名称不可与其他货币重复。改名不会重建货币或改动余额。旧纸币仍可按原标识兑付。", left, y + 8, right - left, 0xFFE8D090);
+        if (!notice.isBlank()) y = paneText(pane, notice, left, y + 4, right - left, 0xFFFFCC88);
+        y = policyField(pane, "新名称", renameText, left, right, y + 8, value -> renameText = value);
+        y = paneButtons(pane, left, right, y + 4, List.of("确认改名"), List.of(() -> {
+            JsonObject own = BankSnapshot.ownNote(data);
+            if (!"true".equals(BankSnapshot.text(own, "canRename"))) {
+                showNotice("仅发行人或授权管理员可以改名。");
+                return;
+            }
+            if (!dev.jdguo.bank.market.PersonalMarket.validName(renameText)) {
+                showNotice("名称须为一至三个汉字或英文字母。");
+                return;
+            }
+            String id = BankSnapshot.text(own, "id");
+            if (id != null) send("note-rename " + id + " " + renameText);
+        }));
+        pane.finish(y);
+        pane.setScroll(issuanceScroll);
     }
 
     private boolean clearingEnabled() {
@@ -620,9 +652,14 @@ public final class BankTerminalScreen extends Screen {
         if (!notice.isBlank()) y = paneText(pane, notice, left, y + 4, right - left, 0xFFFFCC88);
         List<ChoiceListWidget.Choice> choices = new ArrayList<>();
         for (BankRegimes.AnchorRow row : BankRegimes.anchorRows(data)) {
-            choices.add(new ChoiceListWidget.Choice(row.id(), row.label(), row.group()));
+            choices.add(new ChoiceListWidget.Choice(row.id(), row.label(), row.group(), row.allowed()));
         }
         y = placeScrollDrawer(pane, "switchAnchor", left, right, y + 8, choices, switchAnchor);
+        for (BankRegimes.AnchorRow row : BankRegimes.anchorRows(data)) {
+            if (!row.group() && !row.allowed()) {
+                y = paneText(pane, row.label() + "：不可选择，" + row.reason(), left, y + 4, right - left, 0xFFFFCC88);
+            }
+        }
         y = paneButtons(pane, left, right, y + 8, List.of("确认返还并更换"), List.of(() -> {
             String anchor = selected("switchAnchor", switchAnchor);
             if (!clearingEnabled() || anchor.isBlank() || anchor.startsWith("group:")) {
@@ -699,7 +736,7 @@ public final class BankTerminalScreen extends Screen {
         y += 6;
         List<ChoiceListWidget.Choice> anchorChoices = new ArrayList<>();
         for (BankRegimes.AnchorRow row : anchors) {
-            anchorChoices.add(new ChoiceListWidget.Choice(row.id(), row.label(), row.group()));
+            anchorChoices.add(new ChoiceListWidget.Choice(row.id(), row.label(), row.group(), row.allowed()));
         }
         y = placeScrollDrawer(pane, "switchAnchor", left, right, y, anchorChoices, switchAnchor);
         y += 8;
@@ -874,6 +911,7 @@ public final class BankTerminalScreen extends Screen {
             case ISSUANCE -> drawIssuanceTitle(context);
             case ISSUANCE_SWITCH -> drawSwitchTitle(context);
             case ISSUANCE_RESERVE -> drawHeading(context, "更换准备金", "返还旧准备金后暂停计价与交易，新准备金到账后恢复。");
+            case ISSUANCE_RENAME -> drawHeading(context, "个人货币改名", "仅修改名称，余额、抵押链和纸币仍使用原有货币标识。");
             case MANAGEMENT -> drawManagement(context);
             case MANAGEMENT_ADJUST -> {
                 drawHeading(context, "货币调整", "准备金和央行储蓄在总账里逐项列出，不随这里的选择改变。");
@@ -887,7 +925,7 @@ public final class BankTerminalScreen extends Screen {
             default -> {
             }
         }
-        if (!notice.isBlank() && page != Page.CONFIRM && page != Page.ISSUANCE && page != Page.ISSUANCE_SWITCH && page != Page.ISSUANCE_RESERVE) {
+        if (!notice.isBlank() && page != Page.CONFIRM && page != Page.ISSUANCE && page != Page.ISSUANCE_SWITCH && page != Page.ISSUANCE_RESERVE && page != Page.ISSUANCE_RENAME) {
             if (page != Page.MARKET) {
                 context.drawText(textRenderer, notice, mainLeft(), contentTop(), 0xFFFFCC88, false);
             } else {

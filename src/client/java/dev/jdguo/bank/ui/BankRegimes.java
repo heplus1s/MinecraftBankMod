@@ -130,7 +130,8 @@ public final class BankRegimes {
     }
 
     /** One row in the anchor drawer. A group row is a heading, not a selectable currency. */
-    public record AnchorRow(String id, String label, boolean group) {
+    public record AnchorRow(String id, String label, boolean group, boolean allowed, String reason) {
+        public AnchorRow(String id, String label, boolean group) { this(id, label, group, !group, ""); }
     }
 
     /**
@@ -138,6 +139,20 @@ public final class BankRegimes {
      * Otherwise 实物货币 is 铜锭 and 钻石, and 发行货币 is 银行券.
      */
     public static List<AnchorRow> anchorRows(JsonObject data) {
+        List<JsonObject> flat = arrayField(data, "anchors");
+        if (!flat.isEmpty()) {
+            List<AnchorRow> rows = new ArrayList<>();
+            for (JsonObject item : flat) {
+                String id = BankSnapshot.text(item, "id");
+                String name = firstText(item, "name", "label");
+                if (id == null || name == null) continue;
+                boolean allowed = !"false".equals(BankSnapshot.text(item, "allowed"));
+                String reason = BankSnapshot.text(item, "reason");
+                rows.add(new AnchorRow(id, name, false, allowed, reason == null ? "" : reason));
+            }
+            if (!rows.isEmpty()) return rows;
+        }
+
         List<JsonObject> groups = arrayField(data, "anchorGroups");
         if (groups.isEmpty()) {
             groups = arrayField(BankSnapshot.ownNote(data), "anchorGroups");

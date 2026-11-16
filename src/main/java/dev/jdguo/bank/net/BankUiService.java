@@ -65,6 +65,7 @@ public final class BankUiService {
             case "deposit-transfer" -> depositTransfer(player, books, parts);
             case "note-create" -> create(player, books, parts);
             case "note-switch" -> switchRegime(player, books, parts);
+            case "note-rename" -> renamePersonal(player, parts);
             case "note-policy", "note-reserve-switch", "note-recovery-return" -> clearingAction(player, parts);
             case "note-issue" -> issue(player, books, parts, false);
             case "note-unbacked", "issue-unbacked" -> issue(player, books, parts, true);
@@ -98,6 +99,21 @@ public final class BankUiService {
         }
         if (BankUiNetwork.session(player) != null) {
             BankUiNetwork.sync(player);
+        }
+    }
+
+    private static void renamePersonal(ServerPlayerEntity player, String[] parts) {
+        if (parts.length != 3) {
+            player.sendMessage(net.minecraft.text.Text.literal("请输入一至三个汉字或英文字母的新名称。"), false);
+            return;
+        }
+        try {
+            UUID noteId = UUID.fromString(parts[1]);
+            TxResult result = BankRuntime.transact(book -> book.renamePersonalNote(
+                    player.getUuid(), noteId, parts[2], player.hasPermissionLevel(2)));
+            player.sendMessage(net.minecraft.text.Text.literal(result.message()), false);
+        } catch (IllegalArgumentException invalid) {
+            player.sendMessage(net.minecraft.text.Text.literal("个人货币标识无效。"), false);
         }
     }
 

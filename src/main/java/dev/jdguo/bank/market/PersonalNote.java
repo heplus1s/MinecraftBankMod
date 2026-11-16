@@ -9,7 +9,7 @@ import java.util.UUID;
 public final class PersonalNote {
     private final UUID id;
     private final UUID issuer;
-    private final String name;
+    private String name;
     private NoteRegime regime;
     /** Reserve and payout currency: diamond, copper, or note. */
     private String anchor;
@@ -54,6 +54,10 @@ public final class PersonalNote {
     public UUID id() { return id; }
     public UUID issuer() { return issuer; }
     public String name() { return name; }
+    public void rename(String name) {
+        if (!PersonalMarket.validName(name)) throw new IllegalArgumentException("Invalid personal currency name");
+        this.name = name;
+    }
     public NoteRegime regime() { return regime; }
     public String anchor() { return anchor; }
     /** Reserve currency the lock is posted in. */

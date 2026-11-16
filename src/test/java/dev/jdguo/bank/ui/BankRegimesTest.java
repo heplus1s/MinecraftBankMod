@@ -13,6 +13,23 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BankRegimesTest {
     @Test
+    void reserveCandidateRefusalsRemainVisibleAndDisabled() {
+        JsonObject data = new JsonObject();
+        JsonArray anchors = new JsonArray();
+        JsonObject option = new JsonObject();
+        option.addProperty("id", "personal:00000000-0000-0000-0000-000000000001");
+        option.addProperty("name", "循环币");
+        option.addProperty("allowed", false);
+        option.addProperty("reason", "该币间接抵押当前货币");
+        anchors.add(option);
+        data.add("anchors", anchors);
+        var row = BankRegimes.anchorRows(data).get(0);
+        assertFalse(row.allowed());
+        assertEquals("该币间接抵押当前货币", row.reason());
+        assertEquals("循环币", row.label());
+    }
+
+    @Test
     void missingSwitchDataDoesNotInventAButton() {
         JsonObject data = new JsonObject();
         data.addProperty("regimeName", "浮动汇率制");

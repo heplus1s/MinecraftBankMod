@@ -232,6 +232,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
 
     private boolean canDeposit(ItemStack stack) {
         if (NotePaper.tagged(stack)) {
+            NotePaper.refreshPersonalLabel(stack, BankRuntime.books());
             return page == Page.DEPOSIT || (page == Page.MARKET && marketMode == 2);
         }
         if (CheckItems.read(stack) != null) {
