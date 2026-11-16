@@ -50,4 +50,49 @@ class RecursiveClearingTest {
         assertEquals(0, loaded.personalRecovered(loaded.personalNote(owner).id()).signum());
         loaded.checkInvariants();
     }
+
+    @Test void configuredIssuanceUsesExactTargetAndWithdrawsOnlyExcess() {
+        BankBooks books = BankBooks.create(BankConfig.defaults()); UUID owner = UUID.randomUUID();
+        books.createPersonalNote(owner, "价", NoteRegime.HARD, "diamond", BigInteger.ONE);
+        books.deposit(owner, "diamond", BigInteger.valueOf(5));
+        assertTrue(books.depositPersonalReserveExact(owner, new BigDecimal("5")).success());
+        assertTrue(books.setPersonalPolicy(owner, NoteRegime.HARD, new BigDecimal("2"), new BigDecimal("2"), new BigDecimal("2")).success());
+        assertFalse(books.issuePersonalNote(owner, BigInteger.valueOf(3)).success());
+        assertTrue(books.issuePersonalNote(owner, BigInteger.TWO).success());
+        assertEquals(0, books.personalRequiredBackingExact(books.personalNote(owner)).compareTo(new BigDecimal("4")));
+        assertTrue(books.withdrawPersonalReserveExact(owner, new BigDecimal("0.5")).success());
+        assertEquals(0, books.effectiveBackingExact(books.personalNote(owner)).compareTo(new BigDecimal("4.5")));
+        assertFalse(books.withdrawPersonalReserveExact(owner, new BigDecimal("0.6")).success());
+        assertFalse(books.issuePersonalNote(owner, BigInteger.ONE).success());
+        books.checkInvariants();
+    }
+
+    @Test void pendingDeliveryLocksLegacyAndNewMutationPathsUntilDurableCompletion() {
+        BankBooks books = BankBooks.create(BankConfig.defaults()); UUID owner = UUID.randomUUID();
+        books.createPersonalNote(owner, "锁", NoteRegime.FLOAT, "diamond", BigInteger.ONE);
+        books.issuePersonalNoteUnbacked(owner, BigInteger.TEN);
+        books.deposit(owner, "diamond", BigInteger.TEN); books.depositPersonalReserveExact(owner, BigDecimal.TEN);
+        UUID id = books.personalNote(owner).id();
+        assertTrue(books.settlePersonalToSystem(owner, id, BigDecimal.ONE, "land-grant", "pending").success());
+        String before = books.toJson();
+        assertFalse(books.issuePersonalNoteUnbacked(owner, BigInteger.ONE).success());
+        assertFalse(books.issuePersonalNote(owner, BigInteger.ONE).success());
+        assertFalse(books.retirePersonalNote(owner, BigInteger.ONE).success());
+        assertFalse(books.withdrawPersonalReserve(owner, BigInteger.ONE).success());
+        assertFalse(books.withdrawCentralReserve(owner, BigInteger.ONE).success());
+        assertFalse(books.depositPersonalReserve(owner, BigInteger.ONE).success());
+        assertFalse(books.depositCentralReserve(owner, BigInteger.ONE).success());
+        assertFalse(books.switchPersonalRegime(owner, NoteRegime.HARD, "diamond").allowed());
+        assertFalse(books.declareBankruptcy(owner, "锁", true).success());
+        assertFalse(books.setPersonalPolicy(owner, NoteRegime.HARD, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE).success());
+        assertFalse(books.transferPersonalExact(owner, UUID.randomUUID(), "personal:" + id, BigDecimal.ONE).success());
+        assertFalse(books.issuePersonalPaper(owner, id, BigInteger.ONE).result().success());
+        assertThrows(IllegalStateException.class, () -> books.setPersonalReserve(owner, "diamond", BigInteger.ZERO));
+        assertEquals(before, books.toJson());
+        assertEquals(0, books.systemAvailableBalance("land-grant", "diamond").signum());
+        assertTrue(books.reversePersonalSettlement("pending").success());
+        assertFalse(books.noteHasPending(id));
+        assertEquals(0, books.personalRecovered(id).signum());
+        books.checkInvariants();
+    }
 }

@@ -43,3 +43,15 @@ The historical bankruptcy routine cannot safely determine ownership for nested/f
 ## Verification
 
 Pure Java core and snapshot compile independently of Minecraft. `RecursiveClearingTest` invokes the executable real-ledger regression plus tests for listed-collateral protection and old-save no-auto-policy migration. It covers two-leg incoming and new reverse clearing, custody conservation, idempotency/conflicts, reloading, exact compensation, short recovery, no-current-rate rejection, central liability, fixed policy/public-holder protection, switching pauses and fractional collateral.
+
+## Delivery holds and policy-backed issuance
+
+External system payments create `pendingDelivery` receipts. Until the integration supplies durable delivery proof through `completeSystemPayment`, the affected personal-currency chain is conservatively locked against trading and issuer mutations. `systemAvailableBalance` excludes pending incoming terminal assets; `personalRecoveredAvailable` excludes pending incoming recovered notes. Total balances remain available separately for accounting displays. Compensation can use its own pending assets and releases the hold; account-only redemption completes immediately because there is no external item/land delivery. Completion itself must use the runtime's durable transaction boundary.
+
+The locks cover both new APIs and legacy issuance, retirement, regime switch, reserve deposit/withdrawal, physical personal-note withdrawal, transfer and bankruptcy paths. Operator reserve replacement by the legacy raw setter refuses a pending chain instead of silently invalidating a possible refund.
+
+Once a policy is explicitly configured, backed issuance checks `(active supply + newly issued units) × the applicable rate` at full settlement precision. Fixed/floating backed issuance uses the configured target; pegged issuance uses current support constrained to the target band. It does not fall back to the old integer face value or require an unrelated extra central-note reserve. Manual unbacked issuance remains distinct. Unconfigured historical series retain their previous issuance rule.
+
+Exact reserve withdrawal exposes only uncommitted excess. Configured floating currency with active holders has no freely withdrawable backing, since its full reserve determines actual support; changing it uses the explicit pause-and-replace flow. M2 aggregation excludes recovered private notes and avoids counting nested pledged notes a second time alongside their outer currency.
+
+Final focused verification additionally covers non-1:1 fixed issuance, fractional excess withdrawal, legacy pending-order mutation attempts, and durable-lock replay/refund behavior.

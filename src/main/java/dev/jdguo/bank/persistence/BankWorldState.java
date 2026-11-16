@@ -45,6 +45,17 @@ public final class BankWorldState extends PersistentState {
             }
             // Never silently downgrade economic commits to a non-atomic replacement.
             Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            try (var directory = java.nio.channels.FileChannel.open(path.getParent(), java.nio.file.StandardOpenOption.READ)) {
+                directory.force(true);
+            } catch (UnsupportedOperationException unsupported) {
+                BankRuntime.LOGGER.warn("文件系统不支持目录同步，断电耐久性取决于操作系统", unsupported);
+            } catch (java.nio.file.AccessDeniedException denied) {
+                BankRuntime.LOGGER.warn("目录同步被拒绝，文件已提交；断电耐久性取决于操作系统", denied);
+            } catch (IOException directoryError) {
+                // The atomic rename already succeeded. Do not report a false rollback or
+                // overwrite it with the old in-memory book on a later ordinary save.
+                BankRuntime.LOGGER.warn("目录同步失败，文件已提交；请检查存储设备", directoryError);
+            }
             books = candidate;
             markDirty();
             return true;
@@ -104,24 +115,8 @@ public final class BankWorldState extends PersistentState {
     }
 
     public boolean writeBackup() {
-        Path path = backupPath(BankRuntime.server);
-        if (path == null) {
-            return false;
-        }
-        try {
-            Files.createDirectories(path.getParent());
-            Path tmp = path.resolveSibling(path.getFileName() + ".tmp");
-            Files.writeString(tmp, books.toJson());
-            try {
-                Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (AtomicMoveNotSupportedException ignored) {
-                Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING);
-            }
-            return true;
-        } catch (IOException error) {
-            BankRuntime.LOGGER.warn("写不了银行旁路存档", error);
-            return false;
-        }
+        // Routine checkpoints must not overwrite confirmed transactions through a weaker path.
+        return commit(books);
     }
 
     public static Path backupPath(MinecraftServer server) {

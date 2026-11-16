@@ -36,6 +36,12 @@ public final class RecursiveClearingRegression {
   ok(!b.settlePersonalToSystem(a,top.id(),d("6"),"shop","one").success(),"conflict");
   b=BankBooks.fromJson(b.toJson(),BankConfig.defaults()); top=b.personalNote(a); bottom=b.personalNote(z); b.checkInvariants();
   eq(b.personalRecovered(bottom.id()),"2.5"); ok(b.personalSettlements(bottom.id(),5).size()==1,"persisted nested history");
+  ok(b.noteHasPending(top.id()) && b.noteHasPending(bottom.id()),"pending delivery survives reload");
+  eq(b.systemAvailableBalance("shop","diamond"),"0"); eq(b.personalRecoveredAvailable(top.id()),"0");
+  ok(!b.switchPersonalReserve(a,"copper").success(),"pending blocks anchor change");
+  ok(!b.returnRecoveredPersonal(a,d("1")).success(),"pending blocks recovery return");
+  ok(b.completeSystemPayment("one").success(),"durable delivery proof");
+  ok(b.completeSystemPayment("one").success(),"completion replay");
   eq(b.personalSystemCapacity(top.id(),"shop"),"5");
   var reverseQuote=b.quotePersonalFromSystem(top.id(),d("5")); ok(reverseQuote.success(),"reverse quote"); eq(reverseQuote.amount(),"0.25");
   ok(b.transferShopReferenced(z,"personal:"+top.id(),d("5"),false,"new-outbound").success(),"new reverse trade");
@@ -50,6 +56,7 @@ public final class RecursiveClearingRegression {
   eq(b.systemSettlementBalance("shop","diamond"),"0"); eq(b.personalRecovered(bottom.id()),"0"); b.checkInvariants();
   String before=b.toJson(); ok(!b.switchPersonalReserve(z,"personal:"+top.id()).success(),"cycle refused"); ok(before.equals(b.toJson()),"cycle mutated");
   ok(b.settlePersonalToSystem(a,top.id(),d("5"),"shop","two").success(),"second settle");
+  ok(b.completeSystemPayment("two").success(),"second delivery");
   ok(b.returnRecoveredPersonal(a,d("5")).success(),"float return"); eq(b.personalActiveExact(top),"100"); eq(b.effectiveBackingExact(top),"47.5");
   ok(!b.reversePersonalSettlement("two").success(),"no reverse released pool"); b.checkInvariants();
   ok(b.switchPersonalReserve(a,"copper").success(),"switch"); ok(b.personalReserveSwitching(top.id()),"pause persisted");
@@ -89,6 +96,7 @@ public final class RecursiveClearingRegression {
   PersonalNote allCoin=coin(all,allOwner,"尽","diamond",1); all.deposit(allOwner,"diamond",BigInteger.ONE);
   ok(all.depositPersonalReserveExact(allOwner,d("1")).success(),"all reserve");
   ok(all.transferShopReferenced(allOwner,"personal:"+allCoin.id(),d("1"),true,"all-in").success(),"all recover");
+  ok(all.completeSystemPayment("all-in").success(),"all delivery");
   ok(all.quotePersonalFromSystem(allCoin.id(),d("1")).code().equals("no_current_rate"),"no invented rate");
   eq(all.personalSystemCapacity(allCoin.id(),"shop"),"0"); all.checkInvariants();
   System.out.println("PASS nested exact settlement, custody conserved, recovery, conflict/replay, reload, reverse, cycle, fractional switch/pause");

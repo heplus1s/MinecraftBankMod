@@ -50,6 +50,12 @@ public final class MarketSettlement {
         return books.reversePersonalSettlement(original);
     }
 
+    /** Releases only assets whose land delivery has been durably confirmed by the market. */
+    public static TxResult completePayment(String reference) {
+        if (!validReference(reference)) return TxResult.fail("bad_reference", "");
+        return BankRuntime.transact(books -> books.completeSystemPayment(reference));
+    }
+
     public static boolean externalPersonalMarket() {
         return FabricLoader.getInstance().isModLoaded("marketmod");
     }

@@ -601,29 +601,18 @@ public final class BankUiService {
     }
 
     private static void reserve(ServerPlayerEntity player, BankBooks books, String[] parts, boolean deposit) {
-        if (parts.length < 2) {
-            return;
+        if (parts.length < 2) return;
+        try {
+            BigDecimal quantity = exactPositive(parts[1]);
+            TxResult posted = BankRuntime.transact(book -> deposit
+                    ? book.depositPersonalReserveExact(player.getUuid(), quantity)
+                    : book.withdrawPersonalReserveExact(player.getUuid(), quantity));
+            player.sendMessage(net.minecraft.text.Text.literal(posted.success()
+                    ? "准备金已" + (deposit ? "存入 " : "转回储蓄 ") + quantity.toPlainString() + "。"
+                    : "未执行：" + posted.code()), false);
+        } catch (IllegalArgumentException invalid) {
+            player.sendMessage(net.minecraft.text.Text.literal("请输入正数，最多四位小数。"), false);
         }
-        if (deposit) {
-            try {
-                BigDecimal quantity = exactPositive(parts[1]);
-                TxResult posted = BankRuntime.transact(book -> book.depositPersonalReserveExact(player.getUuid(), quantity));
-                player.sendMessage(net.minecraft.text.Text.literal(posted.success()
-                        ? "准备金已存入 " + quantity.toPlainString() + "。" : "未存入：" + posted.code()), false);
-            } catch (IllegalArgumentException invalid) {
-                player.sendMessage(net.minecraft.text.Text.literal("请输入正数，最多四位小数。"), false);
-            }
-            return;
-        }
-        BigInteger amount = amount(player, parts[1], null, null);
-        if (amount == null) return;
-        TxResult result = books.postIssuanceReserve(player.getUuid(), amount, false);
-        if (!result.success()) {
-            tellReserve(player, books, result);
-            return;
-        }
-        BankRuntime.save();
-        tell(player, reserveSpoken(books, player.getUuid(), deposit, amount, false));
     }
 
     /** Always the 银行券 央行准备金账户, including when the note's issuance reserve is a commodity. */

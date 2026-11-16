@@ -54,8 +54,7 @@ public final class ShopOperatingAccount {
             try { return BankRuntime.books().personalSystemCapacity(UUID.fromString(currency.substring(9)), "shop"); }
             catch (IllegalArgumentException invalid) { return BigDecimal.ZERO; }
         }
-        return BankRuntime.books().shopOperatingExact(currency)
-                .add(BankRuntime.books().systemSettlementBalance("shop", currency));
+        return BankRuntime.books().systemAvailableBalance("shop", currency);
     }
 
     /** Four-decimal player balance; never truncate fractional spending power. */
@@ -86,6 +85,10 @@ public final class ShopOperatingAccount {
 
     public String receiptStatus(String reference) {
         return BankRuntime.state == null ? "unavailable" : BankRuntime.books().settlementStatus(reference);
+    }
+
+    public TxResult completePayment(String reference) {
+        return BankRuntime.transact(books -> books.completeSystemPayment(reference));
     }
 
     public boolean durablePayments() { return true; }

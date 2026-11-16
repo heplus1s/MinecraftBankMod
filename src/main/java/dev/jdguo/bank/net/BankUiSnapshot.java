@@ -292,6 +292,7 @@ public final class BankUiSnapshot {
         row.addProperty("reserveCurrency", note.reserveCurrency());
         row.addProperty("clearingEnabled", true);
         row.addProperty("reserveChanging", books.personalReserveSwitching(note.id()));
+        row.addProperty("pendingSettlement", books.noteHasPending(note.id()));
         row.addProperty("recovered", Money.stored(books.personalRecovered(note.id())));
         var policy = books.personalPolicy(note.id());
         row.addProperty("policyTarget", policy.target().toPlainString());
@@ -307,7 +308,8 @@ public final class BankUiSnapshot {
             item.addProperty("time", java.time.Instant.ofEpochMilli(event.get("timestamp").getAsLong()).toString());
             boolean outbound = event.has("kind") && "personal-outbound".equals(event.get("kind").getAsString());
             boolean reversed = "reversed".equals(event.get("status").getAsString());
-            StringBuilder details = new StringBuilder(reversed ? "已撤销：" : outbound ? "反向结算：" : "兑付结算：");
+            boolean pending = event.has("pendingDelivery") && event.get("pendingDelivery").getAsBoolean();
+            StringBuilder details = new StringBuilder(reversed ? "已撤销：" : pending ? "等待交付确认：" : outbound ? "反向结算：" : "兑付结算：");
             for (var entry : event.getAsJsonArray("legs")) {
                 JsonObject leg = entry.getAsJsonObject();
                 details.append(leg.get("notes").getAsString()).append(" 币 → ")
@@ -372,19 +374,20 @@ public final class BankUiSnapshot {
     private static void putIssuanceReserve(JsonObject row, BankBooks books, UUID player, PersonalNote note) {
         String currency = note.reserveCurrency();
         CurrencyDef def = books.currency(currency);
-        BigInteger held = "note".equals(currency)
-                ? books.centralReserve(player)
-                : books.personalReserve(player, currency);
-        BigInteger locked = note.locked();
-        BigInteger free = held.subtract(locked == null ? BigInteger.ZERO : locked);
-        if (free.signum() < 0) {
-            free = BigInteger.ZERO;
+        BigDecimal held = books.effectiveBackingExact(note);
+        BigDecimal locked = books.personalRequiredBackingExact(note);
+        BigDecimal free = books.personalFreeReserveExact(note);
+        String name = def == null || def.name() == null ? currency : def.name();
+        if (currency != null && currency.startsWith("personal:")) {
+            try { var anchor = books.personalNoteById(UUID.fromString(currency.substring(9)));
+                if (anchor != null) name = anchor.name();
+            } catch (IllegalArgumentException ignored) { }
         }
         row.addProperty("reserveCurrency", currency == null ? "" : currency);
-        row.addProperty("reserveCurrencyName", def == null || def.name() == null ? currency : def.name());
-        row.addProperty("issuanceReserve", whole(held));
-        row.addProperty("issuanceLocked", whole(locked));
-        row.addProperty("issuanceFree", whole(free));
+        row.addProperty("reserveCurrencyName", name);
+        row.addProperty("issuanceReserve", Money.stored(held));
+        row.addProperty("issuanceLocked", Money.stored(locked));
+        row.addProperty("issuanceFree", Money.stored(free));
     }
 
     /** Whole units. Zero is {@code 0}, never a six-decimal placeholder. */

@@ -269,22 +269,11 @@ public final class BankTerminalScreen extends Screen {
             y += 6;
             y = paneText(pane, "还没有记名。点选一种发行制度后，聊天框会先说明要输入个人银行券的名字。名字写在命令后面，再按回车。",
                     left, y, textWidth, 0xFFE6E6E6);
-            for (String rule : BankRegimes.rules()) {
-                if (clearingEnabled()) {
-            rule = "实际支持价以可用准备金／有效流通量为准；目标汇率和市场价不等于可支出的资产。";
-            for (String key : List.of("supportRate", "policyTarget", "baseAssetValue")) {
-                String value = BankSnapshot.text(own, key);
-                if (value != null) {
-                    String label = switch (key) {
-                        case "supportRate" -> "实际准备金支持价：";
-                        case "policyTarget" -> "制度目标／参考：";
-                        default -> "基础资产折合央行券（仅估值）：";
-                    };
-                    y = paneText(pane, label + value, left, y, textWidth, 0xFFE8D090);
-                }
-            }
-        }
-        y = paneText(pane, rule, left, y, textWidth, 0xFFAAAAAA);
+            for (String rule : List.of(
+                    "浮动：实际准备金支持价随储备与有效流通变化，可手动增发。",
+                    "联系：设定目标区间，只以对应储蓄及发行人可用币调节。",
+                    "固定：设定目标比率；实际准备金不足时，实际兑付价仍以真实支持为准。")) {
+                y = paneText(pane, rule, left, y, textWidth, 0xFFAAAAAA);
             }
             pane.finish(y);
             pane.setScroll(issuanceScroll);
@@ -313,6 +302,9 @@ public final class BankTerminalScreen extends Screen {
             String value = BankSnapshot.text(own, metric);
             y = paneText(pane, metric.toUpperCase(java.util.Locale.ROOT) + "：" +
                     (value == null ? BankBook.MISSING : value), left, y, textWidth, 0xFFE8D090);
+        }
+        if ("true".equals(BankSnapshot.text(own, "pendingSettlement"))) {
+            y = paneText(pane, "有交易等待交付确认，相关准备金和回收币暂时锁定。", left, y, textWidth, 0xFFFFCC88);
         }
         String m2Basis = BankSnapshot.text(own, "m2Basis");
         if (m2Basis != null) {

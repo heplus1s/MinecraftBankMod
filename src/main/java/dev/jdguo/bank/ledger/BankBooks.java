@@ -310,7 +310,7 @@ public final class BankBooks {
         if (note == null) {
             return PaperTake.fail("none", "No personal note");
         }
-        if (note.bankrupt() || reserveSwitching.contains(note.id())) {
+        if (note.bankrupt() || reserveSwitching.contains(note.id()) || noteHasPending(note.id())) {
             return PaperTake.fail("bankrupt", "Bankrupt notes cannot be withdrawn");
         }
         if (amount == null || amount.signum() <= 0) {
@@ -1416,7 +1416,7 @@ public final class BankBooks {
             debitBalance(player, noteId, posted);
             addShop(noteId, posted);
         } else {
-            if (shopExact(noteId).compareTo(posted) < 0) {
+            if (shopExact(noteId).compareTo(posted) < 0 || systemAvailableBalance("shop", noteId).compareTo(posted) < 0) {
                 return TxResult.fail("insufficient_shop", "Shop operating account is short");
             }
             addShop(noteId, posted.negate());
@@ -1681,7 +1681,7 @@ public final class BankBooks {
     }
 
     private List<InterestCredit> settlePersonalDay(PersonalNote series) {
-        if (series.bankrupt() || personalInterestFraction.signum() <= 0) {
+        if (!personalTradingAllowed(series) || personalInterestFraction.signum() <= 0) {
             return List.of();
         }
         Map<UUID, BigInteger> holdings = personalHoldings.get(series.id());
@@ -1859,6 +1859,8 @@ public final class BankBooks {
 
     /** Stores a personal issuance reserve. Does not touch savings balances or central supplies. */
     public void setPersonalReserve(UUID player, String currency, BigInteger amount) {
+        PersonalNote own = personalNote(player);
+        if (own != null && noteHasPending(own.id())) throw new IllegalStateException("delivery_pending");
         if (need(currency) == null) {
             throw new IllegalArgumentException("unknown");
         }
@@ -1961,6 +1963,51 @@ public final class BankBooks {
         }
     }
 
+    private boolean deliveryPending(JsonObject receipt) {
+        return "settled".equals(receipt.get("status").getAsString()) && receipt.has("pendingDelivery") && receipt.get("pendingDelivery").getAsBoolean();
+    }
+    public boolean noteHasPending(UUID id) {
+        if (id == null) return false;
+        for (JsonObject receipt : clearingReceipts.values()) {
+            if (!deliveryPending(receipt)) continue;
+            for (JsonElement row : receipt.getAsJsonArray("legs")) {
+                if (id.toString().equals(row.getAsJsonObject().get("noteId").getAsString())) return true;
+            }
+        }
+        return false;
+    }
+    /** Real assets less unsettled external-delivery receipts. Includes ordinary shop balances. */
+    public BigDecimal systemAvailableBalance(String account, String currency) {
+        BigDecimal total = systemSettlementBalance(account, currency).add("shop".equals(account) ? shopExact(currency) : Money.ZERO);
+        for (JsonObject receipt : clearingReceipts.values()) {
+            if (!deliveryPending(receipt) || !account.equals(receipt.get("account").getAsString())
+                    || !currency.equals(receipt.get("currency").getAsString())) continue;
+            boolean incoming = !receipt.has("kind") || "shop-direct".equals(receipt.get("kind").getAsString()) && receipt.get("buying").getAsBoolean();
+            if (incoming) total = total.subtract(Money.parse(receipt.get("amount").getAsString()));
+        }
+        return Money.of(total.max(BigDecimal.ZERO));
+    }
+    public BigDecimal personalRecoveredAvailable(UUID id) {
+        BigDecimal total = personalRecovered(id);
+        for (JsonObject receipt : clearingReceipts.values()) {
+            if (!deliveryPending(receipt) || receipt.has("kind")) continue;
+            for (JsonElement row : receipt.getAsJsonArray("legs")) {
+                JsonObject leg = row.getAsJsonObject();
+                if (id.toString().equals(leg.get("noteId").getAsString())) total = total.subtract(Money.parse(leg.get("notes").getAsString()));
+            }
+        }
+        return Money.of(total.max(BigDecimal.ZERO));
+    }
+    /** Call only after durable external delivery proof. Pending/uncertain orders remain locked. */
+    public TxResult completeSystemPayment(String reference) {
+        JsonObject receipt = clearingReceipts.get(reference);
+        if (receipt == null) return TxResult.fail("missing", "No payment receipt");
+        if (!"settled".equals(receipt.get("status").getAsString())) return TxResult.fail("reversed", "Payment was reversed");
+        if (!deliveryPending(receipt)) return TxResult.ok(BigInteger.ZERO, "Already complete");
+        receipt.addProperty("pendingDelivery", false); receipt.addProperty("completedAt", System.currentTimeMillis());
+        return TxResult.ok(BigInteger.ZERO, "Delivery completed");
+    }
+
     /** Exact, non-spendable recovered notes. Total issued notes remain auditable separately. */
     public BigDecimal personalRecovered(UUID id) { return recoveredNotes.getOrDefault(id, Money.ZERO); }
     public BigDecimal personalActiveExact(PersonalNote note) {
@@ -2012,6 +2059,7 @@ public final class BankBooks {
             if (note == null || note.bankrupt()) return ClearingQuote.fail("missing_or_closed");
             if (!visited.add(id)) return ClearingQuote.fail("cycle");
             if (reserveSwitching.contains(id) || note.redemptionPaused()) return ClearingQuote.fail("paused");
+            if (noteHasPending(id)) return ClearingQuote.fail("delivery_pending");
             BigDecimal active = personalActiveExact(note), reserve = effectiveBackingExact(note);
             if (active.signum() <= 0 || amount.compareTo(active) > 0 || reserve.signum() <= 0) return ClearingQuote.fail("short_reserve");
             BigDecimal out = amount.multiply(reserve).divide(active, Money.SCALE, RoundingMode.DOWN);
@@ -2031,7 +2079,7 @@ public final class BankBooks {
         if (note == null) return false;
         java.util.Set<UUID> visited = new java.util.HashSet<>();
         for (int depth = 0; depth < 32; depth++) {
-            if (note.bankrupt() || reserveSwitching.contains(note.id()) || !visited.add(note.id())) return false;
+            if (note.bankrupt() || reserveSwitching.contains(note.id()) || noteHasPending(note.id()) || !visited.add(note.id())) return false;
             if (baseAnchor(note.anchor())) return true;
             note = personalNoteById(nestedId(note.anchor()));
             if (note == null) return false;
@@ -2081,7 +2129,7 @@ public final class BankBooks {
         receipt.addProperty("reference", reference); receipt.addProperty("signature", signature);
         receipt.addProperty("timestamp", System.currentTimeMillis()); receipt.addProperty("account", account);
         receipt.addProperty("payer", payer.toString()); receipt.addProperty("currency", quote.currency());
-        receipt.addProperty("amount", Money.stored(quote.amount())); receipt.addProperty("status", "settled");
+        receipt.addProperty("amount", Money.stored(quote.amount())); receipt.addProperty("status", "settled"); receipt.addProperty("pendingDelivery", true);
         JsonArray entries = new JsonArray();
         for (ClearingLeg leg : quote.legs()) {
             JsonObject row = new JsonObject(); row.addProperty("noteId", leg.noteId().toString());
@@ -2094,7 +2142,7 @@ public final class BankBooks {
     /** Exact deposit of already-owned savings/notes; cannot fund from an appraisal or another free asset. */
     public TxResult depositPersonalReserveExact(UUID issuer, BigDecimal quantity) {
         PersonalNote note = personalNote(issuer);
-        if (note == null || note.bankrupt() || quantity == null || quantity.signum() <= 0 || quantity.scale() > Money.SCALE)
+        if (note == null || note.bankrupt() || noteHasPending(note.id()) || quantity == null || quantity.signum() <= 0 || quantity.scale() > Money.SCALE)
             return TxResult.fail("invalid", "Invalid reserve deposit");
         if (!usableAnchor(note, note.anchor())) return TxResult.fail("anchor", "Invalid collateral chain");
         BigDecimal amount = Money.of(quantity); UUID nested = nestedId(note.anchor());
@@ -2110,7 +2158,7 @@ public final class BankBooks {
     /** Return collateral to its owner and pause this note until a new actual deposit arrives. */
     public TxResult switchPersonalReserve(UUID issuer, String anchor) {
         PersonalNote note = personalNote(issuer);
-        if (note == null || note.bankrupt() || !usableAnchor(note, anchor)) return TxResult.fail("anchor", "Invalid collateral chain");
+        if (note == null || note.bankrupt() || noteHasPending(note.id()) || !usableAnchor(note, anchor)) return TxResult.fail("anchor", "Invalid collateral chain");
         BigDecimal reserve = effectiveBackingExact(note); String old = note.anchor(); UUID nested = nestedId(old);
         if (nested == null) creditBalance(issuer, old, reserve);
         else setPersonalExact(nested, issuer, personalHoldingExact(nested, issuer).add(reserve));
@@ -2130,6 +2178,7 @@ public final class BankBooks {
             if (note == null || note.bankrupt()) return ClearingQuote.fail("missing_or_closed");
             if (!visited.add(id)) return ClearingQuote.fail("cycle");
             if (reserveSwitching.contains(id) || note.redemptionPaused()) return ClearingQuote.fail("paused");
+            if (noteHasPending(id)) return ClearingQuote.fail("delivery_pending");
             BigDecimal active = personalActiveExact(note), reserve = effectiveBackingExact(note);
             if (active.signum() <= 0 || reserve.signum() <= 0) return ClearingQuote.fail("no_current_rate");
             if (personalRecovered(id).compareTo(amount) < 0) return ClearingQuote.fail("short_recovery");
@@ -2148,8 +2197,7 @@ public final class BankBooks {
         for (int attempts = 0; low.compareTo(high) < 0 && attempts < 256; attempts++) {
             BigInteger middle = low.add(high).add(BigInteger.ONE).shiftRight(1);
             ClearingQuote q = quotePersonalFromSystem(id, new BigDecimal(middle, Money.SCALE));
-            BigDecimal available = q.success() ? systemSettlementBalance(account, q.currency())
-                    .add("shop".equals(account) ? shopExact(q.currency()) : Money.ZERO) : Money.ZERO;
+            BigDecimal available = q.success() ? systemAvailableBalance(account, q.currency()) : Money.ZERO;
             if (q.success() && available.compareTo(q.amount()) >= 0) low = middle; else high = middle.subtract(BigInteger.ONE);
         }
         return new BigDecimal(low, Money.SCALE);
@@ -2166,7 +2214,7 @@ public final class BankBooks {
         if (!quote.success()) return TxResult.fail(quote.code(), "Cannot fund reverse collateral chain");
         BigDecimal ordinary = "shop".equals(account) ? shopExact(quote.currency()) : Money.ZERO;
         BigDecimal settled = systemSettlementBalance(account, quote.currency());
-        if (ordinary.add(settled).compareTo(quote.amount()) < 0) return TxResult.fail("insufficient_system", "System has insufficient real terminal assets");
+        if (systemAvailableBalance(account, quote.currency()).compareTo(quote.amount()) < 0) return TxResult.fail("insufficient_system", "System has insufficient real terminal assets");
         BigDecimal fromSettled = settled.min(quote.amount()), fromOrdinary = quote.amount().subtract(fromSettled);
         if (fromSettled.signum() > 0) settledAssets.get(account).put(quote.currency(), Money.of(settled.subtract(fromSettled)));
         if (fromOrdinary.signum() > 0) addShop(quote.currency(), fromOrdinary.negate());
@@ -2181,7 +2229,7 @@ public final class BankBooks {
         receipt.addProperty("reference", reference); receipt.addProperty("signature", signature); receipt.addProperty("payer", payee.toString());
         receipt.addProperty("account", account); receipt.addProperty("currency", quote.currency()); receipt.addProperty("amount", Money.stored(quote.amount()));
         receipt.addProperty("fromSettled", Money.stored(fromSettled)); receipt.addProperty("fromOrdinary", Money.stored(fromOrdinary));
-        receipt.addProperty("timestamp", System.currentTimeMillis()); receipt.addProperty("status", "settled");
+        receipt.addProperty("timestamp", System.currentTimeMillis()); receipt.addProperty("status", "settled"); receipt.addProperty("pendingDelivery", true);
         JsonArray legs = new JsonArray();
         for (ClearingLeg leg : quote.legs()) {
             JsonObject row = new JsonObject(); row.addProperty("noteId", leg.noteId().toString()); row.addProperty("anchor", leg.anchor());
@@ -2198,7 +2246,7 @@ public final class BankBooks {
         if (free.compareTo(quantity) < 0) return TxResult.fail("spent", "Received currency is no longer unencumbered");
         for (JsonElement element : legs) {
             JsonObject row = element.getAsJsonObject(); PersonalNote note = personalNoteById(UUID.fromString(row.get("noteId").getAsString()));
-            if (!personalTradingAllowed(note) || !note.anchor().equals(row.get("anchor").getAsString())
+            if (note == null || note.bankrupt() || reserveSwitching.contains(note.id()) || !note.anchor().equals(row.get("anchor").getAsString())
                     || effectiveBackingExact(note).compareTo(Money.parse(row.get("reserve").getAsString())) < 0)
                 return TxResult.fail("changed", "Collateral changed; cannot automatically compensate");
         }
@@ -2239,7 +2287,7 @@ public final class BankBooks {
         JsonObject row = new JsonObject(); row.addProperty("kind", "shop-direct"); row.addProperty("reference", reference);
         row.addProperty("signature", signature); row.addProperty("payer", player.toString()); row.addProperty("currency", currency);
         row.addProperty("amount", Money.stored(amount)); row.addProperty("buying", buying); row.addProperty("account", "shop");
-        row.addProperty("timestamp", System.currentTimeMillis()); row.addProperty("status", "settled"); row.add("legs", new JsonArray());
+        row.addProperty("timestamp", System.currentTimeMillis()); row.addProperty("status", "settled"); row.addProperty("pendingDelivery", true); row.add("legs", new JsonArray());
         clearingReceipts.put(reference, row); return result;
     }
     private TxResult transferShopExactInternal(UUID player, String currency, BigDecimal amount, boolean buying) {
@@ -2250,7 +2298,7 @@ public final class BankBooks {
             debitBalance(player, currency, amount); addShop(currency, amount);
         } else {
             BigDecimal ordinary = shopExact(currency), settled = systemSettlementBalance("shop", currency);
-            if (ordinary.add(settled).compareTo(amount) < 0) return TxResult.fail("insufficient_shop", "Shop has no real funds");
+            if (systemAvailableBalance("shop", currency).compareTo(amount) < 0) return TxResult.fail("insufficient_shop", "Shop has no real funds");
             BigDecimal fromOrdinary = ordinary.min(amount), fromSettlement = amount.subtract(fromOrdinary);
             addShop(currency, fromOrdinary.negate());
             if (fromSettlement.signum() > 0) settledAssets.get("shop").put(currency, Money.of(settled.subtract(fromSettlement)));
@@ -2268,8 +2316,11 @@ public final class BankBooks {
         if ("reversed".equals(row.get("status").getAsString())) return TxResult.ok(BigInteger.ZERO, "Already rolled back");
         if (row.has("kind") && "personal-outbound".equals(row.get("kind").getAsString())) return rollbackPersonalOutbound(row);
         if (!row.has("kind") || !"shop-direct".equals(row.get("kind").getAsString())) return reversePersonalSettlement(reference);
+        boolean wasPending = deliveryPending(row);
+        row.addProperty("pendingDelivery", false);
         TxResult result = transferShopExactInternal(UUID.fromString(row.get("payer").getAsString()), row.get("currency").getAsString(),
                 Money.parse(row.get("amount").getAsString()), !row.get("buying").getAsBoolean());
+        if (!result.success()) row.addProperty("pendingDelivery", wasPending);
         if (result.success()) { row.addProperty("status", "reversed"); row.addProperty("reversedAt", System.currentTimeMillis()); }
         return result;
     }
@@ -2290,7 +2341,7 @@ public final class BankBooks {
         String currency = receipt.get("currency").getAsString(); BigDecimal delivered = Money.parse(receipt.get("amount").getAsString());
         settledAssets.get(account).put(currency, Money.of(systemSettlementBalance(account, currency).subtract(delivered)));
         creditBalance(player, currency, delivered);
-        receipt.addProperty("delivery", "savings");
+        receipt.addProperty("delivery", "savings"); receipt.addProperty("pendingDelivery", false);
         return result;
     }
 
@@ -2362,7 +2413,7 @@ public final class BankBooks {
     }
     public TxResult setPersonalPolicy(UUID issuer, NoteRegime regime, BigDecimal target, BigDecimal lower, BigDecimal upper) {
         PersonalNote note = personalNote(issuer);
-        if (note == null || note.bankrupt() || regime == null || target == null || target.signum() <= 0
+        if (note == null || note.bankrupt() || noteHasPending(note.id()) || regime == null || target == null || target.signum() <= 0
                 || lower == null || upper == null || lower.signum() <= 0 || lower.compareTo(target) > 0 || target.compareTo(upper) > 0)
             return TxResult.fail("policy", "Expected positive lower <= target <= upper");
         policies.put(note.id(), new PersonalPolicy(target, lower, upper)); note.adopt(regime, note.anchor(), null);
@@ -2371,7 +2422,7 @@ public final class BankBooks {
     /** Only recovered non-spendable notes return to issuer. No public holder balance is touched. */
     public TxResult returnRecoveredPersonal(UUID issuer, BigDecimal quantity) {
         PersonalNote note = personalNote(issuer);
-        if (note == null || note.bankrupt() || reserveSwitching.contains(note.id()) || quantity == null || quantity.signum() <= 0
+        if (note == null || note.bankrupt() || noteHasPending(note.id()) || reserveSwitching.contains(note.id()) || quantity == null || quantity.signum() <= 0
                 || quantity.scale() > Money.SCALE || personalRecovered(note.id()).compareTo(quantity) < 0)
             return TxResult.fail("recovery", "Not enough recovered currency or reserve switch pending");
         BigDecimal amount = Money.of(quantity);
@@ -2551,7 +2602,7 @@ public final class BankBooks {
 
     private RegimePreview describeSwitch(PersonalNote note, NoteRegime regime, String anchor, boolean posting) {
         String name = note.name();
-        if (note.bankrupt() || reserveSwitching.contains(note.id())) {
+        if (note.bankrupt() || reserveSwitching.contains(note.id()) || noteHasPending(note.id())) {
             return refused(regime, anchor, "「" + name + "」已经破产，不能改汇率制度。");
         }
         if (regime == null || !validAnchor(regime, anchor)) {
@@ -2766,7 +2817,7 @@ public final class BankBooks {
         if (!operator && !note.issuer().equals(actor)) {
             return NoteTrade.fail("denied");
         }
-        if (note.bankrupt() || reserveSwitching.contains(note.id())) {
+        if (note.bankrupt() || reserveSwitching.contains(note.id()) || noteHasPending(note.id())) {
             return NoteTrade.fail("closed");
         }
         if (nestedId(note.anchor()) != null || personalRecovered(note.id()).signum() > 0
@@ -2867,6 +2918,45 @@ public final class BankBooks {
         }
     }
 
+    /** Anchor units required per newly issued unit; actual support and policy target stay distinct. */
+    private BigDecimal personalIssuanceRate(PersonalNote note) {
+        PersonalPolicy policy = personalPolicy(note.id());
+        if (note.regime() == NoteRegime.PEG && personalActiveExact(note).signum() > 0) {
+            return effectiveBackingExact(note).divide(personalActiveExact(note), FxMath.MC).max(policy.lower()).min(policy.upper());
+        }
+        return policy.target();
+    }
+    public BigDecimal personalRequiredBackingExact(PersonalNote note) {
+        if (note == null || personalActiveExact(note).signum() <= 0) return Money.ZERO;
+        if (policies.containsKey(note.id())) {
+            return personalActiveExact(note).multiply(personalIssuanceRate(note)).setScale(Money.SCALE, RoundingMode.CEILING);
+        }
+        // Legacy locked backing retains its original restriction. Previously unlocked floating
+        // collateral is nevertheless actual support and cannot be silently drained by this API.
+        if (note.regime() == NoteRegime.FLOAT && note.locked().signum() <= 0) return effectiveBackingExact(note);
+        return new BigDecimal(note.locked()).max(note.regime() == NoteRegime.FLOAT ? BigDecimal.ZERO
+                : personalActiveExact(note).multiply(new BigDecimal(note.par()))).setScale(Money.SCALE, RoundingMode.CEILING);
+    }
+    public BigDecimal personalFreeReserveExact(PersonalNote note) {
+        if (note == null || reserveSwitching.contains(note.id())) return Money.ZERO;
+        // Floating support is the full actual reserve, not a guaranteed target; all of it supports circulating holders.
+        if (policies.containsKey(note.id()) && note.regime() == NoteRegime.FLOAT && personalActiveExact(note).signum() > 0) return Money.ZERO;
+        return Money.of(effectiveBackingExact(note).subtract(personalRequiredBackingExact(note)).max(BigDecimal.ZERO));
+    }
+    public TxResult withdrawPersonalReserveExact(UUID issuer, BigDecimal amount) {
+        PersonalNote note = personalNote(issuer);
+        if (!personalTradingAllowed(note) || amount == null || amount.signum() <= 0 || amount.scale() > Money.SCALE)
+            return TxResult.fail("invalid", "Invalid reserve withdrawal");
+        if (personalFreeReserveExact(note).compareTo(amount) < 0)
+            return TxResult.fail("short_reserve", "Only uncommitted reserve can be withdrawn; use explicit reserve replacement to pause settlement");
+        String anchor = note.anchor(); UUID nested = nestedId(anchor);
+        setBackingExact(note, effectiveBackingExact(note).subtract(amount));
+        if (nested == null) creditBalance(issuer, anchor, amount);
+        else setPersonalExact(nested, issuer, personalHoldingExact(nested, issuer).add(amount));
+        if ("note".equals(anchor)) supply("note").addLiability(amount);
+        return TxResult.ok(Money.units(amount), "Uncommitted reserve returned to savings");
+    }
+
     public NoteTrade issuePersonalNote(UUID issuer, BigInteger amount) {
         PersonalNote note = personalNote(issuer);
         if (note == null) {
@@ -2879,6 +2969,15 @@ public final class BankBooks {
             return NoteTrade.fail("par");
         }
         BigInteger next = note.circulation().add(amount);
+        if (policies.containsKey(note.id())) {
+            BigDecimal nextActive = personalActiveExact(note).add(new BigDecimal(amount));
+            BigDecimal requiredExact = nextActive.multiply(personalIssuanceRate(note)).setScale(Money.SCALE, RoundingMode.CEILING);
+            if (effectiveBackingExact(note).compareTo(requiredExact) < 0) return NoteTrade.fail("reserve");
+            note.setLocked(Money.units(requiredExact));
+            note.setCirculation(next);
+            addHolding(note.id(), issuer, amount);
+            return NoteTrade.ok(note, BigInteger.ZERO, BigInteger.ZERO);
+        }
         BigInteger required = requiredLock(note, next);
         String backing = note.reserveCurrency();
         if (personalReserve(issuer, backing).compareTo(required) < 0) {
@@ -2929,7 +3028,7 @@ public final class BankBooks {
         if (amount == null || amount.signum() <= 0) {
             return NoteTrade.fail("par");
         }
-        if (personalHolding(note.id(), issuer).compareTo(amount) < 0) {
+        if (personalHolding(note.id(), issuer).subtract(personalOffered(note.id(), issuer)).compareTo(amount) < 0) {
             return NoteTrade.fail("funds");
         }
         BigInteger centralLiability = supply("note") == null ? BigInteger.ZERO : supply("note").liability();
@@ -2982,6 +3081,7 @@ public final class BankBooks {
      */
     public TxResult depositPersonalReserve(UUID issuer, BigInteger amount) {
         PersonalNote note = personalNote(issuer);
+        if (note != null && noteHasPending(note.id())) return TxResult.fail("delivery_pending", "Finish pending delivery first");
         if (note == null) {
             return TxResult.fail("none", "No personal note");
         }
@@ -3004,32 +3104,12 @@ public final class BankBooks {
      * Returns free personal issuance reserve to savings. Metal already locked for the note stays put.
      */
     public TxResult withdrawPersonalReserve(UUID issuer, BigInteger amount) {
-        PersonalNote note = personalNote(issuer);
-        if (note == null) {
-            return TxResult.fail("none", "No personal note");
-        }
-        String currency = note.reserveCurrency();
-        if (!"copper".equals(currency) && !"diamond".equals(currency)) {
-            return TxResult.fail("anchor", "This note does not use a commodity reserve");
-        }
-        if (amount == null || amount.signum() <= 0) {
-            return TxResult.fail("par", "Invalid amount");
-        }
-        BigInteger held = personalReserve(issuer, currency);
-        BigInteger free = held.subtract(note.locked());
-        if (free.signum() < 0) {
-            free = BigInteger.ZERO;
-        }
-        if (free.compareTo(amount) < 0) {
-            return TxResult.fail("short_reserve", "Personal reserve cannot cover this withdrawal");
-        }
-        setPersonalReserve(issuer, currency, held.subtract(amount));
-        creditBalance(issuer, currency, amount);
-        return TxResult.ok(amount, "Withdrew personal reserve");
+        return withdrawPersonalReserveExact(issuer, amount == null ? null : new BigDecimal(amount));
     }
 
     /** Moves central notes from savings into the issuer's reserve account. M1 is unchanged. */
     public TxResult depositCentralReserve(UUID issuer, BigInteger amount) {
+        if (personalNote(issuer) != null && noteHasPending(personalNote(issuer).id())) return TxResult.fail("delivery_pending", "Finish pending delivery first");
         if (personalNote(issuer) == null) {
             return TxResult.fail("none", "No personal note");
         }
@@ -3047,6 +3127,12 @@ public final class BankBooks {
 
     /** Returns central notes from the reserve account to savings. Nothing else is drawn on. */
     public TxResult withdrawCentralReserve(UUID issuer, BigInteger amount) {
+        PersonalNote own = personalNote(issuer);
+        if (own != null && noteHasPending(own.id())) return TxResult.fail("delivery_pending", "Finish pending delivery first");
+        if (own != null && "note".equals(own.anchor()) && (policies.containsKey(own.id()) || personalRecovered(own.id()).signum() > 0
+                || reserveDust.getOrDefault(own.id(), Money.ZERO).signum() > 0)) {
+            return withdrawPersonalReserveExact(issuer, amount == null ? null : new BigDecimal(amount));
+        }
         if (personalNote(issuer) == null) {
             return TxResult.fail("none", "No personal note");
         }
@@ -3063,7 +3149,7 @@ public final class BankBooks {
     }
 
     public BigInteger requiredCentralReserve(PersonalNote note) {
-        return note == null ? BigInteger.ZERO : requiredCentralReserve(note, note.circulation());
+        return note == null ? BigInteger.ZERO : requiredCentralReserve(note, personalActiveExact(note).setScale(0, RoundingMode.CEILING).toBigInteger());
     }
 
     public BigDecimal centralReserveRatio(NoteRegime regime) {
@@ -3309,7 +3395,7 @@ public final class BankBooks {
         if (pay == null || receive == null) {
             return SwapTrade.fail("none");
         }
-        if (pay.bankrupt() || receive.bankrupt()) {
+        if (!personalTradingAllowed(pay) || !personalTradingAllowed(receive)) {
             return SwapTrade.fail("bankrupt");
         }
         if (pay.id().equals(receive.id())) {
@@ -3373,7 +3459,7 @@ public final class BankBooks {
         if (note == null) {
             return Redemption.fail("none");
         }
-        if (note.bankrupt() || reserveSwitching.contains(note.id())) {
+        if (note.bankrupt() || reserveSwitching.contains(note.id()) || noteHasPending(note.id())) {
             return Redemption.fail("bankrupt");
         }
         if (note.redemptionPaused()) {
@@ -3404,7 +3490,7 @@ public final class BankBooks {
         if (note == null || face == null || face.signum() <= 0 || sheets == null || sheets.signum() <= 0) {
             return Redemption.fail("note_tampered");
         }
-        if (note.bankrupt() || reserveSwitching.contains(note.id())) {
+        if (note.bankrupt() || reserveSwitching.contains(note.id()) || noteHasPending(note.id())) {
             return Redemption.fail("bankrupt");
         }
         if (note.redemptionPaused()) {
@@ -3516,7 +3602,7 @@ public final class BankBooks {
         BigInteger reserve = "note".equals(note.reserveCurrency())
                 ? centralReserve(note.issuer())
                 : personalReserve(note.issuer(), note.reserveCurrency());
-        BigInteger cap = requiredLock(note, note.circulation());
+        BigInteger cap = requiredLock(note, personalActiveExact(note).setScale(0, RoundingMode.CEILING).toBigInteger());
         if (cap.compareTo(reserve) > 0) {
             cap = reserve.signum() < 0 ? BigInteger.ZERO : reserve;
         }
@@ -3807,10 +3893,15 @@ public final class BankBooks {
         BigDecimal quasi = BigDecimal.ZERO;
         if (notesPerDiamond != null && notesPerDiamond.signum() > 0) {
             for (PersonalNote note : personalNotes.values()) {
-                if (note.bankrupt() || reserveSwitching.contains(note.id())) {
+                if (note.bankrupt() || reserveSwitching.contains(note.id()) || noteHasPending(note.id())) {
                     continue;
                 }
-                BigDecimal diamonds = personalDiamondPrice(note).multiply(new BigDecimal(note.circulation()), FxMath.MC);
+                BigDecimal publicActive = personalActiveExact(note);
+                // Nested pledged currency is not independently spendable quasi-money; its value is already in the outer note.
+                for (PersonalNote outer : personalNotes.values()) {
+                    if (("personal:" + note.id()).equals(outer.anchor())) publicActive = publicActive.subtract(effectiveBackingExact(outer));
+                }
+                BigDecimal diamonds = personalDiamondPrice(note).multiply(publicActive.max(BigDecimal.ZERO), FxMath.MC);
                 quasi = quasi.add(diamonds.multiply(notesPerDiamond, FxMath.MC), FxMath.MC);
             }
             BigInteger rate = copperPerDiamond();

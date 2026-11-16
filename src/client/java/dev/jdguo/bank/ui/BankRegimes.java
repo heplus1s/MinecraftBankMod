@@ -115,7 +115,7 @@ public final class BankRegimes {
         }
         String locked = firstKey(note, data, "issuanceLocked", "lockedReserve", "locked");
         if (locked != null) {
-            lines.add(amount("已锁定", locked));
+            lines.add(amount("true".equals(BankSnapshot.text(note, "clearingEnabled")) ? "应支持准备金" : "已锁定", locked));
         }
         String free = firstKey(note, data, "issuanceFree", "freeReserve", "free");
         if (free != null) {
