@@ -3,7 +3,9 @@ package dev.jdguo.bank.api;
 import dev.jdguo.bank.ledger.BankBooks;
 import dev.jdguo.bank.ledger.TxResult;
 import dev.jdguo.bank.persistence.BankRuntime;
+import net.fabricmc.loader.api.FabricLoader;
 
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.UUID;
 
@@ -21,19 +23,71 @@ public final class MarketSettlement {
     private MarketSettlement() {}
 
     public static TxResult transfer(UUID from, UUID to, String currency, BigInteger amount, String reference) {
-        return post(reference, books -> books.transferSavings(from, to, currency, amount));
+        return postReferenced(reference, "transfer|" + from + "|" + to + "|" + currency + "|" + amount, amount, books -> books.transferSavings(from, to, currency, amount));
     }
 
     public static TxResult creditLandGrant(UUID payer, String currency, BigInteger amount, String reference) {
-        return post(reference, books -> books.creditLandGrant(payer, currency, amount));
+        return postReferenced(reference, "grant|" + payer + "|" + currency + "|" + amount, amount, books -> books.creditLandGrant(payer, currency, amount));
     }
 
     public static TxResult refundLandGrant(UUID payer, String currency, BigInteger amount, String reference) {
-        return post(reference, books -> books.refundLandGrant(payer, currency, amount));
+        return postReferenced(reference, "refund-grant|" + payer + "|" + currency + "|" + amount, amount, books -> books.refundLandGrant(payer, currency, amount));
+    }
+
+    public static boolean externalPersonalMarket() {
+        return FabricLoader.getInstance().isModLoaded("marketmod");
+    }
+
+    public static TxResult personalOffers(UUID viewer, String name) {
+        return read(books -> name == null ? books.browsePersonalOffers(viewer) : books.viewPersonalOffers(viewer, name));
+    }
+
+    public static TxResult quotePersonal(UUID buyer, String name, BigInteger amount) {
+        return read(books -> books.quoteListedPersonal(buyer, name, amount));
+    }
+
+    public static TxResult listPersonal(UUID holder, String name, BigInteger amount) {
+        return post("personal-listing", books -> books.listPersonal(holder, name, amount));
+    }
+
+    public static TxResult buyPersonal(UUID buyer, String name, BigInteger amount, BigDecimal maximum) {
+        return post("personal-purchase", books -> books.buyListedPersonal(buyer, name, amount, maximum));
+    }
+
+    private static TxResult read(Movement movement) {
+        if (BankRuntime.state == null) {
+            return TxResult.fail("bank_not_ready", "Ledger is not loaded");
+        }
+        return movement.apply(BankRuntime.books());
+    }
+
+    public static TxResult marketReceipt(String reference) {
+        if (!validReference(reference)) {
+            return TxResult.fail("bad_reference", "");
+        }
+        return read(books -> books.marketReceipt(reference) ? TxResult.ok(BigInteger.ZERO, "")
+                : TxResult.fail("unrecorded", ""));
+    }
+
+    private static boolean validReference(String reference) {
+        return reference != null && !reference.isBlank() && reference.length() <= 128;
+    }
+
+    private static TxResult postReferenced(String reference, String fingerprint, BigInteger amount, Movement movement) {
+        if (!validReference(reference)) {
+            return TxResult.fail("bad_reference", "");
+        }
+        return read(books -> {
+            TxResult result = books.postMarketMovement(reference, fingerprint, amount, () -> movement.apply(books));
+            if (result.success() && !BankRuntime.saveMarket()) {
+                return TxResult.fail("bank_pending", "Could not persist the receipt");
+            }
+            return result;
+        });
     }
 
     private static TxResult post(String reference, Movement movement) {
-        if (reference == null || reference.isBlank() || reference.length() > 128) {
+        if (!validReference(reference)) {
             return TxResult.fail("bad_reference", "Missing reference");
         }
         if (BankRuntime.state == null) {

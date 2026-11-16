@@ -1,5 +1,6 @@
 package dev.jdguo.bank.commands;
 
+import dev.jdguo.bank.api.MarketSettlement;
 import com.mojang.authlib.GameProfile;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -28,6 +29,7 @@ import dev.jdguo.bank.text.BankPhrases;
 import dev.jdguo.bank.text.BankTalk;
 import dev.jdguo.bank.text.Spoken;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.minecraft.command.CommandSource;
 import net.minecraft.command.argument.GameProfileArgumentType;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
@@ -199,6 +201,13 @@ public final class BankCommands {
                                                         ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "name"),
                                                         StringArgumentType.getString(ctx, "amount"))))))
+                                .then(literal("transfer").then(argument("name", StringArgumentType.string())
+                                        .then(argument("player", StringArgumentType.word())
+                                                .suggests((ctx, builder) -> CommandSource.suggestMatching(ctx.getSource().getPlayerNames(), builder))
+                                                .then(argument("amount", StringArgumentType.word()).executes(ctx -> transferPersonal(
+                                                        ctx.getSource(), StringArgumentType.getString(ctx, "name"),
+                                                        StringArgumentType.getString(ctx, "player"),
+                                                        StringArgumentType.getString(ctx, "amount")))))))
                                 .then(literal("rate").executes(ctx -> noteRate(ctx.getSource(), null))
                                         .then(argument("name", StringArgumentType.string()).executes(ctx -> noteRate(ctx.getSource(), StringArgumentType.getString(ctx, "name")))))
                                 .then(literal("buy").then(argument("name", StringArgumentType.string())
@@ -763,6 +772,9 @@ public final class BankCommands {
     }
 
     private static int swapNote(ServerCommandSource source, String pay, String receive, String raw) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        if (MarketSettlement.externalPersonalMarket()) {
+            return fail(source, BankPhrases.noteRejected("market_external"));
+        }
         BigInteger amount;
         try {
             amount = Amounts.parse(raw);
@@ -837,7 +849,32 @@ public final class BankCommands {
         return info(source, BankPhrases.noteRate(books(), note));
     }
 
+    private static int transferPersonal(ServerCommandSource source, String name, String playerName, String raw)
+            throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayerEntity sender = source.getPlayerOrThrow();
+        ServerPlayerEntity recipient = source.getServer().getPlayerManager().getPlayer(playerName);
+        if (recipient == null) {
+            return fail(source, BankPhrases.noteRejected("transfer_player"));
+        }
+        BigInteger amount;
+        try {
+            amount = Amounts.parse(raw);
+        } catch (RuntimeException error) {
+            return fail(source, BankPhrases.amountProblem(error.getMessage()));
+        }
+        TxResult result = books().transferPersonal(sender.getUuid(), recipient.getUuid(), name, amount);
+        if (!result.success()) {
+            return fail(source, BankPhrases.noteRejected(result.code()));
+        }
+        BankRuntime.save();
+        recipient.sendMessage(Text.literal(sender.getName().getString() + " 转给你「" + name + "」×" + amount + "。"), false);
+        return ok(source, BankPhrases.personalMarketDone(result.message()));
+    }
+
     private static int tradeNote(ServerCommandSource source, boolean buy, String name, String raw) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        if (MarketSettlement.externalPersonalMarket()) {
+            return fail(source, BankPhrases.noteRejected("market_external"));
+        }
         BigInteger amount;
         try {
             amount = Amounts.parse(raw);

@@ -33,6 +33,30 @@ class SettlementHooksTest {
     }
 
     @Test
+    void referencedMarketTransferSurvivesReloadAndCannotBePostedTwice() {
+        BankBooks books = BankBooks.create(BankConfig.defaults());
+        UUID payer = UUID.randomUUID();
+        UUID seller = UUID.randomUUID();
+        books.creditHeld(payer, "note", BigInteger.TEN);
+        BigInteger amount = BigInteger.valueOf(3);
+        String reference = "market-pay:example";
+        assertTrue(books.postMarketMovement(reference, "trade-3", amount,
+                () -> books.transferSavings(payer, seller, "note", amount)).success());
+        books.advanceCheckpoint();
+
+        BankBooks reloaded = BankBooks.fromJson(books.toJson(), BankConfig.defaults());
+        assertTrue(reloaded.marketReceipt(reference));
+        assertEquals(1, reloaded.checkpoint());
+        assertTrue(reloaded.postMarketMovement(reference, "trade-3", amount, () -> {
+            throw new AssertionError("posted reference must not perform another movement");
+        }).success());
+        assertEquals("reference_conflict", reloaded.postMarketMovement(reference, "trade-4", amount,
+                () -> { throw new AssertionError("conflicting reference must not post"); }).code());
+        assertEquals(BigInteger.valueOf(7), reloaded.balance(payer, "note"));
+        assertEquals(amount, reloaded.balance(seller, "note"));
+    }
+
+    @Test
     void savingsTransferPaysTheSellerInsideThePool() {
         BankBooks books = funded();
         books.creditHeld(buyer, "note", new BigInteger("80"));
@@ -257,6 +281,56 @@ class SettlementHooksTest {
         assertTrue(saved.has("shopInterestDust"));
         assertEquals(books.toJson(), loaded.toJson());
         loaded.checkInvariants();
+    }
+
+    @Test
+    void decimalShopReadHooksMatchSettlementAndSurviveReload() throws Exception {
+        BankBooks books = BankBooks.create(BankConfig.defaults());
+        books.creditHeld(buyer, "note", new java.math.BigDecimal("1.0000"));
+        BankRuntime.state = new BankWorldState(books);
+        try {
+            Class<?> type = Class.forName("dev.jdguo.bank.market.ShopOperatingAccount");
+            Object account = type.getMethod("get").invoke(null);
+            Method playerBalance = type.getMethod("playerBalance", UUID.class, String.class);
+            Method balance = type.getMethod("balance", String.class);
+            Method transfer = type.getMethod("transfer", UUID.class, String.class,
+                    java.math.BigDecimal.class, boolean.class);
+            transfer.invoke(account, buyer, "note", new java.math.BigDecimal("0.0600"), true);
+            assertEquals(0, new java.math.BigDecimal("0.9400").compareTo(
+                    (java.math.BigDecimal) playerBalance.invoke(account, buyer, "note")));
+            assertEquals(0, new java.math.BigDecimal("0.0600").compareTo(
+                    (java.math.BigDecimal) balance.invoke(account, "note")));
+            // This is the shop's affordability check: an integer fallback incorrectly returns zero.
+            assertTrue(((java.math.BigDecimal) playerBalance.invoke(account, buyer, "note"))
+                    .compareTo(new java.math.BigDecimal("0.0600")) >= 0);
+            assertTrue(books.createPersonalNote(buyer, "Tst", false, BigInteger.ONE).success());
+            UUID series = books.personalNote(buyer).id();
+            books.setPersonalReserve(buyer, "diamond", new BigInteger("3"));
+            assertTrue(books.issuePersonalNote(buyer, new BigInteger("2")).success());
+            String personal = "personal:" + series;
+            transfer.invoke(account, buyer, personal, new java.math.BigDecimal("1.5000"), true);
+            assertEquals(0, new java.math.BigDecimal("0.5000").compareTo(
+                    (java.math.BigDecimal) playerBalance.invoke(account, buyer, personal)));
+            assertEquals(0, new java.math.BigDecimal("1.5000").compareTo(
+                    (java.math.BigDecimal) balance.invoke(account, personal)));
+            BankRuntime.state = new BankWorldState(BankBooks.fromJson(books.toJson(), BankConfig.defaults()));
+            assertEquals(0, new java.math.BigDecimal("0.9400").compareTo(
+                    (java.math.BigDecimal) playerBalance.invoke(account, buyer, "note")));
+            assertEquals(0, new java.math.BigDecimal("0.0600").compareTo(
+                    (java.math.BigDecimal) balance.invoke(account, "note")));
+            assertEquals(0, new java.math.BigDecimal("0.5000").compareTo(
+                    (java.math.BigDecimal) playerBalance.invoke(account, buyer, personal)));
+            assertEquals(0, new java.math.BigDecimal("1.5000").compareTo(
+                    (java.math.BigDecimal) balance.invoke(account, personal)));
+            Object returned = transfer.invoke(account, buyer, personal, new java.math.BigDecimal("0.2500"), false);
+            assertTrue((Boolean) returned.getClass().getMethod("success").invoke(returned));
+            assertEquals(0, new java.math.BigDecimal("0.7500").compareTo(
+                    (java.math.BigDecimal) playerBalance.invoke(account, buyer, personal)));
+            assertEquals(0, new java.math.BigDecimal("1.2500").compareTo(
+                    (java.math.BigDecimal) balance.invoke(account, personal)));
+        } finally {
+            BankRuntime.state = null;
+        }
     }
 
     @Test

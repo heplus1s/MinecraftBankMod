@@ -31,16 +31,17 @@ public final class BankWorldState extends PersistentState {
     public static BankWorldState get(MinecraftServer server) {
         return server.getOverworld().getPersistentStateManager().getOrCreate(
                 BankWorldState::fromNbt,
-                () -> new BankWorldState(BankBooks.create(BankRuntime.config)),
+                () -> fromNbt(new NbtCompound()),
                 ID);
     }
 
     public static BankWorldState fromNbt(NbtCompound nbt) {
         BankConfig config = BankRuntime.config == null ? BankConfig.defaults() : BankRuntime.config;
         String json = nbt.contains("json") ? nbt.getString("json") : "";
+        BankBooks main = null;
         if (!json.isBlank()) {
             try {
-                return new BankWorldState(BankBooks.fromJson(json, config));
+                main = BankBooks.fromJson(json, config);
             } catch (RuntimeException error) {
                 BankRuntime.LOGGER.error("银行存档损坏，尝试读取旁路 JSON", error);
             }
@@ -48,10 +49,19 @@ public final class BankWorldState extends PersistentState {
         Path backup = backupPath(BankRuntime.server);
         if (backup != null && Files.exists(backup)) {
             try {
-                return new BankWorldState(BankBooks.fromJson(Files.readString(backup), config));
+                BankBooks recovered = BankBooks.fromJson(Files.readString(backup), config);
+                if (main == null || recovered.checkpoint() > main.checkpoint()) {
+                    main = recovered;
+                }
             } catch (IOException | RuntimeException error) {
-                throw new IllegalStateException("银行存档和旁路 JSON 都无法读取: " + backup, error);
+                if (main == null) {
+                    throw new IllegalStateException("银行存档和旁路 JSON 都无法读取: " + backup, error);
+                }
+                BankRuntime.LOGGER.warn("银行旁路存档无法读取，使用世界存档", error);
             }
+        }
+        if (main != null) {
+            return new BankWorldState(main);
         }
         if (!json.isBlank()) {
             throw new IllegalStateException("银行存档无法读取，且没有旁路 JSON");
@@ -67,10 +77,10 @@ public final class BankWorldState extends PersistentState {
         return nbt;
     }
 
-    public void writeBackup() {
+    public boolean writeBackup() {
         Path path = backupPath(BankRuntime.server);
         if (path == null) {
-            return;
+            return false;
         }
         try {
             Files.createDirectories(path.getParent());
@@ -81,8 +91,10 @@ public final class BankWorldState extends PersistentState {
             } catch (AtomicMoveNotSupportedException ignored) {
                 Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING);
             }
+            return true;
         } catch (IOException error) {
             BankRuntime.LOGGER.warn("写不了银行旁路存档", error);
+            return false;
         }
     }
 

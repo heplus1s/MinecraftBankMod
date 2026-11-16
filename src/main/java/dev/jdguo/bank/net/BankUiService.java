@@ -1,5 +1,6 @@
 package dev.jdguo.bank.net;
 
+import dev.jdguo.bank.api.MarketSettlement;
 import dev.jdguo.bank.instruments.CheckItems;
 import dev.jdguo.bank.instruments.NotePaper;
 import dev.jdguo.bank.instruments.PaperTake;
@@ -502,6 +503,10 @@ public final class BankUiService {
     }
 
     private static void trade(ServerPlayerEntity player, BankBooks books, String[] parts, boolean buy) {
+        if (MarketSettlement.externalPersonalMarket()) {
+            tell(player, BankPhrases.noteRejected("market_external"));
+            return;
+        }
         if (parts.length < 3) {
             return;
         }
@@ -521,6 +526,10 @@ public final class BankUiService {
     }
 
     private static void swap(ServerPlayerEntity player, BankBooks books, String[] parts) {
+        if (MarketSettlement.externalPersonalMarket()) {
+            tell(player, BankPhrases.noteRejected("market_external"));
+            return;
+        }
         if (parts.length < 4) {
             return;
         }
