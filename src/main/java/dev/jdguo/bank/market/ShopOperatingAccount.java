@@ -111,6 +111,9 @@ public final class ShopOperatingAccount {
      * @return success, or {@code insufficient_funds}, {@code insufficient_shop}, or {@code bad_amount}
      */
     public TxResult transfer(UUID player, String currency, BigDecimal amount, boolean playerPaysShop) {
+        if (currency != null && currency.startsWith("personal:")) {
+            return TxResult.fail("durable_required", "个人币结算需要配套新版商店的引用交易接口");
+        }
         if (BankRuntime.state == null) {
             return TxResult.fail("bank_not_ready", "Ledger is not loaded");
         }

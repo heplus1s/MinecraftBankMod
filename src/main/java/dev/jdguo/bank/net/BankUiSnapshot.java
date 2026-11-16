@@ -313,10 +313,10 @@ public final class BankUiSnapshot {
             for (var entry : event.getAsJsonArray("legs")) {
                 JsonObject leg = entry.getAsJsonObject();
                 details.append(leg.get("notes").getAsString()).append(" 币 → ")
-                        .append(leg.get("reserve").getAsString()).append(" ").append(leg.get("anchor").getAsString()).append("；");
+                        .append(leg.get("reserve").getAsString()).append(" ").append(currencyLabel(books, leg.get("anchor").getAsString())).append("；");
             }
             details.append(outbound ? "系统支出 " : event.has("delivery") ? "个人储蓄入账 " : "系统入账 ").append(event.get("amount").getAsString()).append(" ")
-                    .append(event.get("currency").getAsString());
+                    .append(currencyLabel(books, event.get("currency").getAsString()));
             item.addProperty("summary", details.toString());
             history.add(item);
         }
@@ -418,6 +418,17 @@ public final class BankUiSnapshot {
             return null;
         }
         return fraction.multiply(new BigDecimal("100")).stripTrailingZeros().toPlainString() + "%";
+    }
+
+    private static String currencyLabel(BankBooks books, String token) {
+        var definition = books.currency(token);
+        if (definition != null) return definition.name();
+        if (token != null && token.startsWith("personal:")) {
+            try { var note = books.personalNoteById(UUID.fromString(token.substring(9)));
+                if (note != null) return note.name();
+            } catch (IllegalArgumentException ignored) { }
+        }
+        return token;
     }
 
     private static JsonObject institutionExact(String account, String currency, BigDecimal amount) {
