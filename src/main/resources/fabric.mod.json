@@ -4,12 +4,19 @@
   "version": "${version}",
   "name": "Central Bank",
   "description": "Server-side multi-currency bank for vanilla Minecraft 1.20.1 clients. Ledger, dynamic FX, checks, and credit live on the server, including singleplayer.",
-  "authors": ["heplus1s"],
+  "authors": [
+    "heplus1s"
+  ],
   "contact": {},
   "license": "MIT",
   "environment": "*",
   "entrypoints": {
-    "main": ["dev.jdguo.bank.BankMod"]
+    "main": [
+      "dev.jdguo.bank.BankMod"
+    ],
+    "client": [
+      "dev.jdguo.bank.ui.BankUiClient"
+    ]
   },
   "mixins": [
     "bankmod.mixins.json"
@@ -19,5 +26,8 @@
     "minecraft": "~1.20.1",
     "java": ">=17",
     "fabric-api": "*"
+  },
+  "breaks": {
+    "bankmod-ui": "*"
   }
 }

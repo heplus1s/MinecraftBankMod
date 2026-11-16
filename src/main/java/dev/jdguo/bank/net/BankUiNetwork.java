@@ -31,9 +31,11 @@ public final class BankUiNetwork {
 
     public static void register() {
         ServerPlayNetworking.registerGlobalReceiver(HELLO, (server, player, handler, buf, response) -> {
-            int version = buf.readVarInt();
+            final int version;
+            try { version = buf.readVarInt(); } catch (RuntimeException invalid) { return; }
             server.execute(() -> {
                 versions.put(player.getUuid(), version);
+                if (version != PROTOCOL) sessions.remove(player.getUuid());
                 if (version == PROTOCOL && player.currentScreenHandler instanceof dev.jdguo.bank.gui.BankScreenHandler chest) {
                     String outlet = chest.outletName();
                     boolean admin = chest.remoteAdmin();
@@ -43,8 +45,11 @@ public final class BankUiNetwork {
             });
         });
         ServerPlayNetworking.registerGlobalReceiver(ACTION, (server, player, handler, buf, response) -> {
-            String action = buf.readString(200);
-            server.execute(() -> BankUiService.handle(player, action));
+            final String action;
+            try { action = buf.readString(200); } catch (RuntimeException invalid) { return; }
+            server.execute(() -> {
+                if (wantsUi(player)) BankUiService.handle(player, action);
+            });
         });
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             versions.remove(handler.player.getUuid());
