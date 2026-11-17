@@ -105,7 +105,7 @@ public final class BankAdminScreen extends Screen {
             lines.add(name() + "央行自有储蓄：" + centralField("treasury"));
             lines.add(name() + "玩家存款保管池：" + centralField("vault"));
             lines.add(name() + "现有准备金：" + centralField("reserve"));
-            lines.add("三个账户分开记账。注资明确扣除操作者本人储蓄；不会自动取用其他玩家资产。旧存档的自有储蓄从零开始，不挪用保管池。");
+            lines.add("三个账户分开记账。注资明确扣除操作者本人储蓄；不会自动取用其他玩家资产。旧存档仅将已发行但未归属的央行券归入自有储蓄，不挪用保管池。");
             lines.add("按目标汇率划转准备金：请进入“发行管理 → 按汇率调准备金”。仅使用央行自有储蓄，保持现行汇率公式。");
             button("从本人储蓄注资", x, height - 30, (w - 4) / 2, () -> switchPage(6));
             button("自有储蓄取回", x + (w + 4) / 2, height - 30, (w - 4) / 2, () -> switchPage(7));
@@ -238,11 +238,14 @@ public final class BankAdminScreen extends Screen {
         lines.add("当前：" + BankBook.redemption(data));
         lines.add(BankRates.bankNoteQuote(data));
         for (var row : BankSnapshot.central(data)) {
-            if ("note".equals(row.id())) lines.add("当前发行总额：" + row.liability());
+            if ("note".equals(row.id())) {
+                lines.add("当前发行总额：" + row.liability());
+                lines.add("央行自有央行券（可拨款/回收）：" + row.treasury());
+            }
             if ("diamond".equals(row.id()) || "copper".equals(row.id()))
                 lines.add(row.name() + "准备金：" + row.reserve() + "；央行自有储蓄：" + row.treasury());
         }
-        lines.add(quantity ? "增加货币只增加未分配发行量，不自动入个人储蓄或准备金；减少仅限未分配额度，不扣除他人余额。"
+        lines.add(quantity ? "增发央行券进入央行自有储蓄，可用于商店及地产拨款；减少仅从央行自有储蓄回收，不扣玩家或系统账户余额。"
                 : "发行数量不变，只在央行自有储蓄与准备金间划转，不动玩家存款。实物按整数划转，实际汇率以预览为准。");
         JsonObject q = data.has("centralAdjustmentPreview") ? data.getAsJsonObject("centralAdjustmentPreview") : null;
         if (q == null) return;
@@ -255,6 +258,7 @@ public final class BankAdminScreen extends Screen {
         lines.add("调整预览：" + value(q, "reason"));
         lines.add("汇率：" + value(q, "rateBefore") + " → " + value(q, "rateAfter") + " 钻石 / " + centralName());
         lines.add("发行总额：" + value(q, "liabilitiesBefore") + " → " + value(q, "liabilitiesAfter"));
+        if (quantity) lines.add("央行自有央行券：" + value(q, "treasuryBefore") + " → " + value(q, "treasuryAfter"));
         if (!quantity) {
             String unit = "diamond".equals(reserveCurrency) ? "钻石" : "铜锭";
             lines.add(unit + "准备金：" + value(q, "reserveBefore") + " → " + value(q, "reserveAfter"));
