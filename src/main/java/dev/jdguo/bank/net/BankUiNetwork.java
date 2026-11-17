@@ -95,6 +95,7 @@ public final class BankUiNetwork {
             payload.addProperty("exchangeQuantity", q.quantity().toString());
         }
         CentralPolicyUi.addPreview(payload, session);
+        CentralAdjustmentUi.addPreview(payload, session);
         if (session.admin && session.fundingPreview != null) payload.add("fundingPreview", session.fundingPreview);
         PacketByteBuf buf = PacketByteBufs.create();
         buf.writeString(payload.toString(), 32767);
@@ -115,6 +116,9 @@ public final class BankUiNetwork {
         final boolean admin;
         String page = "savings";
         boolean confirm;
+        dev.jdguo.bank.ledger.CentralAdjustment centralAdjustment;
+        long centralAdjustmentExpires;
+        String centralAdjustmentToken = "";
         dev.jdguo.bank.ledger.CentralIssuePlan centralIssuePlan;
         long centralIssueExpires;
         com.google.gson.JsonObject fundingPreview;

@@ -25,6 +25,22 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BankUiSnapshotTest {
     @Test
+    void savingsAreExactWithoutMagnitudeSuffixes() {
+        BankBooks books = BankBooks.create(BankConfig.defaults());
+        UUID player = UUID.randomUUID();
+        books.deposit(player, "diamond", new BigInteger("1234567"));
+        assertTrue(books.createPersonalNote(player, "泉", NoteRegime.FLOAT, "diamond", BigInteger.ONE).success());
+        assertTrue(books.issuePersonalNoteUnbacked(player, new BigInteger("200000")).success());
+        JsonObject data = JsonParser.parseString(BankUiSnapshot.json(books, player, true, "savings", false)).getAsJsonObject();
+        for (var entry : data.getAsJsonArray("currencies")) {
+            var row = entry.getAsJsonObject();
+            if ("diamond".equals(row.get("id").getAsString())) assertEquals("1234567", row.get("balance").getAsString());
+        }
+        assertEquals("200000", data.getAsJsonArray("notes").get(0).getAsJsonObject().get("balance").getAsString());
+        assertEquals("200000", data.getAsJsonObject("ownNote").get("circulation").getAsString());
+    }
+
+    @Test
     void autoSaleSnapshotTracksAuthoritativeSwitchAndDynamicBalance() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         UUID issuer = UUID.randomUUID();
@@ -90,7 +106,7 @@ class BankUiSnapshotTest {
             }
         }
         assertNotNull(reserve);
-        assertEquals(dev.jdguo.bank.ledger.CompactFormat.format(books.supply("diamond").reserve()), reserve.get("reserve").getAsString());
+        assertEquals((books.supply("diamond").reserve()).toString(), reserve.get("reserve").getAsString());
         assertFalse(reserve.get("reserve").getAsString().equals(reserve.get("savings").getAsString()));
         assertEquals(Money.stored(books.unitsPer("copper", "diamond")), o.get("copperPerDiamond").getAsString());
         assertEquals(BankPhrases.copperPerDiamond(books), o.get("copperPerDiamond").getAsString());
@@ -125,24 +141,24 @@ class BankUiSnapshotTest {
         JsonObject diamond = central(snapshot, "diamond");
         JsonObject note = central(snapshot, "note");
         assertEquals("铜锭", copper.get("name").getAsString());
-        assertEquals(CompactFormat.format(new BigInteger("1000000")), copper.get("reserve").getAsString());
-        assertEquals(CompactFormat.format(books.supply("copper").liability()), copper.get("liability").getAsString());
-        assertEquals(CompactFormat.format(books.supply("copper").locked()), copper.get("locked").getAsString());
-        assertEquals(CompactFormat.format(books.supply("copper").depositVault()), copper.get("vault").getAsString());
-        assertEquals(CompactFormat.format(books.savingsPool("copper")), copper.get("savings").getAsString());
-        assertEquals(CompactFormat.format(books.backedRoom(books.currency("copper"))), copper.get("backedRoom").getAsString());
+        assertEquals((new BigInteger("1000000")).toString(), copper.get("reserve").getAsString());
+        assertEquals((books.supply("copper").liability()).toString(), copper.get("liability").getAsString());
+        assertEquals((books.supply("copper").locked()).toString(), copper.get("locked").getAsString());
+        assertEquals((books.supply("copper").depositVault()).toString(), copper.get("vault").getAsString());
+        assertEquals((books.savingsPool("copper")).toString(), copper.get("savings").getAsString());
+        assertEquals((books.backedRoom(books.currency("copper"))).toString(), copper.get("backedRoom").getAsString());
 
-        assertEquals(CompactFormat.format(new BigInteger("1000")), diamond.get("reserve").getAsString());
-        assertEquals(CompactFormat.format(books.supply("diamond").depositVault()), diamond.get("vault").getAsString());
+        assertEquals((new BigInteger("1000")).toString(), diamond.get("reserve").getAsString());
+        assertEquals((books.supply("diamond").depositVault()).toString(), diamond.get("vault").getAsString());
         assertTrue(diamond.has("liability"));
         assertTrue(diamond.has("locked"));
 
         assertEquals("央行券", note.get("name").getAsString());
-        assertEquals(CompactFormat.format(books.supply("note").reserve()), note.get("reserve").getAsString());
-        assertEquals(CompactFormat.format(books.supply("note").liability()), note.get("liability").getAsString());
-        assertEquals(CompactFormat.format(books.supply("note").locked()), note.get("locked").getAsString());
-        assertEquals(CompactFormat.format(books.backedRoom(books.currency("note"))), note.get("backedRoom").getAsString());
-        assertEquals(CompactFormat.format(books.savingsPool("note")), note.get("savings").getAsString());
+        assertEquals((books.supply("note").reserve()).toString(), note.get("reserve").getAsString());
+        assertEquals((books.supply("note").liability()).toString(), note.get("liability").getAsString());
+        assertEquals((books.supply("note").locked()).toString(), note.get("locked").getAsString());
+        assertEquals((books.backedRoom(books.currency("note"))).toString(), note.get("backedRoom").getAsString());
+        assertEquals((books.savingsPool("note")).toString(), note.get("savings").getAsString());
         assertFalse(note.has("vault"));
         assertEquals(new BigInteger("1000"), books.supply("note").reserve());
         assertEquals(BigInteger.ZERO, books.supply("note").liability());

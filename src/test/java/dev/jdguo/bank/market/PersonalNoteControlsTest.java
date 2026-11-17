@@ -142,7 +142,7 @@ class PersonalNoteControlsTest {
         assertTrue(loaded.personalDiamondPrice(note).signum() > 0);
         JsonObject own = JsonParser.parseString(BankUiSnapshot.json(loaded, issuer, false, "issuance", false))
                 .getAsJsonObject().getAsJsonObject("ownNote");
-        assertEquals(CompactFormat.format(new BigInteger("2001")), own.get("holding").getAsString());
-        assertEquals(CompactFormat.format(new BigInteger("2001")), own.get("circulation").getAsString());
+        assertEquals("2001", own.get("holding").getAsString());
+        assertEquals("2001", own.get("circulation").getAsString());
     }
 }
