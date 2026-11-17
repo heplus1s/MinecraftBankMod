@@ -48,12 +48,12 @@ class QuoteAndReserveTest {
     }
 
     @Test
-    void depositsChangeTheGapAndAReserveTransferDoesNotUseAOnePercentCap() {
+    void depositsChangeTotalHoldingsButInternalReserveTransfersDoNot() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         assertEquals(0, new BigDecimal("1000").compareTo(books.unitsPer("copper", "diamond")));
 
         books.deposit(player, "copper", new BigInteger("1000"));
-        assertEquals(0, new BigDecimal("999.5000").compareTo(books.unitsPer("copper", "diamond")));
+        assertEquals(0, new BigDecimal("1001").compareTo(books.unitsPer("copper", "diamond")));
         assertEquals(new BigInteger("1000000"), books.supply("copper").reserve());
 
         assertTrue(books.transferTreasury(player, "copper", new BigDecimal("1000"), true).success());

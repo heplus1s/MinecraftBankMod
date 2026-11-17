@@ -19,7 +19,7 @@ class IssuedNoteSaleTest {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         books.setFeeFraction(BigDecimal.ZERO);
         assertTrue(books.creditUnbacked(player, "note", new BigInteger("100")).success());
-        assertTrue(books.deposit(player, "diamond", new BigInteger("50")).success());
+        assertTrue(books.deposit(player, "diamond", new BigInteger("51")).success());
         BigDecimal quote = books.unitsPer("diamond", "note");
         BigDecimal vault = books.supply("diamond").depositVaultExact();
         BigInteger reserve = books.supply("diamond").reserve();
@@ -33,7 +33,7 @@ class IssuedNoteSaleTest {
         assertEquals(0, liability.compareTo(books.supply("note").liabilityExact()));
         assertEquals(reserve, books.supply("diamond").reserve());
         assertEquals(vault, books.supply("diamond").depositVaultExact());
-        assertEquals(0, new BigDecimal("50").compareTo(books.balanceExact(player, "diamond")));
+        assertEquals(0, new BigDecimal("51").compareTo(books.balanceExact(player, "diamond")));
         assertEquals(m1, books.centralM1());
     }
 
@@ -42,6 +42,7 @@ class IssuedNoteSaleTest {
         BankBooks bare = BankBooks.create(BankConfig.defaults());
         bare.setFeeFraction(BigDecimal.ZERO);
         assertTrue(bare.creditUnbacked(player, "note", new BigInteger("100")).success());
+        bare.supply("copper").setReserve(BigInteger.ZERO); // Isolate note inventory from copper revaluation.
         assertTrue(bare.deposit(player, "diamond", new BigInteger("4000")).success());
         assertTrue(bare.exchange(player, "diamond", "note", new BigInteger("100")).success());
         BigDecimal diamonds = bare.balanceExact(player, "diamond");

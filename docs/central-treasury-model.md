@@ -5,8 +5,8 @@
 - Explicit administrator contributions debit the same administrator's savings and move the matching physical custody asset and commodity claim into central ownership. Physical contributions/withdrawals require whole units; existing fractional balances remain untouched.
 - Withdrawals move treasury assets back to the administrator's savings and custody. Note transfers change ownership, not issued liability.
 - Reserve transfers now move only treasury assets. The old command/action identifiers remain accepted for compatibility, but no longer authorize spending customer custody.
-- Commodity quote inputs combine custody and treasury exactly once. Moving ownership between them is rate-neutral. The existing gap formula itself remains unchanged.
-- Selling already issued central notes transfers the physical payment from custody to treasury. It does not create physical inventory. Central note inventory calculations and retirement exclude treasury-owned notes.
+- Commodity quotes use registered reserve + treasury + custody totals, each counted exactly once. Moving assets among these pools is cross-rate-neutral. Fees already in treasury and non-asset interest budgets are not counted again. The central-note backing gap formula remains unchanged; changing the copper/diamond cross-rate still indirectly changes copper reserves valued in diamonds.
+- Selling already issued central notes transfers the physical payment from custody to treasury. It does not create physical inventory. Central treasury-owned notes are available for administrator allocation and retirement; retirement debits that inventory and reduces issued liability, without taking player-held notes.
 
 ## Monetary aggregates
 
@@ -14,7 +14,7 @@
 
 Existing M2 is a display valuation using current FX. It is not an independent input suitable for determining those same FX prices. Treasury is central-owned, separately reported, not public circulating M1.
 
-Coverage is registered bank accounts, valid tracked paper, personal currency and integrated system accounts. No complete world inventory/blocks/chests/unloaded chunks scan is performed. This change does not claim to implement whole-world physical M0/M1/M2 or a new monetary-policy formula. Target-reserve adjustment remains unavailable until its accounting/price model is specified.
+Coverage is registered bank accounts, valid tracked paper, personal currency and integrated system accounts. No complete world inventory/blocks/chests/unloaded chunks scan is performed. This change does not claim to implement whole-world physical M0/M1/M2 or a new monetary-policy formula. Target-reserve adjustment simulates the actual ledger and moves only treasury-owned assets; it cannot spend custody. See README for zero-total and pricing-risk boundaries.
 
 ## Verification
 

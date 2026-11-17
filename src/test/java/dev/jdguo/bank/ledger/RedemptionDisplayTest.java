@@ -49,8 +49,8 @@ class RedemptionDisplayTest {
     @Test void inexactPersonalLandQuoteRejectsWithoutCentralNoteFallbackOrMutation() {
         BankBooks b=BankBooks.create(BankConfig.defaults());UUID p=UUID.randomUUID();
         b.deposit(p,"diamond",BigInteger.valueOf(100));b.creditHeld(p,"note",new BigDecimal("1000"));
-        RecursiveClearingRegression.coin(b,p,"异币","diamond",100);
-        b.depositPersonalReserveExact(p,BigDecimal.TEN);
+        RecursiveClearingRegression.coin(b,p,"异币","diamond",1);
+        b.depositPersonalReserveExact(p,new BigDecimal("13"));
         String before=b.toJson();
         var q=b.quoteLandPurchase("note",BigInteger.ONE,"personal:"+b.personalNote(p).id());
         assertFalse(q.get("success").getAsBoolean());assertEquals("inexact_tender",q.get("code").getAsString());

@@ -62,21 +62,21 @@ class OfficialNoteQuoteTest {
     }
 
     @Test
-    void reserveTransfersAndCopperQuotesMoveTheNoteQuoteThroughReservesOnly() {
+    void reserveTransfersKeepMetalQuoteButChangeNoteBacking() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         books.creditUnbacked(player, "note", new BigInteger("2000"));
         assertEquals(0, BigDecimal.ONE.compareTo(books.unitsPer("diamond", "note")));
 
         BigDecimal copperBefore = books.unitsPer("copper", "diamond");
         assertTrue(books.transferReserve("diamond", new BigDecimal("500"), false).success());
-        assertTrue(books.unitsPer("copper", "diamond").compareTo(copperBefore) != 0);
-        assertNull(books.unitsPer("diamond", "note"));
+        assertTrue(books.unitsPer("copper", "diamond").compareTo(copperBefore) == 0);
+        assertEquals(0, new BigDecimal("0.5").compareTo(books.unitsPer("diamond", "note")));
 
         BankBooks fresh = BankBooks.create(BankConfig.defaults());
         fresh.creditUnbacked(player, "note", new BigInteger("1000"));
         assertEquals(0, new BigDecimal("3").compareTo(fresh.unitsPer("diamond", "note")));
         fresh.deposit(player, "copper", new BigInteger("1000"));
-        assertEquals(0, new BigDecimal("999.5000").compareTo(fresh.unitsPer("copper", "diamond")));
+        assertEquals(0, new BigDecimal("1001").compareTo(fresh.unitsPer("copper", "diamond")));
         assertEquals(0, expected(fresh).compareTo(fresh.unitsPer("diamond", "note")));
     }
 
