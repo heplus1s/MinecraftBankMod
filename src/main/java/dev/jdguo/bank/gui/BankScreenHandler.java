@@ -126,8 +126,11 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
     public boolean canUse(PlayerEntity player) {
         // Negotiation alone must not close this menu. BankUiNetwork atomically
         // replaces it only once the graphical screen can actually be sent.
-        if (remoteAdmin && player.hasPermissionLevel(2)) {
-            return true;
+        if (remoteAdmin) {
+            return player.hasPermissionLevel(2);
+        }
+        if (page == Page.MANAGEMENT && !player.hasPermissionLevel(2)) {
+            return false;
         }
         var outlet = BankRuntime.books().outlet(outletName);
         if (outlet == null) {
@@ -141,6 +144,11 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
     @Override
     public void onSlotClick(int slotIndex, int button, SlotActionType action, PlayerEntity player) {
         if (!(player instanceof ServerPlayerEntity serverPlayer)) {
+            return;
+        }
+        // Revalidate at the actual action, not just on the next container tick.
+        if (!canUse(serverPlayer)) {
+            serverPlayer.closeHandledScreen();
             return;
         }
         if (action == SlotActionType.QUICK_CRAFT) {

@@ -54,6 +54,10 @@ public final class BankUiService {
             return;
         }
         String[] parts = raw.trim().split(" ", 6);
+        if (!BankUiAccess.actionAllowed(parts[0], session.admin, player.hasPermissionLevel(2))) {
+            tell(player, BankPhrases.failure(BankPhrases.Kind.GENERIC, "denied", null, null));
+            return;
+        }
         BankBooks books = BankRuntime.books();
         switch (parts[0]) {
             case "page" -> page(player, session, parts);

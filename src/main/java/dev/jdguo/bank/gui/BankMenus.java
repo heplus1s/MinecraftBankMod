@@ -17,6 +17,7 @@ public final class BankMenus {
 
     /** Operator management page, including central issuance. It does not have to be at a kiosk. */
     public static void openAdmin(ServerPlayerEntity player) {
+        if (!player.hasPermissionLevel(2)) return;
         open(player, "管理", true);
     }
 
@@ -32,6 +33,7 @@ public final class BankMenus {
 
     /** Vanilla 9×6 chest. Clients that asked for the optional UI never receive it. */
     public static void openChest(ServerPlayerEntity player, String titleName, boolean remoteAdmin, BankScreenHandler.Page page) {
+        if ((remoteAdmin || page == BankScreenHandler.Page.MANAGEMENT) && !player.hasPermissionLevel(2)) return;
         if (BankUiNetwork.wantsUi(player)) {
             BankUiNetwork.open(player, titleName, remoteAdmin);
             return;
