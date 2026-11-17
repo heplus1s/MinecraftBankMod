@@ -1,569 +1,321 @@
-# 中央银行
+# 中央银行 · MinecraftBankMod
 
-[English version below.](#central-bank)
+面向 **Minecraft Java 1.20.1 / Fabric** 的银行与多币种账本模组。本文对应 **v1.0.12**。服务端负责账户、发行、汇率、兑付、结算和权限；同一个 JAR 内置可选客户端图形界面。原版客户端可以通过原版箱子菜单和命令使用基础银行功能，不要求资源包。
 
-这是一个 Minecraft 1.20.1 的 Fabric 模组。连到专用服务器时，玩家用原版客户端就能来银行存钱、取钱、换汇、开汇票，不用再装模组或资源包。想自己单人试，把模组装进 Fabric 客户端，打开世界即可。
+> 这是游戏经济系统，不是真实金融软件。牌价、准备金、可用资金和实际成交价是不同概念；不是设置一个目标汇率，就会自动获得资产或保证兑付。
 
-钱记在模组自己的账本里，不用记分板，数字再大也不会溢出。
+## 目录
 
-## 安装
+- [安装与升级](#安装与升级)
+- [首次使用与实体网点](#首次使用与实体网点)
+- [玩家功能与操作流程](#玩家功能与操作流程)
+- [账本与资金隔离](#账本与资金隔离)
+- [央行发行与管理](#央行发行与管理)
+- [汇率与实物兑换原理](#汇率与实物兑换原理)
+- [个人币的完整生命周期](#个人币的完整生命周期)
+- [商店市场和领地如何联动](#商店市场和领地如何联动)
+- [命令参考](#命令参考)
+- [配置存档与运维](#配置存档与运维)
+- [网络界面与故障排查](#网络界面与故障排查)
+- [开发验证与边界](#开发验证与边界)
 
-单人测试：用 Fabric 1.20.1 的客户端，把 jar 和 Fabric API 一起放进客户端的 `mods/`，然后打开一个世界。银行跑在这个世界自带的集成服务器上。
+## 安装与升级
 
-专用服务器还是原来的装法。服务器需要 Fabric Loader、Fabric API，以及 Java 17 或更高版本。
+| 场景 | 安装方式 | 使用界面 |
+|---|---|---|
+| 专用服务器 | Fabric Loader ≥ 0.15.0、Fabric API、Java ≥ 17，安装本模组 | 服务器保存权威账本 |
+| 原版客户端连接上述服务器 | 不安装本模组 | 原版箱子菜单、服务器命令 |
+| Fabric 客户端连接上述服务器 | 安装同版本本模组与 Fabric API | 协商成功后使用增强 UI，否则基础入口回退 |
+| 单人世界 | Fabric 1.20.1 客户端安装本模组与 Fabric API | 集成服务器运行同一套账本 |
 
-1. 在项目目录执行 `./gradlew build`
-2. 把 `build/libs/bankmod-1.0.0.jar` 放到服务器的 `mods/`，并确保同目录里有 Fabric API
-3. 启动一次服务器，会自动生成 `config/bank.json`
+下载：[正式 Releases](https://github.com/heplus1s/MinecraftBankMod/releases)。将 `bankmod-1.0.12.jar` 放入相应 `mods/` 目录，重启生效。不要同时放入多个版本。**移除旧独立 `bankmod-ui` JAR**，本模组已内置 UI，Fabric 会拒绝与旧包并存。
 
-连到专用服务器的原版客户端不用装这个模组，也不用资源包。
+升级前备份整个世界及配置。建议增强客户端和服务器同步升级；只装客户端不会替远端服务器创建银行，也不会修改远端经济。旧客户端不认识的新界面通道不会被强制使用。
 
-## 先设一个网点
+相关模组分别安装，不包含在银行 JAR 内：
 
-银行不是在世界里随便一个地方打开的，要先由管理员在建筑上指定一个柜台。
+- [MinecraftShopMod](https://github.com/heplus1s/MinecraftShopMod)：系统商店与商品回收。
+- [MinecraftMarketMod](https://github.com/heplus1s/MinecraftMarketMod)：玩家挂单、个人币交易及土地市场联动。
+- [MinecraftLandMod](https://github.com/heplus1s/MinecraftLandMod)：领地、地图与权限。
 
-看准要当柜台的方块（大约 6 格以内），执行：
+## 首次使用与实体网点
 
-```
-/bank outlet set lobby
-```
+管理员（权限等级 2 / OP）准星对准约 **6 格内**的方块：
 
-如果没看准方块，会用你脚下那一格。网点名字只能是 ASCII，1 到 32 个字符：开头是字母或数字，后面只能是字母、数字、下划线或连字符。已经存下来的旧名字，包括中文，还能用 move、remove、tp、radius、lift、hologram 指到。
-
-设好以后，方块上会立起一座原版方块拼成的柜台，写着「中央银行 · 名字」，原版客户端不用资源包也能看见。右键方块或柜台都会打开银行。柜台跟着存档留下；`/bank outlet remove` 和 `move` 会把它拆掉或挪走。已经建好的网点在服务器升级后会换成这座柜台。如果这格本来就是箱子，右键方块会改由银行处理。站在网点附近（默认 4 格）也可以输入 `/bank`。全息字牌会浮在柜台上方，服务器重启后还在。
-
-一个世界可以设多个网点。账是全服共用的，不是每个柜台一本。
-
-| 命令 | 谁能用 | 做什么 |
-| --- | --- | --- |
-| `/bank outlet set <name>` | 管理员 | 把准星指着的方块设成网点 |
-| `/bank outlet move <name>` | 管理员 | 把网点搬到准星下的新方块 |
-| `/bank outlet remove <name>` | 管理员 | 删掉网点，并拆掉全息字牌 |
-| `/bank outlet radius <name> <1-32>` | 管理员 | 附近可以用 `/bank` 的半径 |
-| `/bank outlet lift <name> <0.5-16>` | 管理员 | 全息字牌离方块的高度，默认 2.4 |
-| `/bank outlet hologram <name> on\|off` | 管理员 | 这个网点要不要显示全息字牌 |
-| `/bank outlet tp <name>` | 管理员 | 传送到网点 |
-| `/bank outlets` | 所有人 | 列出网点 |
-
-## 怎么用
-
-界面是原版的大箱子。格子里的按钮是普通物品，拿不走；万一进了背包或掉在地上，也会被清掉。
-
-只在服务器上安装 `bankmod` 时，原版客户端和没装界面包的 Fabric 客户端照常进服，柜台仍是 9×6 的原版箱子。加装 `bankmod-ui` 的客户端不会再看到这只箱子，存入和取出只在界面里按显示名划拨，数量可以点 1、5、10、64 或全部。没装界面包的人不会收到界面数据包。
-
-打开柜台先看到「储蓄」，也就是你自己的存款。底栏可以切换：储蓄、存入、取出、兑换、汇票、交易、个人发行。还没有个人银行券时，个人发行页只选择浮动、钉住或定额。名字和开价用指令填写，不在箱子里起名。「管理」只有管理员能看见，里面是央行的准备金、发行额、汇率，以及央行发行、注销和暂停兑付。普通玩家必须在网点才能开柜台；管理员用 `/bank admin` 可以在别处打开管理页。
-
-- **存入**：把铜锭、钻石，或纸质银行券放进空格。铜锭和钻石会让余额、准备金和发行额一起增加。银行券只是把纸上的余额存回账户，发行额不变。
-- **取出**：铜锭和钻石可以按 1、10、64 或「尽可能多」来取。库存不够会拒绝；选「尽可能多」时，会按实际库存少给。银行券取出来是原版纸，面额相同的叠成一摞，64 张是一摞。一次最多取 4096 张，再多可以用 `/bank withdraw note <amount>`，会给一张这个面额的纸，同样的面额还能继续叠。
-- **兑换**：先选付出哪种货币、得到哪种货币。按钮上写的是已经算上手续费的价格。
-- **汇票**：从余额里开出一本成书，可以写成持票人或仅本人。把书放进兑付格，钱会回到账户。
-- **发行**：先选浮动、钉住或定额。柜台会关掉，聊天里出现一行可点的英文指令，点一下就会填进聊天框，补上名字后回车。只写名字时按 1 钻记名。记名之后可以按准备金发行，也可以虚发（不锁定准备金）。央行的增发、注销和暂停兑付在管理员的「管理」页。
-
-做成或被拒绝时，会在聊天里说一声，动作栏也会闪一下。中文客户端看到数据包那种说法，例如 `[银行] 存入 铜锭 ×64 成功 ｜余额：铜 64，钻 0，银行券 0`，取出和兑换也带上这笔余额。英文客户端看到对应的英文，例如 `[Bank] Deposited copper ×64 | Balance: Cu 64, Dia 0, bank note 0`。汇率本身不写进每一条聊天。
-
-## 大厅里能看到什么
-
-这些显示默认都是开着的。数字很大时会写成 `k`、`M`，或用科学计数法。
-
-- **侧边栏**：每人一份，大概每秒更新一次。上面有余额、对钻石的汇率、手续费、兑付情况和最近的网点。1.20.1 的侧边栏行尾会带一个红色数字，那只是排列用的序号，不是余额。
-- **全息字牌**：浮在网点上方，面向玩家，显示汇率和状态。
-- **Boss 条**：开局写着 `汇率：1000 铜/钻`。进度表示银行券还能兑出多少。紧了会变黄，无法兑付或暂停兑付会变红。
-- **玩家列表**：页眉和页脚会显示银行名称和主要汇率。
-
-```
-/bank display sidebar on|off
-/bank display bossbar on|off
-/bank display tab on|off
-/bank display global sidebar|bossbar|tab|hologram|join on|off
+```text
+/bank outlet set 北京 总行
 ```
 
-前三条只管自己。`global` 是管理员的总开关，关掉以后，个人再开也看不到。全息字牌只有总开关，以及每个网点自己的开关。
+名称支持中文和中间空格，最多 32 字符；拒绝控制字符等非法名称。未瞄准有效方块时使用玩家脚下方块。柜台以基准方块上方中心为交互基准，显示模型不是必须安装客户端的自定义方块。
 
-## 货币和汇率
+右键网点基准方块或柜台交互实体打开银行。在网点半径内也可以输入 `/bank`；默认半径为 4 格。全服多个网点共用同一账本，而非各开一套账户。管理员可通过 `/bank admin` 远程进入管理页。
 
-默认有三种货币，写在 `config/bank.json`。第一次进世界时会抄进存档，之后以存档为准。改完配置后用 `/bank reload`，可以更新费率、权重和上下限，也能加上新货币，但不会清空账户。
+### 移动、旋转、高度和删除
 
-| id | 种类 | 物品 | 初始准备 / 发行额 | 说明 |
-| --- | --- | --- | --- | --- |
-| `copper` | 实物 | 铜锭 | 1,000,000 | 铜 |
-| `diamond` | 实物 | 钻石 | 1,000 | 计价货币 |
-| `note` | 纸币 | 原版纸，同面额可叠放；汇票仍是成书 | 1,000 | 银行券。没有发行额时暂无牌价 |
-
-默认手续费是 2%。银行券活期存款的默认年利率也是 2%，按 365 个游戏日计息，利息只从手续费形成的利息池里付。个人银行券各自有利息池，只按账面持有计息，默认年利率是 0。纸币计入 M0 和 M1，但不计息。每种货币的差额权重 α 默认是 1000‰。汇率默认不设上下限，这样银行券贬值时，数字可以变得很大。如果要限制，可以用：
-
+```text
+/bank outlet move 北京 总行
+/bank outlet rotate east 北京 总行
+/bank outlet lift "北京 总行" 3
+/bank outlet radius "北京 总行" 6
+/bank outlet hologram "北京 总行" off
+/bank outlet tp 北京 总行
+/bank outlet remove 北京 总行
+/bank outlets
 ```
-/bank clamp max 999999
-/bank clamp min off
+
+- `move` 使用新的准星目标，保持名称及朝向；选更高或更低的基准方块可整体改变高度。
+- `rotate` 的方向写在名称前，可选 `north`、`east`、`south`、`west`。旧网点默认保持北向。旋转不改变基准位置、作用半径或悬浮文字高度。
+- `lift` 只调整悬浮文字相对基准方块的高度（0.5～16，默认 2.4），**不是柜台模型高度**。
+- `radius` 接受 1～32 格。
+- 名称后还有参数的指令须用英文双引号包住含空格名称。
+- 删除网点不等于删除银行账户或世界账本。
+
+## 玩家功能与操作流程
+
+增强 UI 将个人储蓄、存入、取出、实物货币兑换、汇票、个人币交易与兑换、个人发行管理分开。原版箱子提供相应基础入口，但不是每项增强 UI 设置都有完全相同的按钮布局。
+
+### 存入与取出
+
+- 默认实物货币为铜锭 `copper`、钻石 `diamond`；央行券内部 ID 为 `note`，显示名称可以修改。
+- 实物存取是**背包整数物品 ↔ 同币种银行储蓄**。银行账面权益和背包物品不能混为一谈。
+- 央行券与个人币可作为账面余额，也可以以带服务器编号的原版纸票据携带。存回纸币不重复发行；复制物品不能凭空增加合法余额。
+- 个人储蓄 UI 显示完整数值，不把实际余额自动缩成 K/M。账本精度为 **0.0001**；这不表示可以从背包取出 0.1 个钻石。
+- 实物取款受真实可用库存限制。历史小数实物权益和某些准备金路径仍可能保留小数；不要直接删掉小数或当成可拆分物品。
+
+### 实物货币兑换
+
+选择方向及整数实物数量 → 获取报价 → 检查参考牌价、差价和实收 → 确认。央行券可以有小数，实物数量必须为整数。成功结果保留本笔差价说明，不能把左侧参考牌价直接当作净成交汇率。
+
+### 汇票
+
+余额可签发成原版成书形式的汇票，可指定持票人或受款人。汇票编号和币种金额由服务端存根验证；重复兑付、复制票据不会二次入账。指定受款人不匹配时不能兑付。个人余额转成汇票不是再次发行；管理员发行汇票是另一条新增负债路径。
+
+### 推荐的首次测试
+
+1. 建立网点，存入少量铜锭或钻石，再取出核对。
+2. 管理员查看央行自有资产、发行准备金、玩家存款保管池，确认三者不同。
+3. 在发行管理中预览增发，确认央行券进入**央行自有储蓄**。
+4. 给商店系统账户拨一小笔央行券，再测试商店收购和付款。
+5. 测试个人币前先存入对应准备金；用小额检查创建、自动待售、认购、回收以及账单。
+
+## 账本与资金隔离
+
+| 项目 | 含义 | 不应误用为 |
+|---|---|---|
+| 玩家储蓄 | 玩家按币种拥有的账面余额 | 央行可随意拨出的资金 |
+| 存款保管池 `depositVault` | 实物储蓄对应的托管记录 | 央行自有资产或发行准备金 |
+| 央行自有储蓄 `treasury` | 央行自身可用资产，含增发入库的央行券 | 玩家余额总和 |
+| 发行准备金 `reserve` | 支撑发行及兑换的准备金；其中可有锁定部分 | 全部可自由取回的资金 |
+| 个人币准备金 | 特定发行人实际押入的资产 | 发行人仍可重复消费的储蓄 |
+| 商店／地产系统账户 | 各自独立的经营储蓄、结算资产、待完成款项 | 央行无限信用额度 |
+| 回收库 | 已回收、不可直接消费的个人币 | 新发行量或公开挂牌库存 |
+
+系统账户可用资金会扣除未完成交付占用的款项。已转出的待付款、锁定入账和实际可用余额分别显示，不能简单把所有数字相加。新经济操作采用候选账本校验、持久提交后生效；跨模组还有结算凭据及交付完成／回滚流程。该机制不是对所有存储故障、其他模组错误或管理员手改存档的无限保证。
+
+## 央行发行与管理
+
+管理 UI 提供总览、发行管理、准备金、自有储蓄、兑付、名称和系统账户管理等功能。
+
+### 两种调整模式
+
+1. **货币数量增减**：增加发行负债并把新央行券记入央行自有储蓄；不自动增加实物准备金，也不发给操作者私人账户。回收则扣央行自有券库存并减少发行额，不直接扣玩家或商店／地产账户余额。
+2. **按目标汇率调整准备金**：保持央行券发行量不变，选择铜或钻，以当前真实汇率模型模拟整数实物划转。从央行自有储蓄转入准备金，或将可解锁准备金转回自有储蓄，**不取玩家保管款**。
+
+两者均先预览后确认。目标汇率采用普通数字（最多四位小数）；整数实物可能不能精确命中目标，预览显示实际结果及误差边界。资金不足、目标不可达、旧报价失效会拒绝，不以凭空增加资产来凑目标。数量模式输入正整数；其他接口支持的小数能力不应据此推断所有旧命令都支持小数。
+
+### 商店和地产拨款
+
+从央行管理总览分别进入「商店储蓄管理」「地产储蓄管理」：输入数量 → 预览 → 确认。拨款上限为央行真实可用央行券余额，不自动增发。两户互不混用，预览有效 60 秒，账户变化须重做预览。
+
+「央行券注资」是另一操作：**管理员本人储蓄 → 央行自有储蓄**，不是立即给商店拨款。后台保留最近 200 笔拨款记录，界面按账户显示最近 5 笔。
+
+升级时，有可靠账本依据的旧未分配央行券可一次归入央行自有储蓄；总发行额不变，不能重复迁移。异常历史账本或已经丢失的旧记录不会被自动补款、猜测修复。
+
+### 兑付状态
+
+兑付开关、是否存在有效牌价、铜／钻实际可用准备金及锁定量分别显示。暂停兑付不等于清空资金；有牌价也不代表无限库存。管理页不再用旧覆盖率直接宣称“无法兑付”。管理员撤销 OP 后，管理会话会失效，不继续保留管理读取和远程操作能力。
+
+## 汇率与实物兑换原理
+
+当前默认铜／钻及央行券牌价使用 `BankBooks` 的 **gap 差额模型**，不是全世界箱子、掉落物或未加载区块物品的扫描结果，也不是由 M0/M1/M2 总量新公式驱动。
+
+设 `G(R, S, α) = R + (R − S) × α / 1000`。
+
+- 铜／钻：`R` 为对应发行准备金，`S` 为该实物的存款保管池加央行自有储蓄。二者仅在报价计算中合计，账目仍分开。
+- `1 钻石的铜锭数 = G(铜准备金, 铜储蓄, α铜) / G(钻准备金, 钻储蓄, α钻)`。
+- 央行券：先把铜钻发行准备金按实时铜钻牌价折成钻石价值 `R`，以已发行央行券 `L` 替代上式的 `S`。
+- `1 央行券的钻石价值 = G(R, L, α券) / L`。没有发行量、有效准备金非正或依赖的基础牌价无效时不提供有效报价。当前零铜准备金等边界是否会使牌价缺失应按实际账本核查，不承诺仅有钻石就必定有牌价。
+
+默认 α 为 1000‰，默认兑换差价为 2%；上下限可配置。铜准备金调整会影响铜钻牌价，因此目标汇率求解不能用固定铜价简单相减。默认种子参数包含 1,000,000 铜及 1,000 钻，但实际开局／旧档牌价以实时账本为准，不承诺所有世界恒定 1 券＝1 钻。
+
+**差价例子**：若参考牌价为 1 券＝1 钻、差价为 2%，1000 钻换券约得到 `1000 / 1.02 = 980.3921` 券；反向买 1 钻需约 1.02 券。实物数量、方向、四位精度及当时报价均参与最终校验。
+
+## 个人币的完整生命周期
+
+### 创建、管理与名称
+
+一名发行人管理自己的个人币；当前名称校验为 **1～3 个汉字或英文字母**，禁止重名。增强 UI 可以直接输入名称并在管理中改名，不必离开界面填命令。名称变化不改变内部币 ID、持有人余额或凭据归属。
+
+创建和管理支持浮动 `float`、联系 `peg`、固定／硬兑换 `hard` 制度。可在管理页切换制度、设置目标／区间、调整准备金与自动待售。目标值是政策参数，不能替代实际抵押资产。
+
+### 准备金和实际价值
+
+准备金可为铜、钻、央行券，或通过管理选择另一种个人币。系统检查抵押链，拒绝自我抵押、循环、无效币、过深链及正在清算的币。当前递归链深度上限为 32；未实现任意物品或股票自动估值抵押。
+
+实际个人币价值基于**真实准备金／仍有效流通数量**，递归追到铜、钻或央行券，再按有效牌价折算。不是把发行人填写的目标价当作无条件可兑现价格。无有效准备金、暂停、切换中或无可用底层牌价时，交易可被拒绝。
+
+切换抵押物会返还旧准备金到发行人对应储蓄，并进入切换状态；重新注入新准备金前不能正常报价和交易。相关币存在待完成交付时，切换等操作会受限。准备金释放不能重复占用已承诺给流通持有人的支持。
+
+### 发行、待售和购买
+
+- 发行后货币进入发行者实际持有量，不虚构“尚未发行的可售币”。
+- 自动待售默认开启，按发行者真实可用余额提供库存，支持小数持有。关闭会撤掉发行者自己的卖单，不删除其他玩家挂单。
+- 手动挂牌与自动待售不同；手动挂牌锁定相应数量，成交还要校验真实库存。回收库和准备金都不是可售余额。
+- 市场模块提供交易界面和挂单入口。用央行券、整数铜／钻储蓄，或另一种个人币购买目标个人币，均由银行处理资金。
+- 个人币 A 换 B 的前台是一笔交叉汇率交易；后台可赎回 A 的真实抵押并用实际央行券购买 B 的真实卖单，不把 A 强塞给 B 的卖家，也不凭空增加 B 的准备金。
+- 普通持有人之间的同币种转账／既有币过户不等于赎回；使用个人币付款而触发递归清算时，则会改变相应抵押链准备金和回收量。
+
+### 递归清算、回收与回流
+
+系统收到个人币后，按实际抵押逐层扣缴：外层个人币回收、释放其对应内层资产，直至铜、钻或央行券。系统不长期存一笔未兑现的个人币并按发行人自报高价当作安全资产。终端实物先为银行内记账，不要求商店从背包提取碎钻石。
+
+回收币保存在不可消费的回收库，不直接视为新发行或公开流通。发行人可通过回流按钮重新取得回收币：浮动模式可直接回流；联系／固定模式按当前政策尝试从发行人真实储蓄补入准备金，储蓄不足时实际支持和汇率受影响，不从其他玩家取钱补足。
+
+### 精度、账单和利息
+
+- 账面央行券、个人币使用四位小数；个人币不足一个也可以持有与结算。
+- 新的个人币收款流程不会以央行券补零。库存不足或四位精度无法实现规定的足额结算，会明确拒绝并提示调整数量／付款币种，不静默改币或吞零钱。
+- 实物找零与个人币不同：整数实物兑换可涉及央行券零头；某些实物权益返还在券资金不足或精度不允许时仍保留原权益，不能宣称所有历史实物小数已消失。
+- 个人管理可查看持久保存的近期系统结算记录，退出重进不会只剩临时聊天消息。
+- 利息从真实利息池支付，不是无限印币。默认央行券年率 2%，个人币年率 0；年度口径按 365 个游戏日，纸币不按活期账面余额计息。
+
+## 商店市场和领地如何联动
+
+| 情形 | 资金流程 |
+|---|---|
+| 商店用央行券买卖商品 | 玩家与商店系统账户之间实际转账 |
+| 玩家以个人币向系统商店付款 | 个人币递归清算、回收；系统记录终端实际资产并按结算流程处理，不囤个人币风险 |
+| 商店向玩家支付个人币 | 使用真实央行券现场认购发行者实际待售个人币，再交给玩家；不足则拒绝，不额外发行 |
+| 玩家市场挂单交易 | 银行处理真实付款／过户，商品和订单交付由市场负责 |
+| 领地系统初售 | 按系统标价，可选择支持的其他付款币种；结算进入独立地产账户 |
+| 玩家二手土地 | 按卖方指定币种付款，不等同系统初售跨币规则 |
+
+“最终以央行券计价／结算”不代表后台实物结算资产可以不经真实资金转换就算成可用央行券。系统账户 UI 分别列出经营余额、央行券结算资产和待完成款，不把所有抵押物折算值冒充现金。
+
+个人币付款、货物／土地交付存在跨模组步骤：完成后释放锁定；确定失败才按凭据回滚；未确认的交付保留待处理状态。升级保留旧混合收款凭据的恢复规则，不把已承诺的旧订单强改为新规则。
+
+### M0 / M1 / M2 显示口径
+
+M0 为已登记纸币；央行 M1 包含 M0 和账面储蓄，**不能把 M0 再加到 M1**。央行自有库存单独报告。M2／广义资产统计涉及个人币及实物储蓄，估值会随牌价变化；原币分项不能把不同币种数字直接相加。回收库、嵌套抵押与公众可消费量分别处理，避免当作重复流通。统计范围是模组登记的账本和票据，不扫描全世界未登记物品。
+
+## 命令参考
+
+命令参数以游戏内补全及服务端校验为准；不同入口有不同整数／小数要求，不要把旧整数命令当作所有增强 UI 操作的等价 API。
+
+| 命令 | 用途 |
+|---|---|
+| `/bank`、`/bank outlets` | 附近打开银行、列出网点 |
+| `/bank deposit` | 存入主手带银行编号的纸币；普通铜锭／钻石请用柜台存入 |
+| `/bank withdraw <currency> <amount>` | 从自己的余额取出支持的货币 |
+| `/bank note create float <name>` | 以默认钻石锚创建个人币；也可使用 peg / hard |
+| `/bank note create float diamond <name> <par>` | 显式指定制度、基础锚和参数；制度支持 float / peg / hard，基础锚支持 diamond / copper / note |
+| `/bank note issue <amount>`、`/bank note unbacked <amount>` | 个人币发行的不同入口，仍受状态和资金检查 |
+| `/bank note retire <amount>` | 回收注销本人可用的个人币，不直接扣其他持有人 |
+| `/bank note autosale on`、`/bank note autosale off` | 自动待售开关 |
+| `/bank note switch float` | 切换个人币制度；也有 peg / hard 和基础锚子项 |
+| `/bank note rate [name]` | 查看个人币牌价 |
+| `/bank note buy <name> <amount>`、`/bank note sell <name> <amount>` | 旧命令交易入口，遵循其库存和参数限制 |
+| `/bank note swap <pay> <receive> <amount>` | 个人币互换入口，数量为目标换入量 |
+| `/bank note transfer <name> <player> <amount>` | 转账给指定在线玩家 |
+| `/bank note redeem <name> <currency> <amount>` | 将个人币兑换到支持的基础币种储蓄 |
+| `/bank note redeem paper <currency>` | 主手个人纸币兑付入口 |
+| `/bank note withdraw [name] <amount>` | 取出个人纸币 |
+| `/bank note freeze`、`/bank note unfreeze` | 暂停／恢复本人个人币兑付 |
+| `/bank note reserve`、`/bank note reserve deposit <amount>`、`/bank note reserve withdraw <amount>` | 查询／调整发行人的央行券准备金账户，不要误作所有锚资产的通用准备金命令 |
+| `/bank note bankrupt [name]` | 破产处理，涉及币失效、剩余抵押和债务追偿；不是普通改名或删除按钮 |
+
+管理员命令（权限等级 2）：
+
+```text
+/bank admin
+/bank admin accounts
+/bank supply
+/bank audit
 /bank fee 2
 /bank interest 2
 /bank interest personal 0
 /bank alpha note 1000
-```
-
-铜/钻和银行券/钻都按差额算有效数量，不按两边的库存直接相除，也没有每笔 1% 的推移。α 默认 1000‰，可以按币种改。准备金率照样会下降，库存空了还是兑不出来。
-
-默认准备金是 1,000,000 铜锭和 1,000 钻石，所以一进世界就是 1 钻 = 1,000 铜，和数据包行动栏上的 `汇率：1000 铜/钻` 一样。和旧版银行数据包相比，这里把差额的方向改了一下：多印发行额、准备金不动时，这种货币会变弱，而不是变硬。开局把种子准备金同时记作发行额，所以账是平的。计算用高精度小数，付款时向上取整到整数。
-
-有效数量按下面这个式子算：
-
-```
-V = R + (L - R) × α / 1000
-```
-
-其中 `R` 是发行准备金，`S` 是央行储蓄。存入只增加储蓄，不进入发行准备金。有效数量是 `R + (R - S) × α / 1000`。α 为 1000 时就是 `2R - S`。1 钻石 = 铜的有效数量 / 钻的有效数量。钻的有效数量不大于 0 时不报价。
-
-银行券用同一套差额。`R` 是发行准备金折成的钻石（锁定的也算，央行储蓄不算，铜按当时的铜/钻牌价折算）。`L` 是已发行的银行券。有效准备金是 `R + (R - L) × α / 1000`。没有发行额，或者有效准备金不大于 0，就不报价。否则 1 银行券 = 有效准备金 / `L` 钻石。α 为 1000 且准备金正好覆盖发行额时，这个价格是 1；准备金是发行额的两倍时，是 3。开局没有发行额，铜/钻仍是 1 钻 = 1,000 铜。
-
-存入实物时，余额、准备金和发行额一起加。取出时一起减，但已经锁给银行券的那部分钻石取不走。兑换只调整发行额，不动库存。用银行券换实物时，不能超过库存实际还能兑出的数量。
-
-## 央行发行
-
-管理员（或权限等级 2）可以用：
-
-```
-/bank credit unbacked <player> note 1000000
-/bank credit backed <player> note 1000
-/bank credit retire <player> note 1000
-/bank credit check <player> note 1e12
-/bank freeze on
-/bank supply
-/bank reserve diamond 1000
-```
-
-金额可以写成 `1_000`、`1.5k`、`2m`、`1e40`。
-
-- **无准备金发行**：给玩家加余额和发行额，准备金不变。发行额变大，银行券对钻石的官价按上面的差额跟着变。发得特别多、有效准备金不大于 0 时，官价空着，Boss 条和全息字牌会显示无法兑付。
-- **按准备金发行**：额度按钻石和铜锭的发行准备金计算。锁进发行准备金的金属仍然算在 `R` 里。
-- **注销**：先销掉没有准备金的部分，汇率会好转；再往下销，才会解锁钻石。
-- **暂停兑付**：只暂停用银行券兑换铜锭或钻石。普通存取、用铜锭或钻石换银行券、汇票进出账户都还可以。
-
-`/bank reserve <currency> <amount>` 用来改这种货币的开局准备金。玩家已经存进来的钱还在，库存和发行额会跟着开局数一起挪，所以汇率和能不能兑会对得上新账，而不是只改一个库存数字。锁住的部分不能改得比锁定数量更少。改完聊天里会报库存、发行额、锁定和现在的铜/钻汇率。
-
-个人准备金是另一本账，留给以后的个人发币，跟存款、跟央行库存都分开。管理员可以用 `/bank personal get <player>` 查看，用 `/bank personal set <player> <currency> <amount>` 记下。设成 0 就是清掉。这不会改玩家余额，也不会改库存。
-
-## 个人银行券
-
-这和存款、个人准备金、央行的银行券都不是一回事。每个人只能有一张。名字最多三个汉字或英文字母，不能和别人重名，并且只能用下面的指令起名。创建时选定汇率制度，之后不能改。浮动按市价，钉住不跟买卖走，定额只兑面额上的那种实物。`/bank note issue` 会锁定个人准备金；`/bank note unbacked` 是虚发，不锁定实物。发行人另有央行准备金账户，只存银行券、不计息。浮动至少存流通量的 10%，联系汇率至少 20% 且其余为锁定的钉住准备，硬兑换在足额实物之外再存 5% 的清算头寸。不足时只暂停新发行。
-
-```
-/bank note reserve
-/bank note reserve deposit <amount>
-/bank note reserve withdraw <amount>
-/bank note ratio float 10
-/bank note ratio peg 20
-/bank note ratio hard 5
-```
-
-```
-/bank note create float <name>
-/bank note create peg <name>
-/bank note create hard <name>
-/bank note create diamond <name> <par>
-/bank note create copper <name> <par>
-/bank note create float diamond|copper <name> <par>
-/bank note create peg diamond|copper|note <name> <rate>
-/bank note create hard diamond|copper <name> <face>
-/bank note issue <amount>
-/bank note unbacked <amount>
-/bank note bankrupt
-/bank note bankrupt <name>
-/bank note rate
-/bank note rate <name>
-/bank note buy <name> <amount>
-/bank note sell <name> <amount>
-/bank note swap <pay> <receive> <amount>
-/bank note redeem <name> <currency> <amount>
-/bank note redeem paper <currency>
-```
-
-`<currency>` 是 `diamond`、`copper` 或 `note`。`<amount>` 在互换里是要换入的张数。`/bank note bankrupt` 让这张券作废并留下账。已经兑出或不够的准备金记成欠央行的债，剩下的抵押收归央行，不退回发行人。之后发行人身上和附近新出现的铜锭、钻石，大约每秒划走一次用来还债。
-
-`<par>` 和 `<amount>` 可以用 `1_000`、`1.5k`、`2m` 这种写法，适合箱子按钮上没有的数量。底栏「发行」用来记名和按 1、10、64、100 发行；常见开价是 1 钻、10 钻、1000 铜，名字用你游戏名里前三个汉字或字母。「交易」可以按央行银行券买卖，也可以两张个人银行券按市价互换，或按市价通兑成铜锭、钻石、银行券。别的数量用上面的指令。
-
-个人银行券记在储蓄页上，和铜锭、钻石、央行银行券放在一起。二级买卖和互换只在账户之间过户，发行人的准备金不动。通兑才注销流通、解开锁定，并且只从已经锁定的准备金里付钱。市价高于准备金能付的部分时，按库存兑付，不会多付。发行人不能在二级市场跟自己对做，但可以通兑自己的券。
-
-手里的个人银行券也是这种纸，名字写成「个人银行券「名字」」，不会和央行银行券叠在一起。取出用柜台按钮，或：
-
-```
-/bank note withdraw <amount>
-/bank note withdraw <name> <amount>
-/bank withdraw <currency> <amount>
-/bank deposit
-```
-
-`/bank deposit` 存的是主手上的那一摞纸。已经入过账的，以及多出来的复制件，都会被收回，不会再次入账。
-
-发行前，个人准备金至少要盖住「已发行加这次要发的数量 × 开价 × 覆盖倍数」。覆盖倍数默认是 1，管理员用 `/bank note coverage <ratio>` 改。
-
-买卖的计价是央行银行券。开局 1 张央行银行券 = 1 钻。不够整张，或者钻石那边凑不齐，就按 1 钻 = 1,000 铜用铜锭找零。
-
-价钱这样算。M1 是已经发出去的张数。有效准备是个人准备金和发行时锁住的数里较小的那个，再除以开价，得到能撑住多少张，记成准备张数。M2 = M1 + 准备张数。
-
-```
-强度 = 有效准备 / (开价 × M1)
-流向 = (买入张数 - 卖出张数) / M1
-流向系数 = 1 + 0.1 × 流向    （夹在 0.25 和 4 之间）
-钻价 = 开价换成钻 × 强度 × 流向系数
-```
-
-还没发行时，钻价就等于开价换成钻。买入会把流向系数抬高，卖出会把它压低。准备不够，强度就小于 1，券会变便宜。
-
-## 汇票
-
-开出来的是一本原版成书，里面记着编号、币种、金额和出票人等信息，并标成「破损」，不能用工作台再复制。就算用别的办法复制了，服务器也只认第一次兑付，同一编号的第二本会被没收。书上的金额如果和存根对不上，同样没收。如果汇票写了抬头，而你不是那个人，书会还给你，存根不动。
-
-从自己余额开票，只是把存款换成一张汇票，总发行额不变。管理员的 `/bank credit check` 则是新印出来的发行额，玩家必须在线才能拿到书。纸质银行券是另一样东西：用来把账户里的银行券拿进背包，不是汇票。
-
-## 存档和配置
-
-账记在主世界的 `data/bankmod.dat`，旁边还有一份方便查看的 `data/bankmod-ledger.json`。卸掉模组不会自动删除这些文件。如果要清空银行，先停服，再删掉这两个文件。
-
-如果以前用过记分板版的银行数据包，可以执行一次：
-
-```
-/bank import-scores
-```
-
-它会把能对上玩家的 `copper`、`diamond` 正数当作存款导进来，每个玩家只导一次。名字以 `#` 开头的条目会跳过。旧数据包里的库存数字不会自动过来，需要对齐时用 `/bank reserve`。
-
-`config/bank.json` 里和默认经济设定对应的部分如下：
-
-```json
-{
-  "numeraire": "diamond",
-  "feePercent": "2",
-  "clampMin": null,
-  "clampMax": null,
-  "outletRadius": 4.0,
-  "currencies": [
-    { "id": "copper", "kind": "commodity", "item": "minecraft:copper_ingot", "initialReserve": "1000000", "alphaPermille": "1000" },
-    { "id": "diamond", "kind": "commodity", "item": "minecraft:diamond", "initialReserve": "1000", "alphaPermille": "1000" },
-    { "id": "note", "kind": "virtual", "name": "银行券", "nameEn": "bank note", "initialReserve": "1000", "issuable": true, "backing": "diamond", "parPerBacking": "1", "haircut": "1", "minReserveRatio": "1", "alphaPermille": "1000" }
-  ]
-}
-```
-
-实物货币的物品 id 不能重复。纸币必须指定一种实物货币作为准备金。
-
-## 商店与市场怎么记账
-
-玩家在商店买东西，钱从活期存款划进商店经营账户；卖东西则按相反方向划回。市场里玩家付给玩家，只是储蓄账户之间过户，不记成中央银行的收入。服务器出让土地的货款进入土地出让账户。这两个账户都是储蓄总池里的分户，银行券余额按活期存款计息，不占用发行准备金。银行自己的银行券买卖仍在本模组里。
-
-管理员用 `/bank admin accounts` 查看这两户。接口说明在 `docs/settlement-hooks.md`。
-
-## 还没有的功能
-
-现在还没有股市。以后如果要做，会另开模块，不会把行情写进这本银行账里。
-
-## 编译
-
-```
-./gradlew build
-./gradlew test
-```
-
-`./gradlew test` 不会启动游戏。它主要检查存取、兑换、汇票是否只兑一次、纸质银行券拆开或复制后会不会多出来、滥发后银行券会不会贬值、按准备金发行会不会锁钻，以及大数字会不会算爆。
-
-许可是 MIT，版权归 heplus1s。Minecraft 是 Mojang 的商标，本项目与 Mojang 无关。
-
----
-
-# Central Bank
-
-[中文在上方。](#中央银行)
-
-This is a Fabric mod for Minecraft 1.20.1. On a dedicated server, players can deposit, withdraw, exchange currencies, and issue bills of exchange with a vanilla client. No client mod or resource pack is needed. To try it alone, install the mod on a Fabric client and open a world.
-
-Balances are stored in the mod's own ledger, not on the scoreboard, so the numbers can get arbitrarily large without overflowing.
-
-## Installation
-
-Singleplayer: use a Fabric 1.20.1 client, put the jar in the client's `mods/` folder together with Fabric API, then open a world. The bank runs on the integrated server that comes with that world.
-
-A dedicated server is installed as before. The server needs Fabric Loader, Fabric API, and Java 17 or newer.
-
-1. Run `./gradlew build` in the project directory
-2. Put `build/libs/bankmod-1.0.0.jar` in the server's `mods/` folder, and make sure Fabric API is there too
-3. Start the server once. It will create `config/bank.json`
-
-A vanilla client connecting to a dedicated server still should not install this mod, and does not need a resource pack.
-
-## Set up an outlet first
-
-You can't just open the bank anywhere in the world. An operator has to mark a counter on a building first.
-
-Look at the block you want as the counter (within about 6 blocks) and run:
-
-```
-/bank outlet set lobby
-```
-
-If you aren't looking at a block, it uses the one under your feet. Outlet names have to be ASCII, 1 to 32 characters: start with a letter or digit, then only letters, digits, underscore, or hyphen. Names already saved, including old non-ASCII ones, can still be used with move, remove, tp, radius, lift, and hologram.
-
-After that, a counter made of vanilla blocks stands on the block, labeled "中央银行 · name". Vanilla clients see it with no resource pack. Right-clicking the block or the counter opens the bank, and the counter is saved with the world. `/bank outlet remove` and `move` delete it or place it again. Outlets saved earlier become this counter after the server upgrades. If the block is already a chest, right-clicking the block is handled by the bank instead. Players standing near the outlet (4 blocks by default) can also type `/bank`. A hologram floats above the counter and comes back after a restart.
-
-A world can have more than one outlet. The ledger is shared across the server, not one book per counter.
-
-| Command | Who can use it | What it does |
-| --- | --- | --- |
-| `/bank outlet set <name>` | operators | Turn the block you're looking at into an outlet |
-| `/bank outlet move <name>` | operators | Move the outlet to the block you're looking at |
-| `/bank outlet remove <name>` | operators | Remove the outlet, its counter, and its hologram |
-| `/bank outlet radius <name> <1-32>` | operators | How close you have to be to use `/bank` |
-| `/bank outlet lift <name> <0.5-16>` | operators | How high the hologram sits above the block, default 2.4 |
-| `/bank outlet hologram <name> on\|off` | operators | Whether this outlet shows a hologram |
-| `/bank outlet tp <name>` | operators | Teleport to the outlet |
-| `/bank outlets` | everyone | List outlets |
-
-## How to use it
-
-The interface is a vanilla large chest. The buttons in the slots are ordinary items and can't be taken. If one ends up in an inventory or on the ground, it gets cleared.
-
-The counter opens on Savings, which is your own deposits. The bottom row switches pages: savings, deposit, withdraw, exchange, bills, personal trading, and personal issuance. Before you have a personal note, that page only lets you choose floating, pegged, or hard convertibility. The name and the par are entered with a command, not in the chest. Management is operators only: central reserves, amount issued, rates, and central-bank issuance, retirement, and the freeze control. Regular players can only open the counter at an outlet. Operators can use `/bank admin` to open Management elsewhere.
-
-- **Deposit**: Put copper ingots, diamonds, or bank-note paper in an empty slot. Copper and diamonds increase your balance, the reserves, and the amount issued together. Bank-note paper only moves that balance back onto the account. The amount issued does not change.
-- **Withdraw**: Copper and diamonds can be taken as 1, 10, 64, or "as many as possible". If the stock doesn't have enough, the request is refused; "as many as possible" gives you whatever is actually in stock. Bank notes come out as vanilla paper. The same face value stacks, and 64 sheets are one pile. One withdrawal gives at most 4096 sheets. For more, `/bank withdraw note <amount>` gives a single sheet of that face, and another withdrawal of the same face stacks with it.
-- **Exchange**: First pick what you pay and what you get. The button already shows the price with the fee included.
-- **Bills**: Issue a written book from your balance, payable to bearer or to yourself only. Put the book in the redeem slot and the money goes back to the account.
-- **Issuance**: Choose floating, pegged, or hard convertibility. The counter closes and chat shows a clickable English command. Clicking that line fills the chat box; type the name and press Enter. A name alone is registered at 1 diamond. After that you can issue against reserves, or issue unbacked without locking reserves. Central issue, retire, and freeze live on the operator Management page.
-
-Successful or refused actions get a chat message and a flash on the action bar. A Chinese client sees the datapack wording, for example `[银行] 存入 铜锭 ×64 成功 ｜余额：铜 64，钻 0，银行券 0`. Withdrawals and exchanges include that balance too. An English client sees the matching English line, for example `[Bank] Deposited copper ×64 | Balance: Cu 64, Dia 0, bank note 0`. The rate itself is not repeated in every chat line.
-
-## What you see in the lobby
-
-These displays are on by default. Very large numbers are written as `k`, `M`, or in scientific notation.
-
-- **Sidebar**: One per player, updated about once a second. It shows balances, rates against diamond, the fee, convertibility, and the nearest outlet. On 1.20.1 the end of each sidebar line has a red number. That's just a sort index, not a balance.
-- **Hologram**: Floats above the outlet, faces the player, and shows rates and status.
-- **Boss bar**: It opens on `汇率：1000 铜/钻` (1 diamond = 1000 copper). The bar fill shows how many bank notes can still be redeemed. It turns yellow when tight, and red when redemption is unavailable or suspended.
-- **Player list**: The header and footer show the bank name and the main rates.
-
-```
-/bank display sidebar on|off
-/bank display bossbar on|off
-/bank display tab on|off
-/bank display global sidebar|bossbar|tab|hologram|join on|off
-```
-
-The first three commands only affect you. `global` is the operator master switch; once it's off, turning your own display back on does nothing. Holograms only have the master switch, plus a per-outlet switch.
-
-## Currencies and exchange rates
-
-There are three default currencies, written in `config/bank.json`. They are copied into the world save the first time you enter it, and the save is what counts after that. After editing the config, `/bank reload` can update fees, weights, and limits, and can add new currencies, without wiping accounts.
-
-| id | Kind | Item | Opening reserve / amount issued | Notes |
-| --- | --- | --- | --- | --- |
-| `copper` | commodity | copper ingot | 1,000,000 | copper |
-| `diamond` | commodity | diamond | 1,000 | the unit of account |
-| `note` | paper | Vanilla paper that stacks by face value; bills stay written books | 1,000 | bank note. At the start, 1 bank note buys 1 diamond |
-
-The default fee is 2%. Demand deposits of bank notes also earn a default 2% a year over 365 Minecraft days, paid only from the fee interest pool. Each personal note has its own pool and pays only book-entry holdings. The default personal-note rate is 0. Paper counts in M0 and M1, and it does not earn interest. The difference weight α for each currency defaults to 1000‰. Rates have no min/max limit by default, so the numbers can get very large when bank notes depreciate. If you want limits:
-
-```
-/bank clamp max 999999
 /bank clamp min off
-/bank fee 2
-/bank interest 2
-/bank interest personal 0
-/bank alpha note 1000
-```
-
-If you set α to 0, notes stay at par and printing more doesn't change the rate. The reserve ratio still falls, and you still can't redeem once the stock is empty.
-
-The default reserves are 1,000,000 copper ingots and 1,000 diamonds, so a fresh world starts at 1 diamond = 1,000 copper, the same `汇率：1000 铜/钻` the datapack showed on the action bar. Compared with the old bank datapack, the sign of the difference term is flipped: when the amount issued grows without adding reserves, the currency gets weaker, not stronger. Opening books record the seed reserves as amount issued as well, so the books start square. Calculations use high-precision decimals; payments are rounded up to a whole number.
-
-Effective quantity is:
-
-```
-V = R + (L - R) × α / 1000
-```
-
-`R` is reserves, `L` is the amount issued. When α is 1000, `V` equals the amount issued. Bank notes versus diamonds have an extra layer: the more that has been issued relative to reserves, the more bank notes it takes to buy one diamond. If unbacked issuance pulls that ratio from 1 to 2, one diamond goes from 1 bank note to 2. When the diamond stock is emptied and α is not 0, the quote is marked as unavailable and further conversion is refused. If diamonds run short, or the diamond value is not a whole number, the remainder is paid in copper at the current copper-per-diamond rate, which opens at 1 diamond = 1,000 copper.
-
-Depositing a commodity increases the balance, reserves, and the amount issued together. Withdrawals decrease all three, but diamonds already locked to bank notes can't be taken out. Exchange only adjusts the amount issued, not the stock. Converting a bank note into a commodity can't exceed what the stock can actually still redeem.
-
-## Central issuance
-
-Operators (or permission level 2) can use:
-
-```
-/bank credit unbacked <player> note 1000000
-/bank credit backed <player> note 1000
-/bank credit retire <player> note 1000
-/bank credit check <player> note 1e12
+/bank clamp max 999999
 /bank freeze on
-/bank supply
-/bank reserve diamond 1000
-```
-
-Amounts can be written as `1_000`, `1.5k`, `2m`, or `1e40`.
-
-- **Unbacked issuance**: Adds to the player's balance and to the amount issued, without changing reserves. Notes depreciate. If you issue a great deal, the boss bar and hologram will show that redemption is unavailable.
-- **Backed issuance**: The allowance is computed from diamond stock and the settings. By default 1 bank note is worth 1 diamond, and the opening 1000 diamonds already cover the existing 1,000 bank notes, so the starting allowance is 0. You have to deposit diamonds first to get more room. Notes issued this way lock the corresponding diamonds and stay at par.
-- **Retirement**: Unbacked amounts are retired first, which improves the rate; only further retirement unlocks diamonds.
-- **Freeze convertibility**: Only blocks exchanging paper for copper or diamonds. Ordinary deposits and withdrawals, exchanging copper or diamonds for notes, and bills in or out of accounts still work.
-
-`/bank reserve <currency> <amount>` sets that currency's opening reserve. Money players have already deposited stays. The stock and the amount issued move with the new opening figure, so the quote and what can be redeemed match the new books instead of only one stock number changing. You can't set it below the locked amount. The chat reply reports the stock, the amount issued, the locked amount, and the current copper-per-diamond rate.
-
-Personal reserves are a separate ledger reserved for later personal currency issuance. They are not savings deposits and they are not central stock. Operators can read them with `/bank personal get <player>` and record them with `/bank personal set <player> <currency> <amount>`. Setting 0 clears that entry. It does not change the player's balance or the stock.
-
-## Personal notes
-
-These are not savings, not the personal reserve, and not the central bank note. Each player can have one. The name is at most three Chinese characters or English letters, it can't match someone else's, and it is set only with the command below. The exchange-rate regime is chosen at creation and is not switched later. Floating follows the market, a peg ignores trades, and hard convertibility pays only the face commodity. `/bank note issue` locks personal reserves; `/bank note unbacked` does not lock commodities. Each issuer also has a central-bank reserve account in bank notes only. It earns no interest. Floating notes keep at least 10% of circulation there, a peg keeps at least 20% there and the rest as locked peg backing, and hard convertibility adds a 5% clearing buffer. A shortfall pauses new issuance only.
-
-```
-/bank note reserve
-/bank note reserve deposit <amount>
-/bank note reserve withdraw <amount>
-/bank note ratio float 10
-/bank note ratio peg 20
-/bank note ratio hard 5
-```
-
-```
-/bank note create float <name>
-/bank note create peg <name>
-/bank note create hard <name>
-/bank note create diamond <name> <par>
-/bank note create copper <name> <par>
-/bank note create float diamond|copper <name> <par>
-/bank note create peg diamond|copper|note <name> <rate>
-/bank note create hard diamond|copper <name> <face>
-/bank note issue <amount>
-/bank note unbacked <amount>
-/bank note bankrupt
-/bank note bankrupt <name>
-/bank note rate
-/bank note rate <name>
-/bank note buy <name> <amount>
-/bank note sell <name> <amount>
-/bank note swap <pay> <receive> <amount>
-/bank note redeem <name> <currency> <amount>
-/bank note redeem paper <currency>
-```
-
-`<currency>` is `diamond`, `copper`, or `note`. In a swap, `<amount>` is how many notes you receive. `/bank note bankrupt` voids the note and keeps the ledger. Reserves already paid out, and any shortfall, become a debt to the central bank. Leftover collateral is taken by the bank, not handed back. Copper and diamonds on the issuer, including new ones that appear nearby, are levied about once a second and applied to that debt.
-
-`<par>` and `<amount>` accept `1_000`, `1.5k`, and `2m`, for amounts the chest buttons don't show. The Issuance tab names the note and issues 1, 10, 64, or 100. Common opening prices are 1 diamond, 10 diamonds, or 1000 copper, and the name is the first three Chinese characters or letters of your player name. The trading tab buys and sells against central notes, swaps two personal notes at the market cross rate, or redeems a personal note into copper, diamonds, or central notes at the live quote. Use the commands above for anything else.
-
-Personal notes sit on the savings page with the other balances. Secondary buys, sells, and swaps only transfer account holdings. The issuer's posted reserve does not move. Universal redemption is what retires circulation and unlocks the reserve, and it pays only from that posted reserve. If the market value is higher than the reserve can fund, the payout is limited to the reserve. An issuer cannot take the other side of their own note, and can still redeem it.
-
-Personal notes use the same paper. The name reads as a personal note, so it does not stack with central bank notes. Withdraw them from the counter, or with:
-
-```
-/bank note withdraw <amount>
-/bank note withdraw <name> <amount>
-/bank withdraw <currency> <amount>
-/bank deposit
-```
-
-`/bank deposit` deposits the pile in your main hand. Paper that was already deposited, and any extra copies, are taken back and are not credited again.
-
-Before issuing, the personal reserve has to cover `(already issued + this issue) × par × coverage`. Coverage defaults to 1. Operators change it with `/bank note coverage <ratio>`.
-
-Trades are priced in the central bank note. At the start, 1 central bank note = 1 diamond. Anything short of a whole note, or a diamond the stock can't pay, is settled in copper at 1 diamond = 1,000 copper.
-
-The price works like this. M1 is notes already issued. Effective backing is the smaller of the personal reserve and the amount locked at issue, divided by par, which is how many notes that reserve can still support. M2 = M1 + that reserve-note count.
-
-```
-strength = effective backing / (par × M1)
-flow = (notes bought - notes sold) / M1
-flow factor = 1 + 0.1 × flow    (clamped between 0.25 and 4)
-diamond price = par in diamonds × strength × flow factor
-```
-
-Before anything is issued, the diamond price is just the par converted into diamonds. Buying pushes the flow factor up, selling pushes it down. If the reserve runs thin, strength drops below 1 and the note gets cheaper.
-
-## Bills of exchange
-
-What you get is a vanilla written book. It records an id, the currency, the amount, the issuer, and so on, and is marked tattered so it can't be copied at a crafting table. Even if it is copied some other way, the server only honors the first redemption; a second book with the same id is confiscated. If the amount on the book doesn't match the stub, it's confiscated too. If the bill has a named payee and you aren't that person, the book is returned and the stub is left alone.
-
-Issuing a bill from your own balance just turns a deposit into a bill. The total amount issued doesn't change. An operator's `/bank credit check` is newly issued money, and the player has to be online to receive the book. Bank-note paper is separate: it moves note balances into the inventory, and it is not a bill.
-
-## Saves and config
-
-The ledger lives in the overworld at `data/bankmod.dat`, with a human-readable copy at `data/bankmod-ledger.json`. Uninstalling the mod does not delete these files. To wipe the bank, stop the server and delete both.
-
-If you previously used the scoreboard bank datapack, run this once:
-
-```
+/bank freeze off
+/bank credit unbacked <player> note <amount>
+/bank credit backed <player> note <amount>
+/bank credit retire <player> note <amount>
+/bank credit check <player> note <amount>
+/bank reserve <currency> <amount>
+/bank personal get <player>
+/bank personal set <player> <currency> <amount>
+/bank note ratio float <percent>
+/bank note ratio peg <percent>
+/bank note ratio hard <percent>
+/bank note coverage <ratio>
+/bank reload
 /bank import-scores
 ```
 
-It imports positive `copper` and `diamond` scores for players it can match, once per player. Entries whose names start with `#` are skipped. Vault figures from the old datapack are not imported automatically; use `/bank reserve` if you need to line them up.
+注意：`credit unbacked/backed/retire` 保留历史 `<player>` 语法，但当前央行发行／回收操作作用于央行自身发行及库存，不应按参数名误认为给该玩家发钱。`credit check` 则给指定在线玩家发新增汇票。准备金、个人准备金设值命令是管理工具，不是普通转账；操作前备份并先看影响，日常调整优先用管理 UI 的预览确认。
 
-The part of `config/bank.json` that matches the default economy looks like this:
+显示命令保留：
 
-```json
-{
-  "numeraire": "diamond",
-  "feePercent": "2",
-  "clampMin": null,
-  "clampMax": null,
-  "outletRadius": 4.0,
-  "currencies": [
-    { "id": "copper", "kind": "commodity", "item": "minecraft:copper_ingot", "initialReserve": "1000000", "alphaPermille": "1000" },
-    { "id": "diamond", "kind": "commodity", "item": "minecraft:diamond", "initialReserve": "1000", "alphaPermille": "1000" },
-    { "id": "note", "kind": "virtual", "name": "银行券", "nameEn": "bank note", "initialReserve": "1000", "issuable": true, "backing": "diamond", "parPerBacking": "1", "haircut": "1", "minReserveRatio": "1", "alphaPermille": "1000" }
-  ]
-}
+```text
+/bank display sidebar on
+/bank display tab off
+/bank display global hologram on
 ```
 
-Commodity item ids can't be reused. A paper currency has to name a commodity as its backing.
+`sidebar`、`tab` 可按玩家或全局切换，`hologram` 有全局和网点开关，`join` 有全局提示开关。旧 `bossbar` 参数仍兼容，但当前银行不会显示旧顶部汇率条；领地进入提示由领地模组负责。
 
-## Shop and market settlement
+## 配置存档与运维
 
-A shop purchase moves notes from a player's demand deposit into the shop operating account. A sale moves them back. A market sale between players is a savings transfer, not income of the central bank. Money from server land sales is credited to the land-grant account. Both accounts are sub-ledgers of the savings pool. Note balances earn demand-deposit interest. Issuance reserves stay separate. Bank-note trading remains in this mod.
+- 启动配置：`config/bank.json`。首次初始化后，实时账户和政策以世界账本为准；`/bank reload` 更新允许的政策参数并补充币种，不会清空玩家余额，也不是将整个世界重置为 JSON 初值。
+- 默认币种 ID 为 `copper`、`diamond`、`note`。内部 ID 与显示名称不同；央行券改名通过管理 UI，不要为了改显示文本重写 ID 或删除账本币种。
+- 默认配置含费率、α、利率、网点半径、显示开关、初始货币和准备金等。新增实物币不能复用同一个物品 ID；默认许多铜钻特定兑换／目标求解逻辑不能据此推断为任意币种通用。
+- 世界数据在 `data/bankmod.dat` 与 `data/bankmod-ledger.json`，后者参与持久检查点和事务提交，**不是可以随便删掉的无用日志**。备份应包含完整世界和配置，不只复制单个 JAR。
+- 失败的原子持久提交不会发布新候选账本；文件系统不支持原子替换、目录同步失败等会记录日志。不要在运行中手改账本，也不要同时手动替换两个不同时间的账本文件。
+- `/bank import-scores` 是旧记分板数据导入入口，按玩家防重复；不是导入任意库存或其他经济模组的万能工具。
 
-An operator can read both balances with `/bank admin accounts`. The method list is in `docs/settlement-hooks.md`.
+## 网络界面与故障排查
 
-## What's not here yet
+1. **原版客户端显示箱子是正常的**。增强 UI 需要客户端也安装本模组，且服务器支持匹配协议。无支持通道时不强发自定义包。
+2. v1.0.12 对频道晚注册补充有限握手重试；已打开箱子后完成协商，可升级到对应 UI，保留管理页上下文，升级前重新核对权限。
+3. 普通小快照继续原通道；新客户端支持有界大快照分片（16K 字符／片、最多 64 片，总上限约 1Mi 字符）。完整组装后才显示，顺序异常、缺片、超时等不会拼接成残缺经济数据。
+4. 不支持大包分片的旧客户端或超过硬上限时回退箱子，不截断账户数据假装加载成功。该连接记录回退状态，重试不会反复强制升级。
+5. 断线清理、旧连接回包过滤和服务端当前连接检查防止跨服务器／重连后串会话。异常数据有日志和提示，但不代表所有第三方模组冲突已消除。
 
-There's no stock market yet. If that gets built later, it will be a separate module. Market prices won't be written into this bank ledger.
+若手动 UI 能开、柜台不开，或管理页一直是箱子：核对两端实际 JAR 版本、是否留有旧 `bankmod-ui`、是否有多个版本，重连后分别测试 `/bank`、`/bank admin` 和柜台。仍失败时保留客户端及服务端 `logs/latest.log`；崩溃另附 `crash-reports/` 最新报告。不要把所有异常一概归因于电脑，也不要靠删除存档解决握手问题。
 
-## Building
+## 开发验证与边界
 
-```
-./gradlew build
+```sh
 ./gradlew test
+./gradlew build
 ```
 
-`./gradlew test` does not start the game. It mainly checks deposits, withdrawals, exchange, that bills redeem only once, that split or copied bank-note paper cannot mint extra value, that unbacked issuance depreciates notes, that backed issuance locks diamonds, and that huge numbers don't blow up the math.
+Windows 可使用 `gradlew.bat`。产物在 `build/libs/`。构建目标为 Minecraft 1.20.1、Java 17；开发依赖以 `gradle.properties` 为准。README 文档更新不需要重新发行经济数据版本。
 
-The license is MIT, copyright heplus1s. Minecraft is a trademark of Mojang. This project is not affiliated with Mojang.
+代码入口：
 
+- [命令注册](src/main/java/dev/jdguo/bank/commands/BankCommands.java)
+- [核心账本与当前牌价](src/main/java/dev/jdguo/bank/ledger/BankBooks.java)
+- [央行调整预览](src/main/java/dev/jdguo/bank/ledger/CentralAdjustment.java)
+- [网络会话](src/main/java/dev/jdguo/bank/net/BankUiNetwork.java)
+- [默认配置](src/main/java/dev/jdguo/bank/currency/BankConfig.java)
+- [持久化](src/main/java/dev/jdguo/bank/persistence/BankWorldState.java)
+- [跨模组接口说明](docs/settlement-hooks.md)、[央行分账设计](docs/central-treasury-model.md)、[递归清算说明](docs/RECURSIVE_CLEARING.md)（实现细节以当前源码为准）。
 
-## 内置客户端界面
+发布 CI 覆盖编译及自动测试；**不等于完成实际游戏画面、多人联机、所有第三方模组组合或真实断电故障验收**。请在测试服核对原版客户端、完整客户端、旧版客户端回退、重连、管理员撤权和正常交易后再用于长期存档。
 
-本主模组 JAR 同时包含服务端逻辑与可选客户端界面。服务器安装后，原版客户端无需安装本模组即可使用原有命令/原版菜单。客户端安装同一 JAR 可启用增强界面；界面只在客户端入口加载，服务端保持交易权威。
+当前明确限制包括：不扫描全世界实物总量；不提供任意物品／股票自动抵押；个人币四位精度可能导致某些组合拒绝；历史实物小数权益不保证全部消除；系统账户可被正常交易消耗完，不是无限财政；管理员改账和其他模组绕过本接口的行为不受正常事务保证覆盖。
 
-升级时请移除旧 `bankmod-ui` 独立 JAR；同时安装会由 Fabric Loader 明确拒绝，以避免重复接收器、快捷键和类冲突。不要保留同一主模组的两个版本。只安装本地客户端不会改变远端服务器数据；不支持相关网络通道的服务器不会接收本 UI 操作。
-
-兼容性验收仍需分别执行：专用服务器+原版客户端、Fabric空客户端、完整客户端、单人世界切换远程服务器、旧 UI 包并存的拒绝提示、协议不匹配时的基础入口。构建通过不等同于实际联机验收。
-
-
-### 个人币自动待售
-
-个人币建立后自动开启“自动待售”；实际发行出来、仍由发行者持有的整币实时供市场认购，零余额时不虚构卖单。转账、回收、交易和增发都会直接改变可售库存，不重复发行，也不将准备金或回收库当作待售余额。
-
-个人币管理界面可切换自动待售；原版客户端可用 `/bank note autosale on` 或 `/bank note autosale off`。关闭会撤销发行者自己的全部卖单，不改变其他持有人挂单；开启恢复全余额自动待售。旧版 `/market note list 名称 数量` 仍支持精确数量，发行者使用该命令会进入手动挂牌模式。已有存档未保存开关时默认开启，已保存的关闭状态重启后保留。
-
-自动待售不冻结发行者的自主转账和准备金政策操作，真正成交时校验实际库存。手动挂单仍锁定相应数量。商店与领地现场认购使用同一库存；等待交付的结算期间禁止改开关，失败回滚只返还原先预留的币。
-
-### 系统账户拨款（央行管理）
-
-管理员在央行管理「总览」底部分别进入「商店储蓄管理」或「地产储蓄管理」。两个系统账户独立，均以央行券结算；不会把拨款存入任何玩家账户。
-
-输入数量（最多四位小数）→「预览拨款」核对双方转后余额→「确认拨款」。拨款只扣除央行自有央行券，不增发、不动用玩家存款保管池。余额不足拒绝整笔拨款；预览有效 60 秒，相关账户余额变化后须重新预览。自有余额不足可从「央行券注资」明确将管理员本人央行券储蓄转入央行自有账户。
-
-账户余额与最近 200 笔拨款审计记录持久保存；界面各显示最近 5 笔。拨款使用银行原有原子账本提交机制，并在服务端检查管理员权限。
-
-系统账户管理按央行券分别列出经营储蓄、结算资产、可用金额、待交付入账锁定和已转出的待完成付款。拨款预览及记录中的转后余额指经营储蓄，不冒充系统总资产；不将钻石等其他结算资产折算计入央行券余额。
-
-### 中文网点名称和柜台朝向
-- `/bank outlet set 北京 总行`：创建中文网点，名称最多 32 字符，可含空格。
-- `/bank outlet move 北京 总行`、`/bank outlet remove 北京 总行`：移动或删除同名网点。
-- `/bank outlet rotate east 北京 总行`：柜台正面朝东；支持 north/east/south/west。
-- 旧网点默认保持朝北，移动不改变朝向。旋转绕原交互中心，不改变高度、范围或悬浮文字位置。
-- 名称后还有参数的旧指令须加英文双引号，例如 `/bank outlet lift "北京 总行" 3`。
-- 以上均需 OP；仅使用原版命令参数和显示实体，原版客户端仍可连接和使用。
+MIT License。Minecraft 是 Mojang 的商标，本项目与 Mojang 无隶属关系。
