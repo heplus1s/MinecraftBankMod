@@ -3,6 +3,8 @@ package dev.jdguo.bank.market;
 import com.google.gson.JsonParser;
 import dev.jdguo.bank.currency.BankConfig;
 import dev.jdguo.bank.ledger.BankBooks;
+import dev.jdguo.bank.ledger.Money;
+import java.math.RoundingMode;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -107,7 +109,8 @@ class NoteRegimeTest {
         NoteTrade sold = books.sellPersonalNote(buyer, "Bb", BigInteger.ONE);
         assertTrue(sold.success(), sold.code());
         assertEquals(face[0], sold.centralPaid());
-        assertEquals(face[1], sold.copperPaid());
+        assertEquals(BigInteger.ZERO, sold.copperPaid());
+        assertEquals(0, BigDecimal.ONE.multiply(books.unitsPer("note", "diamond")).setScale(Money.SCALE, RoundingMode.CEILING).compareTo(sold.centralPaidExact()));
         assertTrue(face[0].compareTo(premium[0]) != 0 || face[1].compareTo(premium[1]) != 0);
 
         books.setPersonalReserve(issuerB, "diamond", new BigInteger("4"));

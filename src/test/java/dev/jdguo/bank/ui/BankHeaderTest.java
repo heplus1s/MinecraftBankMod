@@ -27,7 +27,7 @@ class BankHeaderTest {
         assertFalse(String.join("\n", BankHeader.lines(data)).contains("M0"));
         assertFalse(String.join("\n", BankHeader.lines(data)).contains("兑付能力"));
         assertFalse(BankChrome.SIDEBAR);
-        assertEquals(List.of("储蓄", "存入", "取出", "硬通货兑换", "开立汇票", "兑付汇票", "个人币交易"), BankChrome.FUNCTION_TABS);
+        assertEquals(List.of("储蓄", "存入", "取出", "实物货币兑换", "开立汇票", "兑付汇票", "个人币交易与兑换"), BankChrome.FUNCTION_TABS);
         assertFalse(BankChrome.FUNCTION_TABS.contains("汇票"));
         assertFalse(BankChrome.FUNCTION_TABS.contains("兑换"));
     }

@@ -46,14 +46,14 @@ class SecondaryMarketTest {
         assertEquals(BigInteger.valueOf(3), swap.receivedNotes());
         assertEquals(quote.central(), swap.central());
         assertEquals(quote.copper(), swap.copper());
-        assertTrue(swap.central().signum() > 0 || swap.copper().signum() > 0);
+        assertTrue(swap.centralExact().signum() > 0);
         assertEquals(new BigInteger("9"), books.personalHolding(expensive.id(), issuerA));
         assertEquals(BigInteger.valueOf(3), books.personalHolding(cheap.id(), issuerA));
-        assertEquals(new BigInteger("20").subtract(swap.central()), books.balance(issuerA, "note"));
+        assertEquals(0, new BigDecimal("20").subtract(swap.centralExact()).compareTo(books.balanceExact(issuerA, "note")));
         assertEquals(new BigInteger("2000").subtract(swap.copper()), books.balance(issuerA, "copper"));
         assertEquals(new BigInteger("7"), books.personalHolding(cheap.id(), issuerB));
         assertEquals(BigInteger.ONE, books.personalHolding(expensive.id(), issuerB));
-        assertEquals(swap.central(), books.balance(issuerB, "note"));
+        assertEquals(0, swap.centralExact().compareTo(books.balanceExact(issuerB, "note")));
         assertEquals(swap.copper(), books.balance(issuerB, "copper"));
         assertEquals(new BigInteger("20"), books.personalReserve(issuerA, "diamond"));
         assertEquals(BigInteger.TEN, books.personalReserve(issuerB, "diamond"));
@@ -68,7 +68,7 @@ class SecondaryMarketTest {
     }
 
     @Test
-    void fractionalCrossRatePaysCopperChange() {
+    void fractionalCrossRatePaysCentralNoteChange() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         PersonalNote pay = issue(books, issuerA, "Aa", BigInteger.ONE, BigInteger.TEN, BigInteger.TEN);
         PersonalNote receive = issue(books, issuerB, "Bb", BigInteger.ONE, BigInteger.TEN, BigInteger.TEN);
@@ -87,14 +87,15 @@ class SecondaryMarketTest {
         BigInteger lockedA = pay.locked();
         BigInteger lockedB = receive.locked();
         BigInteger diamondStock = books.supply("diamond").reserve();
-        BigInteger buyerNotes = books.balance(buyer, "note");
+        BigDecimal buyerNotes = books.balanceExact(buyer, "note");
         BigInteger buyerCopper = books.balance(buyer, "copper");
         SecondaryClearing.Quote quote = SecondaryClearing.priceSwap(
                 books.personalDiamondPrice(pay), books.personalDiamondPrice(receive), BigInteger.ONE,
                 books.unitsPer("note", "diamond"), books.copperPerDiamond());
         assertTrue(quote.residualDiamonds().signum() > 0);
         assertTrue(quote.residualDiamonds().compareTo(books.personalDiamondPrice(receive)) < 0);
-        assertTrue(quote.copper().signum() > 0);
+        assertEquals(BigInteger.ZERO, quote.copper());
+        assertTrue(quote.centralExact().signum() > 0);
 
         // A secondary holder must explicitly offer inventory before another player may swap it.
         assertTrue(books.listPersonal(buyer, "Bb", BigInteger.TEN).success());
@@ -108,11 +109,11 @@ class SecondaryMarketTest {
         assertEquals(new BigInteger("9"), books.personalHolding(pay.id(), issuerA));
         assertEquals(BigInteger.ONE, books.personalHolding(receive.id(), issuerA));
         assertEquals(new BigInteger("2000").subtract(quote.copper()), books.balance(issuerA, "copper"));
-        assertEquals(new BigInteger("20").subtract(quote.central()), books.balance(issuerA, "note"));
+        assertEquals(0, new BigDecimal("20").subtract(quote.centralExact()).compareTo(books.balanceExact(issuerA, "note")));
         assertEquals(new BigInteger("9"), books.personalHolding(receive.id(), buyer));
         assertEquals(BigInteger.ONE, books.personalHolding(pay.id(), buyer));
         assertEquals(buyerCopper.add(quote.copper()), books.balance(buyer, "copper"));
-        assertEquals(buyerNotes.add(quote.central()), books.balance(buyer, "note"));
+        assertEquals(0, buyerNotes.add(quote.centralExact()).compareTo(books.balanceExact(buyer, "note")));
         assertEquals(reserveA, books.personalReserve(issuerA, "diamond"));
         assertEquals(reserveB, books.personalReserve(issuerB, "diamond"));
         assertEquals(lockedA, pay.locked());
@@ -213,7 +214,8 @@ class SecondaryMarketTest {
 
         assertTrue(sold.success(), sold.code());
         assertEquals(atLive[0], sold.centralPaid());
-        assertEquals(atLive[1], sold.copperPaid());
+        assertEquals(BigInteger.ZERO, sold.copperPaid());
+        assertEquals(0, live.multiply(BigDecimal.TEN).multiply(books.unitsPer("note", "diamond")).setScale(Money.SCALE, RoundingMode.CEILING).compareTo(sold.centralPaidExact()));
         assertEquals(BigInteger.ZERO, books.personalHolding(noteB.id(), issuerA));
         assertEquals(BigInteger.TEN, books.personalHolding(noteB.id(), issuerB));
         assertEquals(0, books.personalDiamondPrice(noteB).compareTo(live));

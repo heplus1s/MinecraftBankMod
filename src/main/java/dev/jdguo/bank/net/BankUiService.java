@@ -99,6 +99,7 @@ public final class BankUiService {
                 player.sendMessage(net.minecraft.text.Text.literal(result.message()), false);
             }
             case "admin-policy-preview", "admin-policy-confirm", "admin-policy-cancel" -> CentralPolicyUi.handle(player, session, parts);
+            case "admin-funding-preview", "admin-funding-confirm", "admin-funding-cancel" -> SystemFundingUi.handle(player, session, parts);
             case "admin-treasury-prepare" -> {
                 session.treasuryCommand = null;
                 if (session.admin && player.hasPermissionLevel(2) && parts.length == 4
@@ -116,7 +117,8 @@ public final class BankUiService {
                         break;
                     }
                     try {
-                        BigDecimal quantity = dev.jdguo.bank.ledger.Money.parse(parts[2]);
+                        if (!parts[2].matches("[0-9]{1,24}(\\.[0-9]{1,4})?")) throw new IllegalArgumentException();
+                        BigDecimal quantity = new BigDecimal(parts[2]);
                         TxResult result = BankRuntime.transact(book -> book.transferTreasury(player.getUuid(),
                                 parts[1], quantity, "admin-treasury-deposit".equals(parts[0])));
                         player.sendMessage(net.minecraft.text.Text.literal(result.success() ? "央行自有储蓄划转完成" : result.message()), false);
@@ -343,14 +345,20 @@ public final class BankUiService {
      */
     private static void depositHeld(ServerPlayerEntity player, BankBooks books) {
         ItemStack hand = player.getMainHandStack();
-        MainHandBill result = redeemMainHandBill(books, player.getUuid(), CheckItems.read(hand));
-        if (result.clearHand()) {
-            hand.setCount(0);
+        PresentedCheck check = CheckItems.read(hand);
+        if (check == null) {
+            tell(player, BankPhrases.failure(BankPhrases.Kind.REDEEM, "hold_bill", null, null));
+            return;
         }
-        if (result.saveLedger()) {
-            BankRuntime.save();
-        }
-        tell(player, result.spoken());
+        // Persist both payment and check cancellation before consuming the physical ticket.
+        // A crash leaving the item behind is safe: the durable check record rejects its replay.
+        TxResult result = BankRuntime.transact(candidate -> candidate.redeemCheck(player.getUuid(), check));
+        if (result.success() || "already_redeemed".equals(result.code()) || "tampered".equals(result.code())) hand.setCount(0);
+        tell(player, result.success()
+                ? BankPhrases.redeemResult(BankRuntime.books(), player.getUuid(), check.currency(), result)
+                : "save_failed".equals(result.code()) || "bank_not_ready".equals(result.code())
+                    ? new dev.jdguo.bank.text.Spoken("[银行] " + result.message() + "，汇票已保留。", "Bill retained: " + result.message(), dev.jdguo.bank.text.Tone.RED)
+                    : BankPhrases.failure(BankPhrases.Kind.REDEEM, result.code(), check.currency(), null));
     }
 
     /** {@code check} is the bill in the main hand, or null when that hand is empty or is not a bill. */
@@ -361,7 +369,7 @@ public final class BankUiService {
         TxResult result = books.redeemCheck(player, check);
         boolean clear = result.success() || "already_redeemed".equals(result.code()) || "tampered".equals(result.code());
         dev.jdguo.bank.text.Spoken spoken = result.success()
-                ? BankPhrases.redeem(books, player, check.currency(), result.amount(), result.copperPaid())
+                ? BankPhrases.redeemResult(books, player, check.currency(), result)
                 : BankPhrases.failure(BankPhrases.Kind.REDEEM, result.code(), check.currency(), null);
         return new MainHandBill(spoken, clear, result.success());
     }
@@ -665,7 +673,7 @@ public final class BankUiService {
             return;
         }
         BankRuntime.save();
-        tell(player, BankPhrases.noteTrade(buy, result.note().name(), amount, result.centralPaid(), result.copperPaid(), books, player.getUuid()));
+        tell(player, BankPhrases.noteTrade(buy, result.note().name(), amount, result.centralPaidExact(), result.copperPaid(), books, player.getUuid()));
     }
 
     private static void swap(ServerPlayerEntity player, BankBooks books, String[] parts) {

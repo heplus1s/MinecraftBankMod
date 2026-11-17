@@ -98,6 +98,18 @@ public final class BankUiSnapshot {
         o.add("accounts", accounts);
         o.add("central", central);
         if (admin) {
+            o.add("shopSystemFunds", books.systemFundingOverview("shop"));
+            o.add("landSystemFunds", books.systemFundingOverview("land"));
+            JsonArray fundingLog = books.systemFundingLog(), recentFunding = new JsonArray();
+            int shopCount = 0, landCount = 0;
+            for (int i = fundingLog.size() - 1; i >= 0; i--) {
+                JsonObject entry = fundingLog.get(i).getAsJsonObject();
+                if ("shop".equals(entry.get("account").getAsString()) ? shopCount++ < 5 : landCount++ < 5)
+                    recentFunding.add(entry);
+            }
+            JsonArray chronologicalFunding = new JsonArray();
+            for (int i = recentFunding.size() - 1; i >= 0; i--) chronologicalFunding.add(recentFunding.get(i));
+            o.add("systemFundingLog", chronologicalFunding);
             o.addProperty("m0", Money.display(books.centralM0Exact()));
             o.addProperty("m1", Money.display(books.centralM1Exact()));
             o.addProperty("m2", CompactFormat.formatAggregate(books.centralM2()));
