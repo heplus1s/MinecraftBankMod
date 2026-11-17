@@ -138,6 +138,9 @@ public final class BankCommands {
                                                 StringArgumentType.getString(ctx, "amount"))))))
                         .then(literal("deposit").executes(ctx -> depositHeld(ctx.getSource())))
                         .then(literal("note")
+                                .then(literal("autosale")
+                                        .then(literal("on").executes(ctx -> autoSale(ctx.getSource(), true)))
+                                        .then(literal("off").executes(ctx -> autoSale(ctx.getSource(), false))))
                                 .then(literal("create")
                                         .then(literal("diamond").then(argument("name", StringArgumentType.string())
                                                 .then(argument("par", StringArgumentType.word()).executes(ctx -> createNote(ctx.getSource(), NoteRegime.FLOAT, "diamond", StringArgumentType.getString(ctx, "name"), StringArgumentType.getString(ctx, "par"))))))
@@ -725,6 +728,17 @@ public final class BankCommands {
         }
         BankRuntime.save();
         return ok(source, BankPhrases.noteRetired(result.note(), amount));
+    }
+
+    private static int autoSale(ServerCommandSource source, boolean enabled) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        UUID issuer = source.getPlayerOrThrow().getUuid();
+        TxResult result = BankRuntime.transact(book -> {
+            PersonalNote note = book.personalNote(issuer);
+            if (note == null) return TxResult.fail("not_found", "尚未创建个人币。");
+            return book.setPersonalAutoListing(issuer, note.name(), enabled);
+        });
+        return result.success() ? ok(source, "自动待售已" + (enabled ? "开启。" : "关闭。"))
+                : fail(source, result.message());
     }
 
     private static int pauseNote(ServerCommandSource source, boolean paused) throws com.mojang.brigadier.exceptions.CommandSyntaxException {

@@ -290,6 +290,9 @@ public final class BankUiSnapshot {
         JsonObject row = new JsonObject();
         row.addProperty("id", note.id().toString());
         row.addProperty("canRename", note.issuer().equals(player));
+        row.addProperty("autoListing", note.autoListing());
+        row.addProperty("autoListingAvailable", true);
+        row.addProperty("offered", whole(books.personalOffered(note.id(), note.issuer())));
         row.addProperty("name", note.name());
         row.addProperty("regime", note.regime().name());
         row.addProperty("regimeName", BankBooks.regimeZh(note.regime()));

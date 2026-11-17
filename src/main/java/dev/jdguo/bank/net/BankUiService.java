@@ -66,6 +66,7 @@ public final class BankUiService {
             case "note-create" -> create(player, books, parts);
             case "note-switch" -> switchRegime(player, books, parts);
             case "note-rename" -> renamePersonal(player, parts);
+            case "note-auto-listing" -> autoListing(player, parts);
             case "note-policy", "note-reserve-switch", "note-recovery-return" -> clearingAction(player, parts);
             case "note-issue" -> issue(player, books, parts, false);
             case "note-unbacked", "issue-unbacked" -> issue(player, books, parts, true);
@@ -105,6 +106,25 @@ public final class BankUiService {
         }
         if (BankUiNetwork.session(player) != null) {
             BankUiNetwork.sync(player);
+        }
+    }
+
+    private static void autoListing(ServerPlayerEntity player, String[] parts) {
+        if (parts.length != 3 || !("on".equals(parts[2]) || "off".equals(parts[2]))) {
+            player.sendMessage(net.minecraft.text.Text.literal("自动待售参数无效。"), false);
+            return;
+        }
+        try {
+            UUID id = UUID.fromString(parts[1]);
+            TxResult result = BankRuntime.transact(book -> {
+                PersonalNote own = book.personalNote(player.getUuid());
+                if (own == null || !own.id().equals(id)) return TxResult.fail("not_owner", "仅发行者可以调整自动待售。");
+                return book.setPersonalAutoListing(player.getUuid(), own.name(), "on".equals(parts[2]));
+            });
+            player.sendMessage(net.minecraft.text.Text.literal(result.success()
+                    ? "自动待售设置已保存。" : "未执行：" + result.code()), false);
+        } catch (IllegalArgumentException invalid) {
+            player.sendMessage(net.minecraft.text.Text.literal("个人货币标识无效。"), false);
         }
     }
 

@@ -25,6 +25,24 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BankUiSnapshotTest {
     @Test
+    void autoSaleSnapshotTracksAuthoritativeSwitchAndDynamicBalance() {
+        BankBooks books = BankBooks.create(BankConfig.defaults());
+        UUID issuer = UUID.randomUUID();
+        assertTrue(books.createPersonalNote(issuer, "泉", NoteRegime.FLOAT, "diamond", BigInteger.ONE).success());
+        assertTrue(books.issuePersonalNoteUnbacked(issuer, BigInteger.valueOf(12)).success());
+        JsonObject own = JsonParser.parseString(BankUiSnapshot.json(books, issuer, false, "issuance", false))
+                .getAsJsonObject().getAsJsonObject("ownNote");
+        assertTrue(own.get("autoListing").getAsBoolean());
+        assertTrue(own.get("autoListingAvailable").getAsBoolean());
+        assertEquals("12", own.get("offered").getAsString());
+        assertTrue(books.setPersonalAutoListing(issuer, "泉", false).success());
+        own = JsonParser.parseString(BankUiSnapshot.json(books, issuer, false, "issuance", false))
+                .getAsJsonObject().getAsJsonObject("ownNote");
+        assertFalse(own.get("autoListing").getAsBoolean());
+        assertEquals("0", own.get("offered").getAsString());
+    }
+
+    @Test
     void snapshotReportsM1WithoutCountingIssuanceReservesAsSavings() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         UUID player = UUID.randomUUID();
