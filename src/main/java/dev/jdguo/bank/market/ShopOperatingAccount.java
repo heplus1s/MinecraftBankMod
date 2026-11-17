@@ -53,10 +53,7 @@ public final class ShopOperatingAccount {
         if (currency != null && currency.startsWith("personal:")) {
             try {
                 BankBooks books = BankRuntime.books();
-                var quote = books.quoteSystemPayout(UUID.fromString(currency.substring(9)),
-                        books.systemAvailableBalance("shop", "note"));
-                return quote.get("success").getAsBoolean()
-                        ? new BigDecimal(quote.get("privateAmount").getAsString()) : BigDecimal.ZERO;
+                return books.systemPersonalPayoutCapacity("shop", UUID.fromString(currency.substring(9)));
             } catch (IllegalArgumentException invalid) { return BigDecimal.ZERO; }
         }
         return BankRuntime.books().systemAvailableBalance("shop", currency);
@@ -90,7 +87,7 @@ public final class ShopOperatingAccount {
         return BankRuntime.books().quoteSystemPayout(coin, centralBudget).toString();
     }
 
-    /** Atomically buys actually listed issuer coins and pays any remainder in central notes. */
+    /** Atomically buys actually listed fractional issuer coins; new payouts never substitute central-note change. */
     public TxResult payIssuerOffer(UUID player, UUID coin, BigDecimal centralBudget,
                                    String fingerprint, String reference) {
         return BankRuntime.transact(books -> books.executeSystemPayout(

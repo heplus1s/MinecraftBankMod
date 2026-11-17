@@ -27,7 +27,7 @@ class CreditInflationTest {
         assertEquals(0, new BigDecimal("3").compareTo(books.unitsPer("diamond", "note")));
         assertEquals(0, new BigDecimal("0.3333").compareTo(books.unitsPer("note", "diamond")));
         assertEquals(new BigInteger("1000"), books.supply("note").reserve());
-        assertEquals("发行准备金紧张", books.statusLabel());
+        assertEquals("可兑付（以所选实物可用准备金为限）", books.statusLabel());
         books.checkInvariants();
     }
 
@@ -40,7 +40,7 @@ class CreditInflationTest {
         assertNull(books.unitsPer("note", "diamond"));
         assertEquals(0, new BigDecimal(books.centralM1()).compareTo(books.centralM2()));
         assertTrue(books.tightness("note").compareTo(new BigDecimal("0.05")) < 0);
-        assertEquals("无法兑付央行券", books.statusLabel());
+        assertEquals("暂无可用兑付牌价", books.statusLabel());
         books.checkInvariants();
     }
 

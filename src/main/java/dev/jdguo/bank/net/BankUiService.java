@@ -276,12 +276,7 @@ public final class BankUiService {
         session.exchangeQuote = quote;
         session.exchangeToken = UUID.randomUUID().toString();
         session.exchangeExpires = System.currentTimeMillis() + 30000;
-        String pay = books.currencies().stream().filter(c -> c.id().equals(quote.pay())).findFirst().orElseThrow().name();
-        String recv = books.currencies().stream().filter(c -> c.id().equals(quote.receive())).findFirst().orElseThrow().name();
-        session.exchangeMessage = "付出 " + dev.jdguo.bank.ledger.Money.stored(quote.debit()) + " " + pay
-                + "，得到 " + dev.jdguo.bank.ledger.Money.stored(quote.credit()) + " " + recv
-                + "。含兑换差价 " + quote.feeFraction().multiply(new BigDecimal("100")).stripTrailingZeros().toPlainString()
-                + "%；报价 30 秒有效，确认时重新校验。";
+        session.exchangeMessage = books.hardExchangeDescription(quote) + "；报价 30 秒有效，确认时重新校验。";
     }
 
     private static void confirmHardExchange(ServerPlayerEntity player, BankUiNetwork.Session session, String[] parts) {

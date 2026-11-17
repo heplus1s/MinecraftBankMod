@@ -22,7 +22,7 @@ class BankBookTest {
         List<String> preface = BankBook.preface(data);
 
         assertTrue(preface.contains("兑付状态：兑付正常"));
-        assertTrue(preface.contains("央行券兑换铜锭或钻石：正常"));
+        assertTrue(preface.contains("兑付开关：已开启"));
         assertTrue(preface.contains("流通中现金（M0）：0"));
         assertTrue(preface.contains("狭义货币（M1）：0"));
         assertTrue(preface.contains("广义货币（M2）：0"));
@@ -75,9 +75,9 @@ class BankBookTest {
         institutions.add(shop);
         data.add("institutions", institutions);
 
-        assertEquals("央行券兑换铜锭或钻石：已暂停", BankBook.redemption(data));
+        assertEquals("兑付开关：已暂停", BankBook.redemption(data));
         assertEquals(BankBook.RESUME, BankBook.freezeButton(data));
-        assertTrue(BankBook.preface(data).contains("兑付能力：0.2500"));
+        assertFalse(BankBook.preface(data).contains("兑付能力：0.2500"));
         assertTrue(BankBook.preface(data).contains("手续费：2%"));
         assertEquals(List.of(
                 "准备金：1000000",

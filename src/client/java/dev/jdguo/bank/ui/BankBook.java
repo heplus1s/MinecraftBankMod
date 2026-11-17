@@ -25,10 +25,7 @@ public final class BankBook {
         String status = BankSnapshot.text(data, "status");
         lines.add("兑付状态：" + (status == null ? MISSING : status));
         lines.add(redemption(data));
-        String tightness = firstPresent(data, "tightness", "redemptionCapacity");
-        if (tightness != null) {
-            lines.add("兑付能力：" + BankHeader.figure(tightness));
-        }
+        lines.addAll(redemptionDetails(data));
         String fee = BankSnapshot.text(data, "feePercent");
         if (fee != null) {
             lines.add("手续费：" + (fee.contains("%") ? fee : BankHeader.figure(fee) + "%"));
@@ -38,16 +35,29 @@ public final class BankBook {
         return lines;
     }
 
+    public static List<String> redemptionDetails(JsonObject data) {
+        List<String> lines = new ArrayList<>();
+        if (!data.has("redemptionDetails")) return lines;
+        for (var element : data.getAsJsonArray("redemptionDetails")) {
+            JsonObject row = element.getAsJsonObject();
+            lines.add(BankSnapshot.text(row, "name") + "：" + BankSnapshot.text(row, "status")
+                    + "；可用 " + BankSnapshot.text(row, "available") + " 个，锁定 " + BankSnapshot.text(row, "locked") + " 个");
+            if (row.has("costPerItem")) lines.add("每个需付 " + BankSnapshot.text(row, "costPerItem")
+                    + " " + BankRates.centralName(data) + "（含兑换差价）");
+        }
+        return lines;
+    }
+
     public static String redemption(JsonObject data) {
         Boolean frozen = BankSnapshot.frozen(data);
         if (frozen != null) {
-            return "央行券兑换铜锭或钻石：" + (frozen ? "已暂停" : "正常");
+            return "兑付开关：" + (frozen ? "已暂停" : "已开启");
         }
         String status = BankSnapshot.text(data, "status");
         if (status == null) {
-            return "央行券兑换铜锭或钻石：" + MISSING;
+            return "兑付开关：" + MISSING;
         }
-        return "央行券兑换铜锭或钻石：" + (status.contains("暂停") ? "已暂停" : "正常");
+        return "兑付开关：" + (status.contains("暂停") ? "已暂停" : "状态未同步");
     }
 
     public static String freezeButton(JsonObject data) {

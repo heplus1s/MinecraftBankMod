@@ -114,11 +114,11 @@ public final class BankAdminScreen extends Screen {
             adjustmentDirection = "decrease";
             adjustmentPage(x, w);
         } else if (page == 4) {
-            lines.add("当前状态：" + BankBook.redemption(data));
+            lines.add(BankBook.redemption(data));
             lines.add("当前运行状况：" + value(data, "status"));
             lines.add(BankRates.bankNoteQuote(data));
-            lines.add("当前兑付能力：" + value(data, "tightness"));
-            lines.add("当前手续费：" + value(data, "feePercent"));
+            lines.addAll(BankBook.redemptionDetails(data));
+            lines.add("当前兑换差价：" + value(data, "feePercent"));
             lines.add("下一步操作：" + BankBook.freezeButton(data));
             lines.add("兑付设置只控制央行券兑付，不修改余额、币名或准备金。");
             if (pending == null) button(BankBook.freezeButton(data), x, height - 30, w, () -> {
