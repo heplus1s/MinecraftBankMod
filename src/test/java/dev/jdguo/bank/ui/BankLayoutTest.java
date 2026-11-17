@@ -11,6 +11,29 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BankLayoutTest {
     @Test
+    void compactTradeFitsReportedGuiScaleWithEitherSelectorOpen() {
+        for (int height : new int[] {240, 253, 270, 320}) {
+            int top = BankLayout.contentTop() + 24;
+            int bottom = BankLayout.contentBottom(height);
+            // The actual screen allows only one open drawer at a time.
+            for (String open : new String[] {"", "mode", "note"}) {
+                var stack = BankLayout.compactMarketStack(top, bottom,
+                        open.equals("mode"), 4, open.equals("note"), 100);
+                assertTrue(stack.firstY() >= top);
+                assertTrue(stack.secondY() >= stack.firstY() + stack.firstH() + 4);
+                assertTrue(stack.fieldY() >= stack.secondY() + stack.secondH() + 28);
+                assertTrue(stack.quickY() >= stack.fieldY() + 20);
+                assertEquals(stack.quickY(), stack.actionY());
+                assertTrue(stack.actionY() + 18 <= bottom, height + " " + stack);
+                if (open.equals("note")) assertTrue(stack.secondH() >= 38);
+                if (open.equals("mode")) assertTrue(stack.firstH() >= 38);
+            }
+        }
+        // 1/5/10/64 + 8px gap + four-Chinese-character confirmation fits the main panel.
+        assertTrue(4 * 28 + 3 * 4 + 8 + BankLayout.labelWidth("确认通兑") <= BankLayout.mainWidth(480));
+    }
+
+    @Test
     void chromeFitsAndTheTopButtonsDoNotOverlap() {
         for (int width : new int[] {360, 427, 640, 960}) {
             for (int height : new int[] {240, 360, 540}) {

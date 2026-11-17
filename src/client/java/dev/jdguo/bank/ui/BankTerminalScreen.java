@@ -227,15 +227,19 @@ public final class BankTerminalScreen extends Screen {
         List<ChoiceListWidget.Choice> second = noteChoices(notes);
         boolean secondOpen = "note".equals(openDrawer) || "other".equals(openDrawer) || "receive".equals(openDrawer);
         int headerBottom = marketHeaderBottom();
-        BankLayout.MarketStack stack = BankLayout.marketStack(headerBottom, BankLayout.contentBottom(this.height),
-                !external && "mode".equals(openDrawer), 4, secondOpen, Math.max(1, second.size()));
+        BankLayout.MarketStack stack = compactMarket()
+                ? BankLayout.compactMarketStack(headerBottom, BankLayout.contentBottom(this.height),
+                        !external && "mode".equals(openDrawer), 4, secondOpen, Math.max(1, second.size()))
+                : BankLayout.marketStack(headerBottom, BankLayout.contentBottom(this.height),
+                        !external && "mode".equals(openDrawer), 4, secondOpen, Math.max(1, second.size()));
         pageBand = new BankLayout.Band(stack.firstY(), stack.firstH(), stack.fieldY(), stack.quickY(), stack.actionY());
         marketBalanceY = stack.secondY() + stack.secondH() + 4;
         if (external) {
             int[] columns = twoColumns();
             addDrawableChild(textButton("前往市场", columns[0], stack.firstY(), () -> openPersonalCommand("/market note")));
-            addDrawableChild(textButton("转给玩家", columns[1], stack.firstY(),
+            ButtonWidget transfer = addDrawableChild(textButton("转给玩家", columns[1], stack.firstY(),
                     () -> openPersonalCommand("/bank note transfer " + (noteName.isBlank() ? "" : "\"" + noteName + "\" "))));
+            transfer.active = !notes.isEmpty();
         } else {
             placeDrawer("mode", centerX(listWidth()), stack.firstY(), listWidth(), List.of(
                     new ChoiceListWidget.Choice("buy", "买入"),
@@ -825,7 +829,10 @@ public final class BankTerminalScreen extends Screen {
             total += widths[i];
         }
         total += BankLayout.GAP * (labels.size() - 1);
-        int x = mainLeft() + Math.max(0, (mainWidth() - total) / 2);
+        boolean inlineConfirm = page == Page.MARKET && compactMarket();
+        int confirmWidth = verb == null ? 0 : buttonWidth(verb);
+        int groupWidth = total + (inlineConfirm ? confirmWidth + 8 : 0);
+        int x = mainLeft() + Math.max(0, (mainWidth() - groupWidth) / 2);
         for (int i = 0; i < labels.size(); i++) {
             String shown = labels.get(i);
             addDrawableChild(ButtonWidget.builder(Text.literal(shown), button -> quick(shown))
@@ -834,8 +841,9 @@ public final class BankTerminalScreen extends Screen {
         }
         if (verb != null) {
             int width = buttonWidth(verb);
-            addDrawableChild(ButtonWidget.builder(Text.literal(verb), button -> submit())
-                    .dimensions(centerX(width), actionY, width, 18).build());
+            ButtonWidget confirm = addDrawableChild(ButtonWidget.builder(Text.literal(verb), button -> submit())
+                    .dimensions(inlineConfirm ? x + 4 : centerX(width), actionY, width, 18).build());
+            if (page == Page.MARKET) confirm.active = findNote(noteName) != null;
         }
     }
 
@@ -881,6 +889,22 @@ public final class BankTerminalScreen extends Screen {
             }
             item.widget.render(context, mouseX, mouseY, delta);
             drawBalanceUnder(context, item);
+        }
+        if (page == Page.MARKET && mouseX >= mainLeft() && mouseX < mainRight()
+                && mouseY >= contentTop() + 12 && mouseY < contentTop() + 24) {
+            context.drawTooltip(textRenderer, Text.literal(notice.isBlank() ? marketHeading() : notice), mouseX, mouseY);
+        }
+        if (page == Page.MARKET) {
+            for (Placed item : placed) {
+                if (!showsBalance(item.role) || mouseX < item.x || mouseX >= item.x + item.width
+                        || mouseY < marketBalanceY || mouseY >= marketBalanceY + 24) continue;
+                String details = balanceCaption(item) + BankSnapshot.balancePhrase(balanceFor(item.role, item.widget.selectedId()));
+                if ("note".equals(item.role)) {
+                    details += "；" + BankRates.selectedPersonalQuote(data, findNote(item.widget.selectedId()));
+                }
+                context.drawTooltip(textRenderer, Text.literal(details), mouseX, mouseY);
+                break;
+            }
         }
     }
 
@@ -936,9 +960,8 @@ public final class BankTerminalScreen extends Screen {
         if (!notice.isBlank() && page != Page.CONFIRM && page != Page.ISSUANCE && page != Page.ISSUANCE_SWITCH && page != Page.ISSUANCE_RESERVE && page != Page.ISSUANCE_RENAME) {
             if (page != Page.MARKET) {
                 context.drawText(textRenderer, notice, mainLeft(), contentTop(), 0xFFFFCC88, false);
-            } else {
-                drawWrapped(context, notice, mainLeft(), marketHeaderBottom(), mainWidth(), 0xFFFFCC88);
             }
+            // Market feedback occupies the help line instead of covering the first selector.
         }
     }
 
@@ -971,24 +994,10 @@ public final class BankTerminalScreen extends Screen {
         for (BankSnapshot.NoteRow note : held) {
             right = drawWrapped(context, note.name(), noteX, right, column, 0xFFE6E6E6);
             right = drawWrapped(context, "账面余额：" + note.balance(), noteX, right, column, 0xFFB7C7B0);
-            right = drawWrapped(context, note.price() == null ? personalQuoteStatus(note.id()) : "现价：" + note.price() + " " + centralName(),
+            right = drawWrapped(context, BankRates.selectedPersonalQuote(data, note),
                     noteX, right, column, note.price() == null ? 0xFFAAAAAA : 0xFFE8D090);
             right += 4;
         }
-    }
-
-    private String personalQuoteStatus(String id) {
-        if (data.has("notes") && data.get("notes").isJsonArray()) {
-            for (var entry : data.getAsJsonArray("notes")) {
-                if (!entry.isJsonObject()) continue;
-                JsonObject row = entry.getAsJsonObject();
-                if (java.util.Objects.equals(id, BankSnapshot.text(row, "id"))) {
-                    String status = BankSnapshot.text(row, "quoteStatus");
-                    if (status != null) return status;
-                }
-            }
-        }
-        return BankRates.UNAVAILABLE;
     }
 
     private void drawIssuanceTitle(DrawContext context) {
@@ -1064,31 +1073,27 @@ public final class BankTerminalScreen extends Screen {
         drawWrapped(context, BankActions.MAIN_HAND_BILL, mainLeft(), y + 16, mainWidth(), 0xFFE6E6E6);
     }
 
-    /** Title, then the full help line, both above the drawers. */
+    private boolean compactMarket() {
+        return mainWidth() >= 240 && this.height < 360;
+    }
+
+    /** A fixed help/feedback line cannot push selectors down after a failed submission. */
     private int marketHeaderBottom() {
-        int y = contentTop() + 12;
-        String help = marketHeading();
-        int width = Math.max(40, mainWidth());
-        String rest = help == null ? "" : help;
-        while (!rest.isEmpty()) {
-            String part = rest;
-            while (textRenderer.getWidth(part) > width && part.length() > 1) {
-                part = part.substring(0, part.offsetByCodePoints(0, part.codePointCount(0, part.length()) - 1));
-            }
-            y += 12;
-            if (part.equals(rest)) {
-                break;
-            }
-            rest = rest.substring(part.length());
-        }
-        return y + 6;
+        return contentTop() + 24;
     }
 
     private void drawMarketHeading(DrawContext context) {
         int x = mainLeft();
         int y = contentTop();
         context.drawText(textRenderer, "个人币交易", x, y, 0xFFD0B060, false);
-        drawFitted(context, marketHeading(), x, y + 12, mainWidth(), 0xFFAAAAAA);
+        if (amount != null && pageBand != null) {
+            context.drawText(textRenderer, "数量", Math.max(mainLeft(), amount.getX() - textRenderer.getWidth("数量") - 6),
+                    pageBand.fieldY() + 4, 0xFFAAAAAA, false);
+        }
+        String help = notice.isBlank() ? marketHeading() : notice;
+        String fitted = textRenderer.trimToWidth(help, Math.max(40, mainWidth() - 12));
+        if (!fitted.equals(help)) fitted += "…";
+        context.drawText(textRenderer, fitted, x, y + 12, notice.isBlank() ? 0xFFAAAAAA : 0xFFFFCC88, false);
     }
 
     private int drawFitted(DrawContext context, String text, int x, int y, int width, int color) {
@@ -1131,11 +1136,13 @@ public final class BankTerminalScreen extends Screen {
         }
         int textY = marketBalanceY >= 0 ? marketBalanceY : item.y + item.height + 2;
         String line = balanceCaption(item) + BankSnapshot.balancePhrase(balanceFor(item.role, item.widget.selectedId()));
-        context.drawText(textRenderer, line, item.x, textY, 0xFFB7C7B0, false);
+        context.drawText(textRenderer, page == Page.MARKET ? textRenderer.trimToWidth(line, item.width) : line,
+                item.x, textY, 0xFFB7C7B0, false);
         if ("note".equals(item.role)) {
             BankSnapshot.NoteRow note = findNote(item.widget.selectedId());
-            String quote = note == null || note.price() == null ? personalQuoteStatus(note.id()) : "现价：" + note.price() + " " + centralName();
-            context.drawText(textRenderer, quote, item.x, textY + 12, note == null || note.price() == null ? 0xFFAAAAAA : 0xFFE8D090, false);
+            String quote = BankRates.selectedPersonalQuote(data, note);
+            context.drawText(textRenderer, page == Page.MARKET ? textRenderer.trimToWidth(quote, item.width) : quote,
+                    item.x, textY + 12, note == null || note.price() == null ? 0xFFAAAAAA : 0xFFE8D090, false);
         }
     }
 
@@ -1370,7 +1377,7 @@ public final class BankTerminalScreen extends Screen {
 
     private void submitMarket(String quantity) {
         String note = selected("note", noteName);
-        if (note.isBlank()) {
+        if (note.isBlank() || findNote(note) == null) {
             notice = "请选择一张个人币。";
             return;
         }
@@ -1554,7 +1561,7 @@ public final class BankTerminalScreen extends Screen {
 
     private String marketHeading() {
         if (externalPersonalMarket()) {
-            return "挂牌买卖在市场办理。这里可以转账或从发行准备金通兑。";
+            return "挂牌买卖请前往市场；此处办理转账、通兑。";
         }
         return switch (marketMode) {
             case "sell" -> "卖出个人币，只换成央行券，不动发行人的准备金。";
