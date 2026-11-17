@@ -51,7 +51,7 @@ class IssuedNoteSaleTest {
         TxResult none = bare.exchange(player, "diamond", "note", BigInteger.ONE);
 
         assertEquals("no_unallocated", none.code());
-        assertTrue(BankPhrases.failure(BankPhrases.Kind.EXCHANGE, none.code(), "note", "diamond").zh().contains("尚未入账"));
+        assertTrue(BankPhrases.failure(BankPhrases.Kind.EXCHANGE, none.code(), "note", "diamond").zh().contains("央行自有储蓄"));
         assertEquals(0, diamonds.compareTo(bare.balanceExact(player, "diamond")));
         assertEquals(0, vault.compareTo(bare.supply("diamond").depositVaultExact()));
         assertEquals(0, notes.compareTo(bare.balanceExact(player, "note")));

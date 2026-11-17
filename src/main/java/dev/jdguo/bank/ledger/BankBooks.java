@@ -454,7 +454,7 @@ public final class BankBooks {
     }
 
     /**
-     * Sells already-issued 央行券 that are not yet in any account. Liability stays put.
+     * Sells already-issued 央行券 from the central-owned treasury. Liability stays put.
      * The metal paid is booked into the deposit vault, not into issuance reserves.
      */
     private TxResult buyIssuedNotes(UUID player, String metal, BigInteger notes) {
@@ -472,7 +472,7 @@ public final class BankBooks {
         if (balanceExact(player, metal).compareTo(price) < 0) {
             return TxResult.fail("insufficient_funds", "Not enough balance");
         }
-        BigDecimal unallocated = supply(note.id()).liabilityExact().subtract(publicM1Exact(note.id())).subtract(treasuryExact(note.id()));
+        BigDecimal unallocated = treasuryExact(note.id());
         if (unallocated.compareTo(Money.of(notes)) < 0) {
             return TxResult.fail("no_unallocated", "No unallocated notes");
         }
@@ -485,6 +485,7 @@ public final class BankBooks {
         BigDecimal reserve = supply(metal).reserveExact();
         debitBalance(player, metal, price);
         collectCustodyIntoTreasury(metal, price);
+        treasury.put(note.id(), Money.of(treasuryExact(note.id()).subtract(new BigDecimal(notes))));
         creditBalance(player, note.id(), notes);
         if (supply(note.id()).liabilityExact().compareTo(liability) != 0
                 || supply(metal).reserveExact().compareTo(reserve) != 0) {
@@ -524,12 +525,13 @@ public final class BankBooks {
         if (selling) {
             if (supply(quote.pay()).depositVaultExact().compareTo(quote.debit()) < 0)
                 return TxResult.fail("insufficient_reserves", "实物保管库存不足，未执行兑换。");
-            BigDecimal available = supply(quote.receive()).liabilityExact().subtract(publicM1Exact(quote.receive())).subtract(treasuryExact(quote.receive()));
+            BigDecimal available = treasuryExact(quote.receive());
             if (available.compareTo(quote.credit()) < 0)
                 return TxResult.fail("no_unallocated", "已发行的可售央行券不足，未执行兑换。");
             // The payer relinquishes its claim; the actual metal becomes central-owned, not new stock.
             debitBalance(player, quote.pay(), quote.debit());
             collectCustodyIntoTreasury(quote.pay(), quote.debit());
+            treasury.put(quote.receive(), Money.of(available.subtract(quote.credit())));
             creditBalance(player, quote.receive(), quote.credit());
         } else {
             if (supply(quote.receive()).freeReserveExact().compareTo(quote.credit()) < 0)
@@ -684,6 +686,7 @@ public final class BankBooks {
         }
         supply(currency).addLiability(amount);
         if (centralNote(def)) {
+            treasury.put(currency, Money.of(treasuryExact(currency).add(new BigDecimal(amount))));
             recomputeOfficialNoteQuote();
         }
         return TxResult.ok(amount, "Issued unbacked " + label(def) + " " + CompactFormat.format(amount));
@@ -704,6 +707,7 @@ public final class BankBooks {
         }
         supply(currency).addLiability(posted);
         if (centralNote(def)) {
+            treasury.put(currency, Money.of(treasuryExact(currency).add(posted)));
             recomputeOfficialNoteQuote();
         }
         return TxResult.ok(Money.units(posted), "Issued unbacked " + label(def) + " " + Money.stored(posted));
@@ -769,6 +773,7 @@ public final class BankBooks {
         supply(currency).addLiability(amount);
         supply(currency).addReserve(amount);
         if (centralNote(def)) {
+            treasury.put(currency, Money.of(treasuryExact(currency).add(new BigDecimal(amount))));
             recomputeOfficialNoteQuote();
         }
         return TxResult.ok(amount, "Issued reserve-backed " + label(def) + " " + CompactFormat.format(amount)
@@ -841,9 +846,10 @@ public final class BankBooks {
             return TxResult.fail("bad_amount", "Invalid amount");
         }
         Supply self = supply(currency);
-        BigDecimal unallocated = self.liabilityExact().subtract(publicM1Exact(currency)).subtract(treasuryExact(currency));
+        BigDecimal unallocated = centralNote(def) ? treasuryExact(currency)
+                : self.liabilityExact().subtract(publicM1Exact(currency)).subtract(treasuryExact(currency));
         if (unallocated.compareTo(Money.of(amount)) < 0) {
-            return TxResult.fail("insufficient_issue", "Issued notes outside personal savings cannot cover this retirement");
+            return TxResult.fail("insufficient_issue", "央行自有央行券不足，不能回收玩家或系统账户中的货币");
         }
         BigInteger backedOutstanding = self.reserve().subtract(self.anchor());
         if (backedOutstanding.signum() < 0) {
@@ -853,6 +859,7 @@ public final class BankBooks {
         if (unbacked.signum() < 0) {
             unbacked = BigInteger.ZERO;
         }
+        if (centralNote(def)) treasury.put(currency, Money.of(treasuryExact(currency).subtract(new BigDecimal(amount))));
         self.addLiability(amount.negate());
         if (def.kind() == CurrencyKind.VIRTUAL && amount.compareTo(unbacked) > 0 && def.backing() != null) {
             BigInteger backedBurn = amount.subtract(unbacked);
@@ -4900,6 +4907,7 @@ public final class BankBooks {
         recomputeOfficialNoteQuote();
         JsonObject root = new JsonObject();
         root.addProperty("currencyNameVersion", 1);
+        root.addProperty("centralIssuanceTreasuryVersion", 1);
         root.addProperty("version", SNAPSHOT_VERSION);
         root.addProperty("checkpoint", checkpoint);
         JsonObject marketReceiptsJson = new JsonObject();
@@ -5469,6 +5477,18 @@ public final class BankBooks {
             c.getAsJsonObject("policies").entrySet().forEach(e -> { JsonObject row = e.getValue().getAsJsonObject(); books.policies.put(UUID.fromString(e.getKey()), new PersonalPolicy(row.get("target").getAsBigDecimal(), row.get("lower").getAsBigDecimal(), row.get("upper").getAsBigDecimal())); });
             c.getAsJsonObject("assets").entrySet().forEach(e -> { Map<String, BigDecimal> row = new LinkedHashMap<>(); e.getValue().getAsJsonObject().entrySet().forEach(a -> row.put(a.getKey(), Money.parse(a.getValue().getAsString()))); books.settledAssets.put(e.getKey(), row); });
             c.getAsJsonObject("receipts").entrySet().forEach(e -> books.clearingReceipts.put(e.getKey(), e.getValue().getAsJsonObject().deepCopy()));
+        }
+        // Old versions issued notes without assigning an owner. Allocate only the exact
+        // remainder AFTER loading every claim (including recursive clearing and paper).
+        // The marker prevents copyExact and later loads from reclassifying newer funds.
+        if (!root.has("centralIssuanceTreasuryVersion")) {
+            for (CurrencyDef def : books.currencies.values()) {
+                if (!books.centralNote(def)) continue;
+                BigDecimal remainder = books.supply(def.id()).liabilityExact()
+                        .subtract(books.publicM1Exact(def.id())).subtract(books.treasuryExact(def.id()));
+                if (remainder.signum() > 0) books.treasury.put(def.id(),
+                        Money.of(books.treasuryExact(def.id()).add(remainder)));
+            }
         }
         return books;
     }

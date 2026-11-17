@@ -52,7 +52,7 @@ public record CentralAdjustment(boolean allowed, String reason, String mode, Str
         if (!result.success()) return denied(result.message());
         BigDecimal rate = sim.unitsPer("diamond", note);
         return new CentralAdjustment(true, "reserve".equals(mode) ? "整件实物划转，目标误差上限为 1%（最低一个报价精度）；实际汇率以预览为准，发行量不变" :
-                "increase".equals(direction) ? "增加未分配发行量，不自动增加准备金或玩家余额" : "仅回收未分配发行量，不扣玩家储蓄", mode, direction, currency, amount, target,
+                "increase".equals(direction) ? "增发央行券进入央行自有储蓄，可用于系统拨款；不增加准备金或玩家余额" : "仅从央行自有储蓄回收央行券，不扣玩家或系统账户余额", mode, direction, currency, amount, target,
                 beforeRate, rate, reserveBefore, sim.supply(currency).reserveExact(), treasuryBefore, sim.treasuryExact(currency),
                 liability, sim.supply(note).liabilityExact(), fingerprint(books));
     }

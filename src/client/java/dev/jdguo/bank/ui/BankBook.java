@@ -10,8 +10,8 @@ public final class BankBook {
     public static final String MISSING = "暂无数据";
     public static final String CIRCULATION_NOTE = "仅统计已登记账本及有效纸币；M1 包含 M0，M2 为折算展示，不相加。未扫描全世界实物。";
     public static final String FREEZE_NOTE = "只暂停或恢复用央行券兑换铜锭或钻石。普通存取不受影响。";
-    public static final String UNBACKED_NOTE = "不增加准备金。增发所选货币，并记入操作者的账户。";
-    public static final String RETIRE_NOTE = "从操作者的账户扣减所选货币，并减少发行额。";
+    public static final String UNBACKED_NOTE = "增发央行券进入央行自有储蓄，不自动增加准备金或操作者余额。";
+    public static final String RETIRE_NOTE = "从央行自有储蓄回收央行券并减少发行额，不扣玩家或系统账户余额。";
     public static final String BACKED_BUTTON = "按准备金满额发行";
     public static final String BACKED_EXPLANATION = "按管理列表里当前选中的货币，发行该货币按准备金尚可发行的剩余额度。这不是无准备金增发。";
     public static final String PAUSE = "暂停央行券兑付";
