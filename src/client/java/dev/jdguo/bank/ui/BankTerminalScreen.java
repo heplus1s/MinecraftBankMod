@@ -211,6 +211,20 @@ public final class BankTerminalScreen extends Screen {
         return "true".equals(BankSnapshot.text(data, "externalPersonalMarket"));
     }
 
+    private void openPersonalMarket() {
+        try {
+            Object opened = Class.forName("dev.jdguo.market.ui.MarketUiClient")
+                    .getMethod("requestPersonalMarket").invoke(null);
+            if (!Boolean.TRUE.equals(opened)) {
+                notice = "市场连接尚未就绪，请稍后重试。";
+                if (client != null) client.execute(this::clearAndInit);
+            }
+        } catch (ReflectiveOperationException | LinkageError unavailable) {
+            notice = "请安装市场模组 1.0.6 或更新版本以打开个人币交易界面。";
+            if (client != null) client.execute(this::clearAndInit);
+        }
+    }
+
     private void openPersonalCommand(String command) {
         if (client != null) {
             client.setScreen(new ChatScreen(command));
@@ -236,7 +250,7 @@ public final class BankTerminalScreen extends Screen {
         marketBalanceY = stack.secondY() + stack.secondH() + 4;
         if (external) {
             int[] columns = twoColumns();
-            addDrawableChild(textButton("前往市场", columns[0], stack.firstY(), () -> openPersonalCommand("/market note")));
+            addDrawableChild(textButton("前往市场", columns[0], stack.firstY(), this::openPersonalMarket));
             ButtonWidget transfer = addDrawableChild(textButton("转给玩家", columns[1], stack.firstY(),
                     () -> openPersonalCommand("/bank note transfer " + (noteName.isBlank() ? "" : "\"" + noteName + "\" "))));
             transfer.active = !notes.isEmpty();

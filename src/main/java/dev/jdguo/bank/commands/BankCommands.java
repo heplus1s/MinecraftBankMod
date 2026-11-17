@@ -737,8 +737,8 @@ public final class BankCommands {
             if (note == null) return TxResult.fail("not_found", "尚未创建个人币。");
             return book.setPersonalAutoListing(issuer, note.name(), enabled);
         });
-        return result.success() ? ok(source, "自动待售已" + (enabled ? "开启。" : "关闭。"))
-                : fail(source, result.message());
+        return result.success() ? ok(source, new Spoken("自动待售已" + (enabled ? "开启。" : "关闭。"), "Automatic listing " + (enabled ? "enabled." : "disabled."), dev.jdguo.bank.text.Tone.GREEN))
+                : fail(source, BankPhrases.noteRejected(result.code()));
     }
 
     private static int pauseNote(ServerCommandSource source, boolean paused) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
