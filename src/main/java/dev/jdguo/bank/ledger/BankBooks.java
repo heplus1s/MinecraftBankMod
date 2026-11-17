@@ -5152,6 +5152,15 @@ public final class BankBooks {
         return GSON.toJson(root);
     }
 
+    /** Clone current live definitions and balances without injecting configured/default currencies. */
+    public BankBooks copyExact() {
+        BankConfig current = new BankConfig(numeraire, feeFraction, interestFraction, personalInterestFraction,
+                floatCentralRatio, pegCentralRatio, hardCentralRatio, clampMin, clampMax, 4.0,
+                globalSidebar, globalBossbar, globalTab, globalHologram, joinMessage,
+                new ArrayList<>(currencies.values()));
+        return fromJson(toJson(), current);
+    }
+
     public static BankBooks fromJson(String json, BankConfig fallback) {
         JsonObject root = JsonParser.parseString(json).getAsJsonObject();
         Map<String, CurrencyDef> defs = new LinkedHashMap<>();

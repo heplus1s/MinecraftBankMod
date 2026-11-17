@@ -98,6 +98,7 @@ public final class BankUiService {
                         session.admin && player.hasPermissionLevel(2)));
                 player.sendMessage(net.minecraft.text.Text.literal(result.message()), false);
             }
+            case "admin-adjust-preview", "admin-adjust-confirm", "admin-adjust-cancel" -> CentralAdjustmentUi.handle(player, session, parts);
             case "admin-policy-preview", "admin-policy-confirm", "admin-policy-cancel" -> CentralPolicyUi.handle(player, session, parts);
             case "admin-funding-preview", "admin-funding-confirm", "admin-funding-cancel" -> SystemFundingUi.handle(player, session, parts);
             case "admin-treasury-prepare" -> {

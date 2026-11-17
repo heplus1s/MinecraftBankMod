@@ -162,9 +162,9 @@ class RegimeSwitchTest {
         assertEquals("0", own.get("locked").getAsString());
         assertEquals("0", own.get("centralReserve").getAsString());
         assertFalse(own.get("circulation").getAsString().contains("."));
-        assertEquals(CompactFormat.format(books.supply("copper").reserve()), root.get("copperReserve").getAsString());
-        assertEquals(CompactFormat.format(new BigInteger("1000")), root.get("diamondReserve").getAsString());
-        assertEquals(CompactFormat.format(books.supply("note").reserve()), root.get("noteReserve").getAsString());
+        assertEquals(books.supply("copper").reserve().toString(), root.get("copperReserve").getAsString());
+        assertEquals("1000", root.get("diamondReserve").getAsString());
+        assertEquals(books.supply("note").reserve().toString(), root.get("noteReserve").getAsString());
         assertEquals("2%", root.get("feePercent").getAsString());
         assertFalse(root.get("frozen").getAsBoolean());
 

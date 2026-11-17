@@ -51,7 +51,7 @@ public final class BankUiSnapshot {
         JsonArray accounts = new JsonArray();
         JsonArray central = new JsonArray();
         for (CurrencyDef def : books.currencies()) {
-            String shown = Money.display(books.balanceExact(player, def.id()));
+            String shown = Money.stored(books.balanceExact(player, def.id()));
             JsonObject row = new JsonObject();
             row.addProperty("id", def.id());
             row.addProperty("name", def.name());
@@ -82,15 +82,15 @@ public final class BankUiSnapshot {
             JsonObject book = new JsonObject();
             book.addProperty("id", def.id());
             book.addProperty("name", def.name());
-            book.addProperty("savings", Money.display(books.savingsPoolExact(def.id())));
-            book.addProperty("treasury", Money.display(books.treasuryExact(def.id())));
-            book.addProperty("custody", Money.display(books.custodyExact(def.id())));
-            book.addProperty("reserve", Money.display(supply.reserveExact()));
-            book.addProperty("liability", Money.display(supply.liabilityExact()));
-            book.addProperty("locked", Money.display(supply.lockedExact()));
-            book.addProperty("backedRoom", CompactFormat.format(books.backedRoom(def)));
+            book.addProperty("savings", Money.stored(books.savingsPoolExact(def.id())));
+            book.addProperty("treasury", Money.stored(books.treasuryExact(def.id())));
+            book.addProperty("custody", Money.stored(books.custodyExact(def.id())));
+            book.addProperty("reserve", Money.stored(supply.reserveExact()));
+            book.addProperty("liability", Money.stored(supply.liabilityExact()));
+            book.addProperty("locked", Money.stored(supply.lockedExact()));
+            book.addProperty("backedRoom", books.backedRoom(def).toString());
             if (def.kind() == CurrencyKind.COMMODITY) {
-                book.addProperty("vault", Money.display(supply.depositVaultExact()));
+                book.addProperty("vault", Money.stored(supply.depositVaultExact()));
             }
             central.add(book);
         }
@@ -110,8 +110,8 @@ public final class BankUiSnapshot {
             JsonArray chronologicalFunding = new JsonArray();
             for (int i = recentFunding.size() - 1; i >= 0; i--) chronologicalFunding.add(recentFunding.get(i));
             o.add("systemFundingLog", chronologicalFunding);
-            o.addProperty("m0", Money.display(books.centralM0Exact()));
-            o.addProperty("m1", Money.display(books.centralM1Exact()));
+            o.addProperty("m0", Money.stored(books.centralM0Exact()));
+            o.addProperty("m1", Money.stored(books.centralM1Exact()));
             o.addProperty("m2", CompactFormat.formatAggregate(books.centralM2()));
             o.addProperty("frozen", books.frozen());
             JsonArray hardBooks = new JsonArray();
@@ -179,13 +179,13 @@ public final class BankUiSnapshot {
             JsonObject row = new JsonObject();
             row.addProperty("id", note.id().toString());
             row.addProperty("name", note.name());
-            String shown = CompactFormat.format(books.personalHolding(note.id(), player));
+            String shown = Money.stored(books.personalHoldingExact(note.id(), player));
             row.addProperty("balance", shown);
             row.addProperty("redemptionPaused", note.redemptionPaused());
             row.addProperty("circulation", whole(note.circulation()));
             putPersonalNotePrice(row, books, note);
             notes.add(row);
-            if (books.personalHolding(note.id(), player).signum() > 0) {
+            if (books.personalHoldingExact(note.id(), player).signum() > 0) {
                 JsonObject account = new JsonObject();
                 account.addProperty("name", note.name());
                 account.addProperty("amount", shown);
@@ -430,14 +430,14 @@ public final class BankUiSnapshot {
         if (amount == null || amount.signum() == 0) {
             return "0";
         }
-        return CompactFormat.format(amount);
+        return amount.toString();
     }
 
     private static void putMoney(JsonObject row, String key, BigDecimal amount) {
         if (amount == null) {
             return;
         }
-        row.addProperty(key, Money.display(amount));
+        row.addProperty(key, Money.stored(amount));
     }
 
     private static void putWhole(JsonObject row, String key, BigInteger amount) {

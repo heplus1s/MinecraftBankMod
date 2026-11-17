@@ -23,6 +23,11 @@ public final class BankAdminScreen extends Screen {
     private boolean closing;
     private final List<String> lines = new ArrayList<>();
     private int textTop;
+    private String adjustmentMode = "quantity";
+    private String adjustmentDirection = "increase";
+    private String reserveCurrency = "diamond";
+    private int inputY = 86;
+    private String inputLabel;
 
     public BankAdminScreen(JsonObject data) {
         super(Text.literal(BankChrome.MANAGEMENT));
@@ -46,12 +51,14 @@ public final class BankAdminScreen extends Screen {
     }
     private void switchPage(int next) {
         remember(); page = next; scroll = 0; pending = null;
+        data.remove("centralAdjustmentPreview");
         BankUiClient.send("admin-policy-cancel");
+        BankUiClient.send("admin-adjust-cancel");
         BankUiClient.send("admin-funding-cancel");
         clearAndInit();
     }
     @Override protected void init() {
-        field = null; confirmation = null; lines.clear();
+        field = null; confirmation = null; lines.clear(); inputY = 86; inputLabel = null;
         int x = left(), w = bodyWidth();
         if (width < 250 || height < 230) {
             textTop = 42;
@@ -61,7 +68,7 @@ public final class BankAdminScreen extends Screen {
         }
         button("更名设置", x, 6, 76, () -> switchPage(5));
         button("关闭", x + w - 50, 6, 50, this::close);
-        String[] tabs = {"总览", "目标发行", "准备金", "回收", "兑付"};
+        String[] tabs = {"总览", "发行管理", "准备金", "回收", "兑付"};
         int tabW = (w - 16) / 5;
         for (int i = 0; i < tabs.length; i++) {
             final int tab = i;
@@ -87,27 +94,7 @@ public final class BankAdminScreen extends Screen {
             button("商店储蓄管理", x, height - 30, (w - 4) / 2, () -> switchPage(8));
             button("地产储蓄管理", x + (w + 4) / 2, height - 30, (w - 4) / 2, () -> switchPage(9));
         } else if (page == 1) {
-            input("目标汇率：钻石 / 1 " + centralName(), x, w);
-            button("计算发行预览", x + w - 112, 86, 112, () -> {
-                remember(); BankUiClient.send("admin-policy-preview " + typed);
-            });
-            textTop = 118;
-            JsonObject quote = data.has("centralPolicyPreview") ? data.getAsJsonObject("centralPolicyPreview") : null;
-            if (quote == null) {
-                lines.add("输入目标汇率后预览，不默认按 1:1 发行。");
-                lines.add("按实际准备金和现行汇率公式计算。仅使用已有准备金；不会从玩家保管款补足。");
-            } else {
-                lines.add(BankSnapshot.text(quote, "reason"));
-                if (quote.get("allowed").getAsBoolean()) {
-                    lines.add("本次增发：" + BankSnapshot.text(quote, "amount") + " " + centralName());
-                    lines.add("现有准备金钻石等值：" + BankSnapshot.text(quote, "reserves"));
-                    lines.add("发行后总额：" + BankSnapshot.text(quote, "liabilitiesAfter"));
-                    lines.add("发行后 1 " + centralName() + " = " + BankSnapshot.text(quote, "rate") + " 钻石");
-                    lines.add("不增加准备金，不直接转入个人储蓄。预览有效期 60 秒，账本变化后必须重算。");
-                    button("确认按预览发行", x, height - 30, w, () -> BankUiClient.send("admin-policy-confirm"));
-                    confirmation.active = dev.jdguo.bank.ledger.CentralIssuePlan.sameTarget(typed, BankSnapshot.text(quote, "target"));
-                }
-            }
+            adjustmentPage(x, w);
         } else if (page == 2) {
             if ("note".equals(selected)) selected = "diamond";
             button(("copper".equals(selected) ? "▶ " : "") + "铜锭", x, 60, (w - 4) / 2,
@@ -119,27 +106,22 @@ public final class BankAdminScreen extends Screen {
             lines.add(name() + "玩家存款保管池：" + centralField("vault"));
             lines.add(name() + "现有准备金：" + centralField("reserve"));
             lines.add("三个账户分开记账。注资明确扣除操作者本人储蓄；不会自动取用其他玩家资产。旧存档的自有储蓄从零开始，不挪用保管池。");
-            lines.add("目标准备金划转：暂未开放。须先确认全市场 M0/M1/M2 的汇率统计口径，不能把嵌套指标相加或套用旧公式。现有余额保持不变。");
+            lines.add("按目标汇率划转准备金：请进入“发行管理 → 按汇率调准备金”。仅使用央行自有储蓄，保持现行汇率公式。");
             button("从本人储蓄注资", x, height - 30, (w - 4) / 2, () -> switchPage(6));
             button("自有储蓄取回", x + (w + 4) / 2, height - 30, (w - 4) / 2, () -> switchPage(7));
         } else if (page == 3) {
-            input("回收数量（" + centralName() + "）", x, w);
-            button("预览回收", x + w - 112, 86, 112, () -> {
-                remember();
-                if (BankRates.parse(typed) != null && BankRates.parse(typed).signum() > 0) {
-                    pending = BankActions.adminRetire("note", typed); clearAndInit();
-                }
-            });
-            textTop = 118;
-            lines.add("仅回收未分配的央行券，不扣除他人流通余额。");
-            if (pending != null) {
-                lines.add("确认回收 " + typed + " " + centralName() + "？服务端会重新检查可回收数量。");
-                button("确认回收", x, height - 30, w, () -> { String command = pending; pending = null; BankUiClient.send(command); });
-            }
+            adjustmentMode = "quantity";
+            adjustmentDirection = "decrease";
+            adjustmentPage(x, w);
         } else if (page == 4) {
-            lines.add(BankBook.freezeButton(data));
+            lines.add("当前状态：" + BankBook.redemption(data));
+            lines.add("当前运行状况：" + value(data, "status"));
+            lines.add(BankRates.bankNoteQuote(data));
+            lines.add("当前兑付能力：" + value(data, "tightness"));
+            lines.add("当前手续费：" + value(data, "feePercent"));
+            lines.add("下一步操作：" + BankBook.freezeButton(data));
             lines.add("兑付设置只控制央行券兑付，不修改余额、币名或准备金。");
-            if (pending == null) button("调整兑付状态", x, height - 30, w, () -> {
+            if (pending == null) button(BankBook.freezeButton(data), x, height - 30, w, () -> {
                 Boolean frozen = BankSnapshot.frozen(data);
                 if (frozen != null) { pending = "admin-freeze-set " + frozen + " " + !frozen; clearAndInit(); }
             });
@@ -213,6 +195,85 @@ public final class BankAdminScreen extends Screen {
             button("保存名称", x, height - 30, w, () -> BankUiClient.send("admin-rename " + field.getText().trim()));
         }
     }
+    private void changeAdjustment(String mode, String direction, String currency) {
+        remember();
+        adjustmentMode = mode; adjustmentDirection = direction; reserveCurrency = currency;
+        scroll = 0;
+        data.remove("centralAdjustmentPreview");
+        BankUiClient.send("admin-adjust-cancel");
+        clearAndInit();
+    }
+    private static String value(JsonObject source, String key) {
+        String raw = BankSnapshot.text(source, key);
+        return raw == null || raw.isBlank() ? "暂无数据" : raw;
+    }
+    private void adjustmentPage(int x, int w) {
+        int half = (w - 4) / 2;
+        if (page != 3) {
+            button(("quantity".equals(adjustmentMode) ? "▶ " : "") + "货币数量增减", x, 60, half,
+                    () -> changeAdjustment("quantity", adjustmentDirection, reserveCurrency));
+            button(("reserve".equals(adjustmentMode) ? "▶ " : "") + "按汇率调准备金", x + half + 4, 60, half,
+                    () -> changeAdjustment("reserve", adjustmentDirection, reserveCurrency));
+        }
+        boolean quantity = "quantity".equals(adjustmentMode);
+        if (quantity) {
+            button(("increase".equals(adjustmentDirection) ? "▶ " : "") + "增加货币", x, 84, half,
+                    () -> { if (page == 3) page = 1; changeAdjustment("quantity", "increase", reserveCurrency); });
+            button(("decrease".equals(adjustmentDirection) ? "▶ " : "") + "减少货币", x + half + 4, 84, half,
+                    () -> changeAdjustment("quantity", "decrease", reserveCurrency));
+        } else {
+            button(("diamond".equals(reserveCurrency) ? "▶ " : "") + "调整钻石准备金", x, 84, half,
+                    () -> changeAdjustment("reserve", adjustmentDirection, "diamond"));
+            button(("copper".equals(reserveCurrency) ? "▶ " : "") + "调整铜锭准备金", x + half + 4, 84, half,
+                    () -> changeAdjustment("reserve", adjustmentDirection, "copper"));
+        }
+        inputY = 130;
+        input(quantity ? "调整数量（" + centralName() + "，整数）" : "目标汇率（钻石 / 1 " + centralName() + "）", x, w);
+        button("计算调整预览", x + w - 112, inputY, 112, () -> {
+            remember();
+            BankUiClient.send("admin-adjust-preview " + adjustmentMode + " "
+                    + (quantity ? adjustmentDirection : reserveCurrency) + " " + typed);
+        });
+        textTop = 162;
+        lines.add("当前：" + BankBook.redemption(data));
+        lines.add(BankRates.bankNoteQuote(data));
+        for (var row : BankSnapshot.central(data)) {
+            if ("note".equals(row.id())) lines.add("当前发行总额：" + row.liability());
+            if ("diamond".equals(row.id()) || "copper".equals(row.id()))
+                lines.add(row.name() + "准备金：" + row.reserve() + "；央行自有储蓄：" + row.treasury());
+        }
+        lines.add(quantity ? "增加货币只增加未分配发行量，不自动入个人储蓄或准备金；减少仅限未分配额度，不扣除他人余额。"
+                : "发行数量不变，只在央行自有储蓄与准备金间划转，不动玩家存款。实物按整数划转，实际汇率以预览为准。");
+        JsonObject q = data.has("centralAdjustmentPreview") ? data.getAsJsonObject("centralAdjustmentPreview") : null;
+        if (q == null) return;
+        String rejection = BankAdjustmentView.rejection(q);
+        if (rejection != null) {
+            lines.add(rejection);
+            return;
+        }
+        if (!adjustmentMode.equals(value(q, "mode"))) return;
+        lines.add("调整预览：" + value(q, "reason"));
+        lines.add("汇率：" + value(q, "rateBefore") + " → " + value(q, "rateAfter") + " 钻石 / " + centralName());
+        lines.add("发行总额：" + value(q, "liabilitiesBefore") + " → " + value(q, "liabilitiesAfter"));
+        if (!quantity) {
+            String unit = "diamond".equals(reserveCurrency) ? "钻石" : "铜锭";
+            lines.add(unit + "准备金：" + value(q, "reserveBefore") + " → " + value(q, "reserveAfter"));
+            lines.add(unit + "央行自有储蓄：" + value(q, "treasuryBefore") + " → " + value(q, "treasuryAfter"));
+        }
+        lines.add("预览有效 60 秒；账本变化或修改输入后需重新计算。");
+        if (q.has("allowed") && q.get("allowed").getAsBoolean()) {
+            String token = BankSnapshot.text(q, "token");
+            button("确认此次调整", x, height - 30, w, () -> {
+                if (token == null || token.isBlank()) return;
+                confirmation.active = false;
+                BankUiClient.send("admin-adjust-confirm " + token);
+            });
+            String expected = value(q, quantity ? "amount" : "target");
+            var a = BankRates.parse(typed); var b = BankRates.parse(expected);
+            confirmation.active = token != null && !token.isBlank() && a != null && b != null && a.compareTo(b) == 0
+                    && (quantity ? adjustmentDirection.equals(value(q, "direction")) : reserveCurrency.equals(value(q, "currency")));
+        }
+    }
     @Override public void resize(net.minecraft.client.MinecraftClient client, int width, int height) {
         remember(); super.resize(client, width, height);
     }
@@ -227,11 +288,16 @@ public final class BankAdminScreen extends Screen {
         return "暂无数据";
     }
     private void input(String label, int x, int w) {
-        field = new TextFieldWidget(textRenderer, x, 86, w - 120, 20, Text.literal(label));
+        inputLabel = label;
+        field = new TextFieldWidget(textRenderer, x, inputY, w - 120, 20, Text.literal(label));
         field.setMaxLength(32); field.setTextPredicate(BankAdminScreen::amountChars); field.setText(typed);
         field.setChangedListener(value -> {
             if (confirmation != null) confirmation.active = false;
             pending = null;
+            if (page == 1 || page == 3) {
+                data.remove("centralAdjustmentPreview");
+                BankUiClient.send("admin-adjust-cancel");
+            }
         });
         addDrawableChild(field); setFocused(field); field.setFocused(true);
     }
@@ -245,8 +311,7 @@ public final class BankAdminScreen extends Screen {
         int x = left(), w = bodyWidth();
         context.drawCenteredTextWithShadow(textRenderer, "央行管理", width / 2, 12, 0xFFE8D090);
         if (field != null) {
-            String label = page == 1 ? "目标：钻石 / 1 " + centralName() : page == 3 ? "回收数量（" + centralName() + "）" : page == 8 || page == 9 ? "系统账户拨款（" + centralName() + "）" : page == 6 || page == 7 ? "划转数量（" + name() + ("note".equals(selected) ? "）" : "，整数）") : "央行券显示名称";
-            context.drawText(textRenderer, label, x, 68, 0xFFE8D090, false);
+            context.drawText(textRenderer, textRenderer.trimToWidth(inputLabel == null ? "" : inputLabel, w), x, inputY - 16, 0xFFE8D090, false);
         }
         int contentHeight = 0;
         for (String line : lines) contentHeight += Math.max(1, textRenderer.wrapLines(Text.literal(line == null ? "" : line), w).size()) * 12 + 4;
