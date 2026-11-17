@@ -1065,7 +1065,8 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                 lore.add(Text.literal("发行准备金 " + CompactFormat.format(supply.reserve())).formatted(Formatting.WHITE));
                 lore.add(Text.literal("储蓄保管 " + CompactFormat.format(supply.depositVault())).formatted(Formatting.WHITE));
                 lore.add(Text.literal("储蓄总池 " + CompactFormat.format(books.savingsPool(def.id()))).formatted(Formatting.WHITE));
-                lore.add(Text.literal("手续费留存 " + CompactFormat.format(books.interestPool(def.id()))).formatted(Formatting.GRAY));
+                lore.add(Text.literal("手续费利息预算（非独立余额） " + CompactFormat.format(books.interestPool(def.id()))).formatted(Formatting.GRAY));
+                lore.add(Text.literal("实际发息受预算和央行可用储蓄双重限制").formatted(Formatting.GRAY));
                 lore.add(Text.literal("Issuance reserves stay out of the savings pool").formatted(Formatting.DARK_GRAY));
             } else {
                 lore.add(Text.literal("M0 " + CompactFormat.formatAggregate(books.centralM0())).formatted(Formatting.WHITE));

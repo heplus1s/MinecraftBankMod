@@ -81,7 +81,7 @@ class InterestTest {
         assertEquals(new BigInteger("2"), day.credits().get(0).amount());
         assertEquals(issuance, books.supply("diamond").reserve());
         assertEquals(new BigInteger("18"), books.interestPool("note"));
-        assertEquals(books.centralDeposits().add(books.interestPool("note")), books.savingsPool("note"));
+        assertEquals(books.centralDeposits(), books.savingsPool("note"));
         assertEquals(books.centralM0().add(books.centralDeposits()), books.centralM1());
         books.checkInvariants();
     }

@@ -25,7 +25,7 @@ public final class BankRuntime {
         if (state == null || server == null || !server.isOnThread()) {
             return dev.jdguo.bank.ledger.TxResult.fail("bank_not_ready", "银行账本未就绪");
         }
-        BankBooks candidate = BankBooks.fromJson(books().toJson(), config);
+        BankBooks candidate = books().copyExact();
         final dev.jdguo.bank.ledger.TxResult result;
         try {
             result = operation.apply(candidate);
