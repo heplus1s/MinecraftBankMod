@@ -76,6 +76,27 @@ public final class BankRates {
         return "1 【" + name + "】 = " + shown + " " + centralName;
     }
 
+    /** Safe for an empty list or a selection removed by a refreshed snapshot. */
+    public static String selectedPersonalQuote(JsonObject data, BankSnapshot.NoteRow note) {
+        if (note == null) {
+            return "请选择个人币";
+        }
+        if (note.price() != null) {
+            return "现价：" + note.price() + " " + centralName(data);
+        }
+        if (note.id() != null && data != null && data.has("notes") && data.get("notes").isJsonArray()) {
+            for (var entry : data.getAsJsonArray("notes")) {
+                if (!entry.isJsonObject()) continue;
+                JsonObject row = entry.getAsJsonObject();
+                if (note.id().equals(BankSnapshot.text(row, "id"))) {
+                    String status = BankSnapshot.text(row, "quoteStatus");
+                    if (status != null && !status.isBlank()) return status;
+                }
+            }
+        }
+        return UNAVAILABLE;
+    }
+
     public static String centralName(JsonObject data) {
         String name = BankSnapshot.text(data, "centralCurrencyName");
         BankSnapshot.MoneyRow note = centralNote(data);

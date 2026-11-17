@@ -87,6 +87,19 @@ public final class BankLayout {
         return new MarketStack(top, firstH, secondY, secondH, fieldY, quickY, actionY);
     }
 
+    /** Compact trade footer: shortcuts and confirmation share a row, not hit boxes.
+     * Only one drawer can be open at a time; its options scroll in the available space.
+     */
+    public static MarketStack compactMarketStack(int top, int bottom, boolean firstOpen, int firstRows,
+                                                 boolean secondOpen, int secondRows) {
+        int firstH = firstOpen ? Math.max(38, Math.min(drawerHeight(true, firstRows), bottom - top - 90)) : 20;
+        int secondH = secondOpen ? Math.max(38, Math.min(drawerHeight(true, secondRows), bottom - top - firstH - 70)) : 20;
+        int secondY = top + firstH + 4;
+        int fieldY = secondY + secondH + 28; // two 12px balance/quote lines plus 4px gap
+        int quickY = fieldY + 20;
+        return new MarketStack(top, firstH, secondY, secondH, fieldY, quickY, quickY);
+    }
+
     /**
      * Personal issuance. Regime drawer, then anchor drawer, then the amount and action rows.
      * An open list stays above the amount box.
