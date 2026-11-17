@@ -53,8 +53,11 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
     private final String outletName;
     private final boolean remoteAdmin;
     private Page page = Page.SAVINGS;
+    private dev.jdguo.bank.ledger.HardExchangeQuote hardQuote;
+    private String hardQuoteToken = "";
+    private long hardQuoteExpires;
     private int payIndex;
-    private int receiveIndex = 1;
+    private int receiveIndex = 2;
     private int checkIndex;
     private int adminIndex;
     private int marketIndex;
@@ -420,23 +423,23 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                     } else {
                         tell(player, BankPhrases.failure(BankPhrases.Kind.WITHDRAW, result.code(), parts[1], null));
                     }
+                } else if (action.startsWith("ex:confirm:")) {
+                    if (hardQuote == null || !action.equals("ex:confirm:" + hardQuoteToken)) return;
+                    var quote = hardQuote;
+                    hardQuote = null;
+                    hardQuoteToken = "";
+                    TxResult result = System.currentTimeMillis() > hardQuoteExpires
+                            ? TxResult.fail("quote_changed", "报价已过期，请重新选择数量。")
+                            : BankRuntime.transact(book -> book.confirmHardExchange(player.getUuid(), quote));
+                    player.sendMessage(Text.literal(result.message()), false);
                 } else if (action.startsWith("ex:buy:")) {
                     CurrencyDef pay = currencies.get(Math.floorMod(payIndex, currencies.size()));
                     CurrencyDef recv = currencies.get(Math.floorMod(receiveIndex, currencies.size()));
                     BigInteger qty = new BigInteger(action.substring("ex:buy:".length()));
-                    TxResult result = books.exchange(player.getUuid(), pay.id(), recv.id(), qty);
-                    if (result.success()) {
-                        BankRuntime.save();
-                        BigInteger shown = qty;
-                        BigInteger perDiamond = books.copperPerDiamond();
-                        if ("diamond".equals(recv.id()) && result.copperPaid().signum() > 0
-                                && perDiamond != null && perDiamond.signum() > 0) {
-                            shown = qty.subtract(result.copperPaid().divide(perDiamond));
-                        }
-                        tell(player, BankPhrases.exchange(books, player.getUuid(), pay.id(), recv.id(), shown, result.copperPaid()));
-                    } else {
-                        tell(player, BankPhrases.failure(BankPhrases.Kind.EXCHANGE, result.code(), recv.id(), pay.id()));
-                    }
+                    hardQuote = books.quoteHardExchange(pay.id(), recv.id(), qty);
+                    hardQuoteToken = java.util.UUID.randomUUID().toString();
+                    hardQuoteExpires = System.currentTimeMillis() + 30000;
+                    if (hardQuote == null) player.sendMessage(Text.literal("请选择实物与央行券互兑；数量表示整件实物。"), false);
                 } else if (action.startsWith("ck:issue:")) {
                     CurrencyDef cur = currencies.get(Math.floorMod(checkIndex, currencies.size()));
                     BigInteger amount = new BigInteger(action.substring("ck:issue:".length()));
@@ -1300,13 +1303,20 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                 BigInteger.valueOf(100), BigInteger.valueOf(1000), BigInteger.valueOf(10000)};
         net.minecraft.item.Item[] icons = {Items.LIME_DYE, Items.LIME_DYE, Items.EMERALD, Items.EMERALD, Items.EMERALD_BLOCK, Items.EMERALD_BLOCK};
         for (int i = 0; i < amounts.length; i++) {
-            BigInteger cost = books.cost(pay.id(), recv.id(), amounts[i]);
-            String price = cost == null ? "无法报价" : "花费 " + CompactFormat.format(cost) + " " + pay.name();
+            var q = books.quoteHardExchange(pay.id(), recv.id(), amounts[i]);
+            String price = q == null ? "请选择实物与央行券互兑" : "付出 " + dev.jdguo.bank.ledger.Money.stored(q.debit()) + " " + pay.name()
+                    + "；得到 " + dev.jdguo.bank.ledger.Money.stored(q.credit()) + " " + recv.name();
             inventory.setStack(19 + i, marker(icons[i],
-                    Text.literal("兑换 " + recv.name() + " ×" + amounts[i]).formatted(Formatting.GREEN),
+                    Text.literal("预览：实物数量 ×" + amounts[i]).formatted(Formatting.GREEN),
                     List.of(Text.literal(price).formatted(Formatting.GRAY),
-                            Text.literal("含手续费 " + percent(books.feeFraction())).formatted(Formatting.DARK_GRAY)),
+                            Text.literal("含差价 " + percent(books.feeFraction()) + "；点击预览后再确认").formatted(Formatting.DARK_GRAY)),
                     "ex:buy:" + amounts[i], amounts[i].intValue()));
+        }
+        if (hardQuote != null && hardQuote.pay().equals(pay.id()) && hardQuote.receive().equals(recv.id())) {
+            inventory.setStack(31, marker(Items.LIME_DYE, Text.literal("确认兑换报价").formatted(Formatting.GREEN),
+                    List.of(Text.literal("付出 " + dev.jdguo.bank.ledger.Money.stored(hardQuote.debit()) + " " + pay.name()),
+                            Text.literal("得到 " + dev.jdguo.bank.ledger.Money.stored(hardQuote.credit()) + " " + recv.name()),
+                            Text.literal("30 秒内有效；入个人储蓄，重复点击不会重复扣款。")), "ex:confirm:" + hardQuoteToken, 1));
         }
     }
 

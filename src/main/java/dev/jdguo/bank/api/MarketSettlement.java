@@ -28,6 +28,13 @@ public final class MarketSettlement {
                 : books.transferSavings(from, to, currency, amount));
     }
 
+    public static String quoteLandPurchase(String denomination, BigInteger total, String tender) {
+        return BankRuntime.state == null ? "{\"success\":false}" : BankRuntime.books().quoteLandPurchase(denomination, total, tender).toString();
+    }
+    public static TxResult creditLandGrantQuoted(UUID payer, String denomination, BigInteger total, String tender, String fingerprint, String reference) {
+        return postReferenced(reference, "land-quoted|" + payer + "|" + denomination + "|" + total + "|" + tender + "|" + fingerprint, total,
+                books -> books.payLandPurchase(payer, denomination, total, tender, fingerprint, reference));
+    }
     public static TxResult creditLandGrant(UUID payer, String currency, BigInteger amount, String reference) {
         return postReferenced(reference, "grant|" + payer + "|" + currency + "|" + amount, amount, books -> currency != null && currency.startsWith("personal:")
                 ? books.settlePersonalToSystem(payer, UUID.fromString(currency.substring(9)), new BigDecimal(amount), "land", reference)
@@ -35,6 +42,10 @@ public final class MarketSettlement {
     }
 
     public static TxResult refundLandGrant(UUID payer, String currency, BigInteger amount, String reference) {
+        String original = reference != null && reference.startsWith("refund:") ? "market-pay:" + reference.substring(7) : "";
+        if (BankRuntime.state != null && BankRuntime.books().hasLandPurchase(original))
+            return postReferenced(reference, "refund-land-quoted|" + payer + "|" + currency + "|" + amount, amount,
+                    books -> books.reverseLandPurchase(payer, currency, amount, original));
         return postReferenced(reference, "refund-grant|" + payer + "|" + currency + "|" + amount, amount, books -> currency != null && currency.startsWith("personal:")
                 ? reverseGrant(books, payer, currency, amount, reference)
                 : books.refundLandGrant(payer, currency, amount));
@@ -53,7 +64,7 @@ public final class MarketSettlement {
     /** Releases only assets whose land delivery has been durably confirmed by the market. */
     public static TxResult completePayment(String reference) {
         if (!validReference(reference)) return TxResult.fail("bad_reference", "");
-        return BankRuntime.transact(books -> books.completeSystemPayment(reference));
+        return BankRuntime.transact(books -> books.settlementStatus(reference).equals("none") ? TxResult.ok(BigInteger.ZERO, "Legacy payment") : books.completeSystemPayment(reference));
     }
 
     /** Same cash-funded payout policy for independent system accounts; never a player-market transfer. */

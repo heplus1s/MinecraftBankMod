@@ -28,6 +28,8 @@ public final class BankTerminalScreen extends Screen {
     private Page page = Page.SAVINGS;
     private String payId = "";
     private String receiveId = "";
+    private String exchangeMetal = "diamond";
+    private boolean exchangeSelling = true;
     private String noteName = "";
     private String otherNote = "";
     private String marketMode = "buy";
@@ -177,13 +179,54 @@ public final class BankTerminalScreen extends Screen {
     }
 
     private void initExchange() {
-        List<ChoiceListWidget.Choice> rows = exchangeChoices();
-        ensureExchangeIds(rows);
-        useControls(1);
-        int[] columns = twoColumns();
-        placeDrawer("pay", columns[0], pageBand.listTop(), columns[2], rows, payId);
-        placeDrawer("receive", columns[1], pageBand.listTop(), columns[2], rows, receiveId);
-        addAmountBlock(false, "确认兑换");
+        BankLayout.Box port = issuancePort();
+        IssuancePane pane = new IssuancePane(port.x(), port.y(), port.width(), port.height(), this::toggleIssuanceDrawer, this::pickIssuanceDrawer);
+        issuancePane = pane;
+        int left = port.x() + 4, right = port.right() - 8, y = port.y() + 4;
+        y = paneButtons(pane, left, right, y, List.of(exchangeMetal.equals("diamond") ? "✓ 钻石" : "钻石", exchangeMetal.equals("copper") ? "✓ 铜锭" : "铜锭"), List.of(
+                () -> chooseHardExchange("diamond", exchangeSelling), () -> chooseHardExchange("copper", exchangeSelling)));
+        y = paneButtons(pane, left, right, y + 6, List.of("实物换央行券", "央行券换实物"), List.of(
+                () -> chooseHardExchange(exchangeMetal, true), () -> chooseHardExchange(exchangeMetal, false)));
+        String metalName = currencyName(exchangeMetal);
+        y = paneText(pane, (exchangeSelling ? "付出" : "得到") + "实物数量（整数 " + metalName + "）", left, y + 8, right - left, 0xFFE8D090);
+        y = addIssuanceAmount(pane, left, right, right - left, y + 6);
+        amount.setTextPredicate(value -> value.matches("[0-9]{0,9}"));
+        String pay = exchangeSelling ? exchangeMetal : "note", receive = exchangeSelling ? "note" : exchangeMetal;
+        y = paneButtons(pane, left, right, y, List.of("预览兑换"), List.of(() -> {
+            rememberAmount();
+            if (!amountText.matches("[0-9]{1,9}") || new java.math.BigInteger(amountText).signum() <= 0) {
+                showNotice("请输入正整数实物数量。"); return;
+            }
+            send("hard-exchange-quote " + pay + " " + receive + " " + amountText);
+        }));
+        String message = BankSnapshot.text(data, "exchangeMessage");
+        if (message != null && !message.isBlank()) y = paneText(pane, message, left, y + 8, right - left, 0xFFE8D090);
+        String token = BankSnapshot.text(data, "exchangeToken");
+        if (token != null && !token.isBlank() && pay.equals(BankSnapshot.text(data, "exchangePay"))
+                && receive.equals(BankSnapshot.text(data, "exchangeReceive"))) {
+            y = paneButtons(pane, left, right, y + 6, List.of("确认以上报价"), List.of(() -> {
+                rememberAmount();
+                if (!amountText.matches("[0-9]{1,9}") || !new java.math.BigInteger(amountText).toString().equals(BankSnapshot.text(data, "exchangeQuantity"))) {
+                    showNotice("数量已修改，请重新预览。"); return;
+                }
+                data.remove("exchangeToken");
+                send("hard-exchange-confirm " + token);
+            }));
+        }
+        y = paneText(pane, "兑换入个人储蓄，需要物品时再取出。央行券可有小数；实物只整件交易。零散账面权益保留，不会被舍弃。每次最多 4096 件。", left, y + 8, right - left, 0xFFAAAAAA);
+        if (!notice.isBlank()) y = paneText(pane, notice, left, y + 6, right - left, 0xFFFFCC88);
+        pane.finish(y);
+        pane.setScroll(issuanceScroll);
+    }
+
+    private void chooseHardExchange(String metal, boolean selling) {
+        rememberAmount();
+        exchangeMetal = metal;
+        exchangeSelling = selling;
+        data.remove("exchangeToken");
+        data.remove("exchangeMessage");
+        issuanceScroll = 0;
+        clearAndInit();
     }
 
     private void initIssue() {
@@ -533,7 +576,7 @@ public final class BankTerminalScreen extends Screen {
     }
 
     private int issuanceTitleHeight() {
-        if (page == Page.ISSUANCE_SWITCH || page == Page.ISSUANCE_RESERVE || page == Page.ISSUANCE_RENAME) {
+        if (page == Page.EXCHANGE || page == Page.ISSUANCE_SWITCH || page == Page.ISSUANCE_RESERVE || page == Page.ISSUANCE_RENAME) {
             return 16;
         }
         String personal = BankSnapshot.text(data, "personal");
@@ -964,7 +1007,7 @@ public final class BankTerminalScreen extends Screen {
             case SAVINGS -> drawSavings(context);
             case DEPOSIT -> drawHeading(context, "存入个人存款", "选择货币后，余额显示在列表下方。");
             case WITHDRAW -> drawHeading(context, "取出个人存款", "选择货币后，余额显示在列表下方。");
-            case EXCHANGE -> drawHeading(context, "硬通货兑换", "按牌价在账户之间兑换。这不是通兑，不动发行人的准备金。");
+            case EXCHANGE -> drawHeading(context, "硬通货兑换", "选择实物和方向 → 输入整件数量 → 预览并确认。");
             case ISSUE -> drawHeading(context, "开立汇票", "选择币种和抬头，再填写开出的数量。");
             case REDEEM -> drawRedeem(context);
             case MARKET -> drawMarketHeading(context);
@@ -1010,7 +1053,8 @@ public final class BankTerminalScreen extends Screen {
         }
         for (BankSnapshot.MoneyRow row : currencies) {
             left = drawWrapped(context, row.name(), start, left, column, 0xFFE6E6E6);
-            left = drawWrapped(context, BankSnapshot.balancePhrase(row.amount()), start, left, column, 0xFFB7C7B0);
+            left = drawWrapped(context, ("diamond".equals(row.id()) || "copper".equals(row.id()))
+                    ? PhysicalSavings.describe(row.amount()) : BankSnapshot.balancePhrase(row.amount()), start, left, column, 0xFFB7C7B0);
             left += 4;
         }
         List<BankSnapshot.NoteRow> held = BankSnapshot.heldNotes(data);

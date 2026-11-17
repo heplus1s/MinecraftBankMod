@@ -83,6 +83,8 @@ public final class BankUiSnapshot {
             book.addProperty("id", def.id());
             book.addProperty("name", def.name());
             book.addProperty("savings", Money.display(books.savingsPoolExact(def.id())));
+            book.addProperty("treasury", Money.display(books.treasuryExact(def.id())));
+            book.addProperty("custody", Money.display(books.custodyExact(def.id())));
             book.addProperty("reserve", Money.display(supply.reserveExact()));
             book.addProperty("liability", Money.display(supply.liabilityExact()));
             book.addProperty("locked", Money.display(supply.lockedExact()));
@@ -96,8 +98,8 @@ public final class BankUiSnapshot {
         o.add("accounts", accounts);
         o.add("central", central);
         if (admin) {
-            o.addProperty("m0", CompactFormat.formatAggregate(books.centralM0()));
-            o.addProperty("m1", CompactFormat.formatAggregate(books.centralM1()));
+            o.addProperty("m0", Money.display(books.centralM0Exact()));
+            o.addProperty("m1", Money.display(books.centralM1Exact()));
             o.addProperty("m2", CompactFormat.formatAggregate(books.centralM2()));
             o.addProperty("frozen", books.frozen());
             JsonArray hardBooks = new JsonArray();

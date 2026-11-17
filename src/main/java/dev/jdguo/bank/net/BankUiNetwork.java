@@ -85,8 +85,18 @@ public final class BankUiNetwork {
         BankBooks books = BankRuntime.books();
         String json = BankUiSnapshot.json(books, player.getUuid(), session.admin, session.page, session.confirm,
                 MarketSettlement.externalPersonalMarket());
+        com.google.gson.JsonObject payload = com.google.gson.JsonParser.parseString(json).getAsJsonObject();
+        payload.addProperty("exchangeMessage", session.exchangeMessage);
+        if (session.exchangeQuote != null) {
+            var q = session.exchangeQuote;
+            payload.addProperty("exchangeToken", session.exchangeToken);
+            payload.addProperty("exchangePay", q.pay());
+            payload.addProperty("exchangeReceive", q.receive());
+            payload.addProperty("exchangeQuantity", q.quantity().toString());
+        }
+        CentralPolicyUi.addPreview(payload, session);
         PacketByteBuf buf = PacketByteBufs.create();
-        buf.writeString(json, 32767);
+        buf.writeString(payload.toString(), 32767);
         ServerPlayNetworking.send(player, SYNC, buf);
         session.lastCheckpoint = books.checkpoint();
     }
@@ -104,6 +114,14 @@ public final class BankUiNetwork {
         final boolean admin;
         String page = "savings";
         boolean confirm;
+        dev.jdguo.bank.ledger.CentralIssuePlan centralIssuePlan;
+        long centralIssueExpires;
+        String treasuryCommand;
+        long treasuryExpires;
+        dev.jdguo.bank.ledger.HardExchangeQuote exchangeQuote;
+        String exchangeToken = "";
+        String exchangeMessage = "";
+        long exchangeExpires;
         long lastCheckpoint = -1;
 
         Session(String outlet, boolean admin) {

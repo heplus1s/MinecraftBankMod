@@ -8,7 +8,7 @@ import java.util.List;
 /** Lines for the central-bank management page. Missing fields stay missing. */
 public final class BankBook {
     public static final String MISSING = "暂无数据";
-    public static final String CIRCULATION_NOTE = "以上是流通量统计，不是准备金。";
+    public static final String CIRCULATION_NOTE = "仅统计已登记账本及有效纸币；M1 包含 M0，M2 为折算展示，不相加。未扫描全世界实物。";
     public static final String FREEZE_NOTE = "只暂停或恢复用央行券兑换铜锭或钻石。普通存取不受影响。";
     public static final String UNBACKED_NOTE = "不增加准备金。增发所选货币，并记入操作者的账户。";
     public static final String RETIRE_NOTE = "从操作者的账户扣减所选货币，并减少发行额。";
@@ -86,7 +86,7 @@ public final class BankBook {
         BankSnapshot.CentralRow row = find(data, currencyId, currencyName);
         List<String> lines = new ArrayList<>();
         lines.add(field("准备金", row == null ? null : row.reserve()));
-        lines.add(field("央行储蓄", row == null ? null : row.savings()));
+        lines.add(field("央行自有储蓄", row == null ? null : row.treasury()));
         lines.add(field("存款保管", row == null ? null : row.vault()));
         lines.add(field("发行额", row == null ? null : row.liability()));
         lines.add(field("已锁定准备金", row == null ? null : row.locked()));
@@ -135,7 +135,7 @@ public final class BankBook {
             reserve = row.reserve();
         }
         lines.add(field(name + "准备金", reserve));
-        lines.add(field(name + "央行储蓄", row == null ? null : row.savings()));
+        lines.add(field(name + "央行自有储蓄", row == null ? null : row.treasury()));
         if (row != null && row.vault() != null) {
             lines.add(field(name + "存款保管", row.vault()));
         }
@@ -143,7 +143,7 @@ public final class BankBook {
     }
 
     /**
-     * Bank-note column. 发行准备金 and 央行储蓄 are always shown.
+     * Bank-note column. 发行准备金 and 央行自有储蓄 are always shown.
      * 发行额, 已锁定准备金, and 按准备金尚可发行 appear only when the snapshot has them.
      */
     public static List<String> noteLines(JsonObject data) {
@@ -154,7 +154,7 @@ public final class BankBook {
         }
         List<String> lines = new ArrayList<>();
         lines.add(field("央行券发行准备金", reserve));
-        lines.add(field("央行券央行储蓄", row == null ? null : row.savings()));
+        lines.add(field("央行券央行自有储蓄", row == null ? null : row.treasury()));
         if (row != null && row.liability() != null) {
             lines.add(field("央行券发行额", row.liability()));
         }
@@ -206,7 +206,7 @@ public final class BankBook {
         String reserve = rootReserve != null ? rootReserve : row == null ? null : row.reserve();
         List<String> lines = new ArrayList<>();
         lines.add(field(note ? name + "发行准备金" : name + "准备金", reserve));
-        lines.add(field(name + "央行储蓄", row == null ? null : row.savings()));
+        lines.add(field(name + "央行自有储蓄", row == null ? null : row.treasury()));
         if (row != null && row.vault() != null) {
             lines.add(field(name + "存款保管", row.vault()));
         }
