@@ -26,15 +26,15 @@ class IssuedNoteSaleTest {
         BigDecimal liability = books.supply("note").liabilityExact();
         BigInteger m1 = books.centralM1();
 
+        // A legacy request targets whole notes, whose metal price can be fractional.
+        // It must refuse rather than silently split physical savings.
         TxResult bought = books.exchange(player, "diamond", "note", BigInteger.ONE);
-
-        assertTrue(bought.success(), bought.code());
+        assertEquals("whole_physical_required", bought.code());
         assertEquals(0, liability.compareTo(books.supply("note").liabilityExact()));
         assertEquals(reserve, books.supply("diamond").reserve());
-        assertEquals(0, vault.add(quote).compareTo(books.supply("diamond").depositVaultExact()));
-        assertEquals(0, new BigDecimal("50").subtract(quote).compareTo(books.balanceExact(player, "diamond")));
-        assertEquals(0, BigDecimal.ONE.compareTo(books.balanceExact(player, "note")));
-        assertEquals(m1.add(BigInteger.ONE), books.centralM1());
+        assertEquals(vault, books.supply("diamond").depositVaultExact());
+        assertEquals(0, new BigDecimal("50").compareTo(books.balanceExact(player, "diamond")));
+        assertEquals(m1, books.centralM1());
     }
 
     @Test

@@ -69,26 +69,12 @@ class BankLedgerTest {
     }
 
     @Test
-    void commodityExchangeReclassifiesIssuanceReservesAndDoesNotChangeNoteM1() {
+    void commodityExchangeCannotSplitPhysicalSavings() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         books.deposit(player, "copper", new BigInteger("5000"));
-        BigInteger noteM1 = books.centralM1();
-        BigInteger qty = BigInteger.ONE;
-        BigDecimal settled = books.settlementCost("copper", "diamond", qty);
-        BigInteger expected = dev.jdguo.bank.ledger.Money.units(settled);
-
-        TxResult result = books.exchange(player, "copper", "diamond", qty);
-
-        assertTrue(result.success());
-        assertEquals(expected, result.amount());
-        assertEquals(0, new BigDecimal("5000").subtract(settled).compareTo(books.balanceExact(player, "copper")));
-        assertEquals(qty, books.balance(player, "diamond"));
-        assertEquals(new BigInteger("1000000"), books.supply("copper").reserve());
-        assertEquals(0, new BigDecimal("19.9500").compareTo(books.interestPoolExact("copper")));
-        assertEquals(new BigInteger("1000"), books.supply("diamond").reserve());
-        assertEquals(books.balance(player, "copper"), books.supply("copper").depositVault());
-        assertEquals(qty, books.supply("diamond").depositVault());
-        assertEquals(noteM1, books.centralM1());
+        String before = books.toJson();
+        assertEquals("whole_physical_required", books.exchange(player, "copper", "diamond", BigInteger.ONE).code());
+        assertEquals(before, books.toJson());
         books.checkInvariants();
     }
 

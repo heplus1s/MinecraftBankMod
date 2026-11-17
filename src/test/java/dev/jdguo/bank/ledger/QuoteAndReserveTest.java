@@ -56,6 +56,7 @@ class QuoteAndReserveTest {
         assertEquals(0, new BigDecimal("999.5000").compareTo(books.unitsPer("copper", "diamond")));
         assertEquals(new BigInteger("1000000"), books.supply("copper").reserve());
 
+        assertTrue(books.transferTreasury(player, "copper", new BigDecimal("1000"), true).success());
         assertTrue(books.transferReserve("copper", new BigDecimal("1000"), true).success());
         assertEquals(0, new BigDecimal("1001").compareTo(books.unitsPer("copper", "diamond")));
         assertEquals(new BigInteger("1001000"), books.supply("copper").reserve());
@@ -69,16 +70,17 @@ class QuoteAndReserveTest {
         BigDecimal vault = books.supply("copper").depositVaultExact();
 
         TxResult refused = books.transferReserve("copper", new BigDecimal("1.0000"), true);
-        assertEquals("insufficient_deposits", refused.code());
+        assertEquals("insufficient_treasury", refused.code());
         assertEquals(copperReserve, books.supply("copper").reserve());
         assertEquals(0, vault.compareTo(books.supply("copper").depositVaultExact()));
 
         books.deposit(player, "copper", new BigInteger("5"));
+        assertTrue(books.transferTreasury(player, "copper", new BigDecimal("5"), true).success());
         TxResult moved = books.transferReserve("copper", new BigDecimal("2.5000"), true);
         assertTrue(moved.success(), moved.code());
         assertEquals(0, new BigDecimal("2.5000").compareTo(books.supply("copper").reserveExact().subtract(new BigDecimal(copperReserve))));
-        assertEquals(0, new BigDecimal("2.5000").compareTo(books.supply("copper").depositVaultExact()));
-        assertEquals(new BigInteger("5"), books.balance(player, "copper"));
+        assertEquals(0, new BigDecimal("2.5000").compareTo(books.treasuryExact("copper")));
+        assertEquals(BigInteger.ZERO, books.balance(player, "copper"));
 
         BigInteger afterMove = books.supply("copper").reserve();
         TxResult back = books.transferReserve("copper", new BigDecimal("10000000"), false);

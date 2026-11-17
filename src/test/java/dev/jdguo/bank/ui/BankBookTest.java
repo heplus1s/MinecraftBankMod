@@ -31,7 +31,7 @@ class BankBookTest {
         assertEquals(BankBook.PAUSE, BankBook.freezeButton(data));
         assertEquals(List.of(
                 "准备金：1000",
-                "央行储蓄：20",
+                "央行自有储蓄：暂无数据",
                 "存款保管：7",
                 "发行额：暂无数据",
                 "已锁定准备金：暂无数据",
@@ -43,11 +43,11 @@ class BankBookTest {
         assertTrue(ledger.contains("钻石储蓄账面总值：暂无数据"));
         assertTrue(ledger.contains("钻石实际硬通货储蓄总值：暂无数据"));
         assertTrue(ledger.contains("铜锭准备金：1000000"));
-        assertTrue(ledger.contains("铜锭央行储蓄：4"));
+        assertTrue(ledger.contains("铜锭央行自有储蓄：暂无数据"));
         assertTrue(ledger.contains("钻石准备金：1000"));
-        assertTrue(ledger.contains("钻石央行储蓄：20"));
+        assertTrue(ledger.contains("钻石央行自有储蓄：暂无数据"));
         assertTrue(ledger.contains("央行券发行准备金：1000000"));
-        assertTrue(ledger.contains("央行券央行储蓄：3"));
+        assertTrue(ledger.contains("央行券央行自有储蓄：暂无数据"));
         assertTrue(ledger.contains("铜锭存款保管：9"));
         assertFalse(String.join("\n", ledger).contains("央行券存款保管"));
         assertTrue(ledger.contains("流通中现金（M0）：0"));
@@ -65,6 +65,7 @@ class BankBookTest {
         JsonArray central = data.getAsJsonArray("central");
         JsonObject note = central.get(2).getAsJsonObject();
         note.addProperty("liability", "5000");
+        note.addProperty("treasury", "8");
         note.addProperty("locked", "10");
         note.addProperty("backedRoom", "990");
         JsonArray institutions = new JsonArray();
@@ -80,7 +81,7 @@ class BankBookTest {
         assertTrue(BankBook.preface(data).contains("手续费：2%"));
         assertEquals(List.of(
                 "准备金：1000000",
-                "央行储蓄：3",
+                "央行自有储蓄：8",
                 "存款保管：暂无数据",
                 "发行额：5000",
                 "已锁定准备金：10",

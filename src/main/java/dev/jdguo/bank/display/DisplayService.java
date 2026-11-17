@@ -61,7 +61,7 @@ public final class DisplayService {
         this.objective = board.addObjective(OBJECTIVE, ScoreboardCriterion.DUMMY,
                 Text.literal("中央银行"), ScoreboardCriterion.RenderType.INTEGER);
         this.bossBar = new ServerBossBar(Text.literal("中央银行"), BossBar.Color.GREEN, BossBar.Style.NOTCHED_10);
-        this.bossBar.setVisible(true);
+        this.bossBar.setVisible(false);
         for (int i = 0; i < 15; i++) {
             Team team = board.addTeam(teamName(i));
             team.setNameTagVisibilityRule(AbstractTeam.VisibilityRule.NEVER);
@@ -301,27 +301,10 @@ public final class DisplayService {
     }
 
     private void refreshBossBar(MinecraftServer server, BankBooks books) {
-        BigDecimal copperPerDiamond = books.currency("copper") == null || books.currency("diamond") == null
-                ? null : books.unitsPer("copper", "diamond");
-        String rateText = BankPhrases.copperPerDiamond(books);
-        bossBar.setName(Text.literal("汇率：" + rateText + " 铜锭/钻石").formatted(Formatting.WHITE));
-        float percent = copperPerDiamond == null ? 0.0f : 1.0f;
-        bossBar.setPercent(percent);
-        bossBar.setColor(books.frozen() || copperPerDiamond == null ? BossBar.Color.RED : BossBar.Color.GREEN);
-        Set<ServerPlayerEntity> online = new HashSet<>(server.getPlayerManager().getPlayerList());
-        for (ServerPlayerEntity watching : List.copyOf(bossBar.getPlayers())) {
-            if (!online.contains(watching) || !books.showBossbar(watching.getUuid())) {
-                bossBar.removePlayer(watching);
-            }
-        }
-        if (!books.globalBossbar()) {
-            return;
-        }
-        for (ServerPlayerEntity player : online) {
-            if (books.showBossbar(player.getUuid()) && !bossBar.getPlayers().contains(player)) {
-                bossBar.addPlayer(player);
-            }
-        }
+        // World HUD belongs to territory context. Keep legacy preferences on disk,
+        // but never show the old exchange bar, even when a saved toggle is enabled.
+        bossBar.clearPlayers();
+        bossBar.setVisible(false);
     }
 
     private Text hologramText(BankBooks books) {

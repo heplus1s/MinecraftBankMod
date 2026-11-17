@@ -60,6 +60,8 @@ public final class BankUiService {
             case "close" -> BankUiNetwork.forget(player);
             case "withdraw" -> withdraw(player, books, parts);
             case "exchange" -> exchange(player, books, parts);
+            case "hard-exchange-quote" -> quoteHardExchange(player, books, session, parts);
+            case "hard-exchange-confirm" -> confirmHardExchange(player, session, parts);
             case "check" -> check(player, books, parts);
             case "deposit-held" -> depositHeld(player, books);
             case "deposit-transfer" -> depositTransfer(player, books, parts);
@@ -95,6 +97,42 @@ public final class BankUiService {
                 TxResult result = BankRuntime.transact(book -> book.renameCentralCurrency(name,
                         session.admin && player.hasPermissionLevel(2)));
                 player.sendMessage(net.minecraft.text.Text.literal(result.message()), false);
+            }
+            case "admin-policy-preview", "admin-policy-confirm", "admin-policy-cancel" -> CentralPolicyUi.handle(player, session, parts);
+            case "admin-treasury-prepare" -> {
+                session.treasuryCommand = null;
+                if (session.admin && player.hasPermissionLevel(2) && parts.length == 4
+                        && ("deposit".equals(parts[3]) || "withdraw".equals(parts[3]))) {
+                    session.treasuryCommand = "admin-treasury-" + parts[3] + " " + parts[1] + " " + parts[2];
+                    session.treasuryExpires = System.currentTimeMillis() + 60_000L;
+                }
+            }
+            case "admin-treasury-deposit", "admin-treasury-withdraw" -> {
+                if (session.admin && player.hasPermissionLevel(2) && parts.length == 3) {
+                    String approval = session.treasuryCommand;
+                    session.treasuryCommand = null;
+                    if (!raw.trim().equals(approval) || System.currentTimeMillis() > session.treasuryExpires) {
+                        player.sendMessage(net.minecraft.text.Text.literal("划转预览已失效，请重新预览"), false);
+                        break;
+                    }
+                    try {
+                        BigDecimal quantity = dev.jdguo.bank.ledger.Money.parse(parts[2]);
+                        TxResult result = BankRuntime.transact(book -> book.transferTreasury(player.getUuid(),
+                                parts[1], quantity, "admin-treasury-deposit".equals(parts[0])));
+                        player.sendMessage(net.minecraft.text.Text.literal(result.success() ? "央行自有储蓄划转完成" : result.message()), false);
+                    } catch (RuntimeException invalid) {
+                        player.sendMessage(net.minecraft.text.Text.literal("请输入有效的划转数量"), false);
+                    }
+                }
+            }
+            case "admin-freeze-set" -> {
+                if (session.admin && player.hasPermissionLevel(2) && parts.length == 3
+                        && ("true".equals(parts[1]) || "false".equals(parts[1]))
+                        && ("true".equals(parts[2]) || "false".equals(parts[2]))) {
+                    TxResult result = BankRuntime.transact(book -> book.setFrozenIfMatches(
+                            Boolean.parseBoolean(parts[1]), Boolean.parseBoolean(parts[2])));
+                    player.sendMessage(net.minecraft.text.Text.literal(result.message()), false);
+                }
             }
             case "admin-freeze" -> freeze(player, books, session);
             case "admin-unbacked" -> adminCredit(player, books, session, parts, false);
@@ -220,6 +258,40 @@ public final class BankUiService {
         }
         BankRuntime.save();
         tell(player, BankPhrases.withdraw(books, player.getUuid(), parts[1], result.amount(), result.copperPaid()));
+    }
+
+    private static void quoteHardExchange(ServerPlayerEntity player, BankBooks books, BankUiNetwork.Session session, String[] parts) {
+        session.exchangeQuote = null;
+        session.exchangeToken = "";
+        session.exchangeMessage = "请选择实物与央行券，并输入正整数实物数量。";
+        if (parts.length != 4 || !parts[3].matches("[0-9]{1,9}")) return;
+        var quote = books.quoteHardExchange(parts[1], parts[2], new BigInteger(parts[3]));
+        if (quote == null) {
+            session.exchangeMessage = "当前无法报价：请检查实物/央行券组合、有效牌价及数量（1—4096 件）。";
+            return;
+        }
+        session.exchangeQuote = quote;
+        session.exchangeToken = UUID.randomUUID().toString();
+        session.exchangeExpires = System.currentTimeMillis() + 30000;
+        String pay = books.currencies().stream().filter(c -> c.id().equals(quote.pay())).findFirst().orElseThrow().name();
+        String recv = books.currencies().stream().filter(c -> c.id().equals(quote.receive())).findFirst().orElseThrow().name();
+        session.exchangeMessage = "付出 " + dev.jdguo.bank.ledger.Money.stored(quote.debit()) + " " + pay
+                + "，得到 " + dev.jdguo.bank.ledger.Money.stored(quote.credit()) + " " + recv
+                + "。含兑换差价 " + quote.feeFraction().multiply(new BigDecimal("100")).stripTrailingZeros().toPlainString()
+                + "%；报价 30 秒有效，确认时重新校验。";
+    }
+
+    private static void confirmHardExchange(ServerPlayerEntity player, BankUiNetwork.Session session, String[] parts) {
+        if (parts.length != 2 || !parts[1].equals(session.exchangeToken) || session.exchangeQuote == null) return;
+        var quote = session.exchangeQuote;
+        session.exchangeQuote = null; // consume before executing: replay and double-click cannot debit twice
+        session.exchangeToken = "";
+        if (System.currentTimeMillis() > session.exchangeExpires) {
+            session.exchangeMessage = "报价已过期，请重新预览。";
+            return;
+        }
+        TxResult result = BankRuntime.transact(book -> book.confirmHardExchange(player.getUuid(), quote));
+        session.exchangeMessage = result.message();
     }
 
     private static void exchange(ServerPlayerEntity player, BankBooks books, String[] parts) {
