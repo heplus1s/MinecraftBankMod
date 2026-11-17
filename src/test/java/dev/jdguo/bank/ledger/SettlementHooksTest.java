@@ -180,6 +180,9 @@ class SettlementHooksTest {
         assertTrue(books.transferShopOperating(seller, new BigInteger("36500"), true).success());
         assertTrue(books.creditLandGrant(buyer, "note", new BigInteger("36500")).success());
         BigInteger pool = books.savingsPool("note");
+        BigDecimal treasury = books.treasuryExact("note");
+        BigDecimal issued = books.supply("note").liabilityExact();
+        BigDecimal allClaims = books.centralM1Exact().add(treasury);
         books.accrueInterest(0);
         books.accrueInterest(1);
 
@@ -188,7 +191,16 @@ class SettlementHooksTest {
         assertEquals(BigInteger.ZERO, books.balance(buyer, "note"));
         assertEquals(BigInteger.ZERO, books.balance(seller, "note"));
         assertEquals(new BigInteger("16"), books.interestPool("note"));
-        assertEquals(pool, books.savingsPool("note"));
+        // Fees now reside in treasury, not the customer savings pool. Interest is a
+        // transfer of four existing notes to the two accounts, not fresh issuance.
+        assertEquals(pool.add(BigInteger.valueOf(4)), books.savingsPool("note"));
+        assertEquals(treasury.subtract(new BigDecimal("4.0000")), books.treasuryExact("note"));
+        assertEquals(issued, books.supply("note").liabilityExact());
+        assertEquals(allClaims, books.centralM1Exact().add(books.treasuryExact("note")));
+        BankBooks loaded = BankBooks.fromJson(books.toJson(), BankConfig.defaults());
+        assertEquals(books.toJson(), loaded.toJson());
+        assertEquals(issued, loaded.supply("note").liabilityExact());
+        assertEquals(allClaims, loaded.centralM1Exact().add(loaded.treasuryExact("note")));
         before.assertUntouched(books, buyer);
         books.checkInvariants();
     }

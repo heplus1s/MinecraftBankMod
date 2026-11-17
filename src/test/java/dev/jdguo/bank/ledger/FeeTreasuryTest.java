@@ -55,4 +55,25 @@ class FeeTreasuryTest {
   assertEquals(0,before.subtract(principal).compareTo(b.supply("note").liabilityExact()));
   b.checkInvariants();
  }
+ @Test void shopAndLandInterestTransfersFourExistingNotesAcrossReload(){
+  BankBooks b=BankBooks.create(config); UUID a=UUID.randomUUID(), c=UUID.randomUUID();
+  b.setAlpha("note",BigDecimal.ZERO);
+  b.postRetainedFee("note",BigInteger.valueOf(20));
+  b.creditHeld(a,"note",BigInteger.valueOf(36500));
+  b.creditHeld(c,"note",BigInteger.valueOf(36500));
+  assertTrue(b.transferShopOperating(a,BigInteger.valueOf(36500),true).success());
+  assertTrue(b.creditLandGrant(c,"note",BigInteger.valueOf(36500)).success());
+  BigDecimal issued=b.supply("note").liabilityExact();
+  BigDecimal all=b.centralM1Exact().add(b.treasuryExact("note"));
+  BigDecimal reserve=b.supply("diamond").reserveExact();
+  b.accrueInterest(0); b.accrueInterest(1);
+  eq("36502",b.shopOperatingExact("note")); assertEquals(BigInteger.valueOf(36502),b.landGrant("note"));
+  eq("16",b.treasuryExact("note")); eq("16",b.interestPoolExact("note"));
+  eq("73004",b.savingsPoolExact("note"));
+  assertEquals(issued,b.supply("note").liabilityExact());
+  assertEquals(all,b.centralM1Exact().add(b.treasuryExact("note")));
+  assertEquals(reserve,b.supply("diamond").reserveExact());
+  String saved=b.toJson(); b=BankBooks.fromJson(saved,config); assertEquals(saved,b.toJson());
+  assertEquals(issued,b.supply("note").liabilityExact()); b.checkInvariants();
+ }
 }
