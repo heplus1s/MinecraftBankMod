@@ -50,18 +50,27 @@ class CreditInflationTest {
         assertEquals(new BigInteger("2000"), books.backedRoom(books.currency("note")));
         books.deposit(player, "diamond", BigInteger.TEN);
         assertEquals(new BigInteger("1000"), books.supply("diamond").reserve());
-        assertEquals(new BigInteger("1995"), books.backedRoom(books.currency("note")));
+        assertEquals(new BigInteger("2010"), books.backedRoom(books.currency("note")));
 
+        BigDecimal totalBefore = books.commodityHoldingsExact("diamond");
+        BigDecimal crossBefore = books.unitsPer("copper", "diamond");
         var result = books.creditBacked(player, "note", BigInteger.TEN);
+        assertEquals(totalBefore, books.commodityHoldingsExact("diamond"));
+        assertEquals(crossBefore, books.unitsPer("copper", "diamond"));
 
         assertTrue(result.success(), result.message());
-        assertTrue(books.unitsPer("diamond", "note").compareTo(new BigDecimal("390")) > 0);
+        assertEquals(0, new BigDecimal("401").compareTo(books.unitsPer("diamond", "note")));
         assertEquals(BigInteger.TEN, books.supply("diamond").locked());
         assertEquals(new BigInteger("990"), books.supply("diamond").freeReserve());
-        assertEquals(new BigInteger("1985"), books.backedRoom(books.currency("note")));
+        assertEquals(new BigInteger("2000"), books.backedRoom(books.currency("note")));
         assertTrue(books.withdraw(player, "diamond", BigInteger.TEN, false).success());
         assertEquals(BigInteger.TEN, books.supply("diamond").locked());
         assertEquals(new BigInteger("990"), books.supply("diamond").freeReserve());
+        assertEquals(new BigInteger("1990"), books.backedRoom(books.currency("note")));
+        assertEquals(0, new BigDecimal("399").compareTo(books.unitsPer("diamond", "note")));
+        assertEquals(BigInteger.ZERO, books.balance(player, "diamond"));
+        assertEquals(0, new BigDecimal("1000").compareTo(books.commodityHoldingsExact("diamond")));
+        assertEquals(0, new BigDecimal("1000").compareTo(books.unitsPer("copper", "diamond")));
         books.checkInvariants();
     }
 

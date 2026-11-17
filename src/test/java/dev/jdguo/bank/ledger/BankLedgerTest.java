@@ -82,7 +82,7 @@ class BankLedgerTest {
     void exchangeIntoACommodityStopsAtFreeVaultHeadroom() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         books.setReserve("diamond", BigInteger.valueOf(2));
-        books.deposit(player, "copper", new BigInteger("500000"));
+        books.deposit(player, "copper", new BigInteger("2000000"));
 
         BigInteger reserve = books.supply("diamond").reserve();
         TxResult result = books.exchange(player, "copper", "diamond", BigInteger.ONE);
@@ -91,7 +91,7 @@ class BankLedgerTest {
         assertEquals(BigInteger.ZERO, result.copperPaid());
         assertEquals(BigInteger.ONE, books.balance(player, "diamond"));
         assertEquals(reserve, books.supply("diamond").reserve());
-        assertEquals(new BigInteger("500000").subtract(result.amount()), books.balance(player, "copper"));
+        assertEquals(new BigInteger("2000000").subtract(result.amount()), books.balance(player, "copper"));
         books.checkInvariants();
     }
 

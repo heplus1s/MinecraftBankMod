@@ -108,15 +108,20 @@ class IssuerOfferPayoutTest {
         equal(f.books.personalHoldingExact(f.coin,f.issuer),left); f.books.checkInvariants();
     }
     private static String legacyMixedPending(Fixture f) {
-        JsonObject q=f.books.quoteSystemPayout(f.coin,d("1.005"));
+        // Stable 1:1 central-note valuation isolates legacy mixed-receipt restoration.
+        f.books.supply("copper").setReserve(BigInteger.ZERO);
+        f.books.supply("diamond").setReserve(BigInteger.valueOf(2000));
+        f.books.setAlpha("note", BigDecimal.ZERO);
+        JsonObject q=f.books.quoteSystemPayout(f.coin,d("1"));
         equal(field(q,"privateAmount"),BigDecimal.ONE); prepare(f,q,"legacy");
         JsonObject root=com.google.gson.JsonParser.parseString(f.books.toJson()).getAsJsonObject();
         root.getAsJsonObject("shopOperating").addProperty("note","98");
-        root.getAsJsonObject("shopFraction").addProperty("note","0.75");
+        JsonObject fraction = new JsonObject(); fraction.addProperty("note","0.75");
+        root.add("shopFraction", fraction);
         JsonObject receipt=root.getAsJsonObject("recursiveClearing").getAsJsonObject("receipts").getAsJsonObject("legacy");
         receipt.remove("listingReserved"); receipt.addProperty("privateAmount","1");
         for(String key:new String[]{"centralBudget","amount","fromOrdinary"}) receipt.addProperty(key,"1.25");
-        receipt.addProperty("centralRemainder","0.245");
+        receipt.addProperty("centralRemainder","0.25");
         return root.toString();
     }
     @Test void oldMixedPendingReceiptsStillCompleteAndRollbackExactly() {
@@ -124,8 +129,8 @@ class IssuerOfferPayoutTest {
         BankBooks complete=BankBooks.fromJson(json,BankConfig.defaults()); complete.checkInvariants();
         assertTrue(complete.completeSystemPayment("legacy").success());
         equal(complete.personalHoldingExact(f.coin,f.player),BigDecimal.ONE);
-        equal(complete.balanceExact(f.player,"note"),d("0.245"));
-        equal(complete.balanceExact(f.issuer,"note"),d("1.005")); complete.checkInvariants();
+        equal(complete.balanceExact(f.player,"note"),d("0.25"));
+        equal(complete.balanceExact(f.issuer,"note"),d("1")); complete.checkInvariants();
         BankBooks reverse=BankBooks.fromJson(json,BankConfig.defaults());
         assertTrue(reverse.rollbackShopPayment("legacy").success());
         equal(reverse.systemAvailableBalance("shop","note"),d("100"));
@@ -134,6 +139,9 @@ class IssuerOfferPayoutTest {
     }
     @Test void unrepresentableFractionIsRejectedRatherThanSilentlyPayingNotes() {
         Fixture f=fixture();
+        // Three diamonds per coin cannot pay one quote tick exactly.
+        f.books.deposit(f.issuer,"diamond",BigInteger.valueOf(20));
+        f.books.depositPersonalReserveExact(f.issuer,d("20"));
         String before=f.books.toJson(); JsonObject q=f.books.quoteSystemPayout(f.coin,d("0.0001"));
         assertFalse(q.get("success").getAsBoolean()); assertEquals("precision",q.get("code").getAsString());
         assertEquals(before,f.books.toJson());

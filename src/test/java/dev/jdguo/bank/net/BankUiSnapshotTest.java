@@ -110,9 +110,9 @@ class BankUiSnapshotTest {
         assertFalse(reserve.get("reserve").getAsString().equals(reserve.get("savings").getAsString()));
         assertEquals(Money.stored(books.unitsPer("copper", "diamond")), o.get("copperPerDiamond").getAsString());
         assertEquals(BankPhrases.copperPerDiamond(books), o.get("copperPerDiamond").getAsString());
-        assertEquals("1005.0251", o.get("copperPerDiamond").getAsString());
-        assertEquals("1005.0251", currency(o, "copper").get("rate").getAsString());
-        assertEquals("1005.0251", currency(o, "copper").get("unitsPerDiamond").getAsString());
+        assertEquals("990.099", o.get("copperPerDiamond").getAsString());
+        assertEquals("990.099", currency(o, "copper").get("rate").getAsString());
+        assertEquals("990.099", currency(o, "copper").get("unitsPerDiamond").getAsString());
         assertEquals("1", currency(o, "diamond").get("rate").getAsString());
         assertEquals(Money.stored(books.unitsPer("note", "diamond")), currency(o, "note").get("rate").getAsString());
         assertEquals(Money.stored(books.unitsPer("diamond", "note")), o.get("diamondsPerNote").getAsString());

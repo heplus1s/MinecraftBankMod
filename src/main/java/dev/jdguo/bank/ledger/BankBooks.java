@@ -1088,28 +1088,33 @@ public final class BankBooks {
     }
 
     /**
-     * 「1 钻石 = xxx 铜锭」.
-     * Copper and diamond each use issuance reserves as the stock and central-bank savings as the claims.
-     * Savings here are custody plus separately owned treasury, only combined for this quote.
-     * An ownership transfer is rate-neutral. Neither is added into issuance reserves.
+     * Bank-registered physical holdings, counted once. Custody includes claims owned by
+     * players, personal issuers and system accounts; those claims must not be added again.
+     * Fees are already in treasury; the interest allocation budget is not an asset.
+     * Locked reserve is part of reserve and is not counted again.
+     * This is a valuation statistic, never permission to spend custody or locked metal.
      */
+    public BigDecimal commodityHoldingsExact(String currency) {
+        CurrencyDef def = need(currency);
+        if (def == null || def.kind() != CurrencyKind.COMMODITY) return null;
+        BigDecimal reserve = supply(currency).reserveExact();
+        BigDecimal treasury = treasuryExact(currency);
+        BigDecimal custody = supply(currency).depositVaultExact();
+        if (reserve.signum() < 0 || treasury.signum() < 0 || custody.signum() < 0) return null;
+        return Money.of(reserve.add(treasury).add(custody));
+    }
+
+    /** 1 diamond = registered copper holdings / registered diamond holdings. */
     private void recomputeOfficialCopperQuote() {
-        if (supplies.get("copper") == null || supplies.get("diamond") == null) {
-            liveCopperPerDiamond = null;
-            return;
-        }
-        BigDecimal copper = gapEffective(supply("copper").reserveExact(), supply("copper").depositVaultExact().add(treasuryExact("copper")), "copper");
-        BigDecimal diamonds = gapEffective(supply("diamond").reserveExact(), supply("diamond").depositVaultExact().add(treasuryExact("diamond")), "diamond");
-        if (diamonds.signum() <= 0) {
+        BigDecimal copper = commodityHoldingsExact("copper");
+        BigDecimal diamonds = commodityHoldingsExact("diamond");
+        if (copper == null || diamonds == null || copper.signum() <= 0 || diamonds.signum() <= 0) {
             liveCopperPerDiamond = null;
             return;
         }
         BigDecimal rate = copper.divide(diamonds, Money.SCALE, RoundingMode.HALF_UP);
-        if (rate.signum() < 0) {
-            liveCopperPerDiamond = null;
-            return;
-        }
-        liveCopperPerDiamond = rate.signum() == 0 ? Money.ZERO : clampQuote(rate);
+        // A zero from precision loss is not an executable zero-price asset.
+        liveCopperPerDiamond = rate.signum() > 0 ? clampQuote(rate) : null;
     }
 
     /**

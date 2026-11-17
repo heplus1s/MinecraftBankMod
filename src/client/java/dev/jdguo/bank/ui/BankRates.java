@@ -35,7 +35,7 @@ public final class BankRates {
     public static String centralQuote(JsonObject data) {
         String shown = amount(BankHeader.centralRateRaw(data));
         if (UNAVAILABLE.equals(shown)) {
-            return "1 钻石 = " + UNAVAILABLE;
+            return "钻石兑铜锭：" + UNAVAILABLE;
         }
         return "1 钻石 = " + shown + " 铜锭";
     }
