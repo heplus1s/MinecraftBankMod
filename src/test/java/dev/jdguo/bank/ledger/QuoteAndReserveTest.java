@@ -122,7 +122,7 @@ class QuoteAndReserveTest {
                         "钻石", "Diamond", "aqua", BigInteger.ZERO, BigInteger.ZERO, alpha,
                         false, null, null, null, null),
                 new CurrencyDef("note", CurrencyKind.VIRTUAL, "minecraft:paper",
-                        "银行券", "bank note", "yellow", BigInteger.ZERO, BigInteger.ZERO, alpha,
+                        "央行券", "bank note", "yellow", BigInteger.ZERO, BigInteger.ZERO, alpha,
                         true, "diamond", BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE));
         BankBooks books = BankBooks.create(new BankConfig("diamond", new BigDecimal("0.02"), new BigDecimal("0.02"),
                 BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null, null, 4.0,

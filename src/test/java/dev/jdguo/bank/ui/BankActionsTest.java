@@ -15,7 +15,7 @@ class BankActionsTest {
         assertEquals("check note 64 bearer", BankActions.check("note", "64", false));
         assertEquals("check note 64 self", BankActions.check("note", "64", true));
         assertEquals("deposit-held", BankActions.presentHeld());
-        assertEquals("兑付手里拿着的那一张汇票。请把要兑付的汇票拿在主手。一次只兑付这一张，不会扫描背包，也不会存入铜锭、钻石或银行券。",
+        assertEquals("兑付手里拿着的那一张汇票。请把要兑付的汇票拿在主手。一次只兑付这一张，不会扫描背包，也不会存入铜锭、钻石或央行券。",
                 BankActions.MAIN_HAND_BILL);
         assertEquals("确认兑付手里拿着的那一张汇票", BankActions.MAIN_HAND_BUTTON);
         assertEquals("note-buy 张三 1", BankActions.noteBuy("张三", "1"));
@@ -45,7 +45,7 @@ class BankActionsTest {
     @Test
     void namingFillsTheExistingCreateCommand() {
         assertTrue(BankActions.noteNamePrompt("float").contains("浮动汇率制"));
-        assertTrue(BankActions.noteNamePrompt("联系汇率制").contains("个人银行券的名字"));
+        assertTrue(BankActions.noteNamePrompt("联系汇率制").contains("个人币的名字"));
         assertTrue(BankActions.noteNamePrompt("固定汇率制").contains("固定汇率制"));
         assertEquals("/bank note create float ", BankActions.noteNameCommand("float"));
         assertEquals("/bank note create peg ", BankActions.noteNameCommand("钉住"));
@@ -55,15 +55,15 @@ class BankActionsTest {
         assertEquals("/bank note create hard ", BankActions.noteNameCommand("固定汇率制"));
         assertEquals("note-switch float", BankActions.noteSwitch("FLOAT", null));
         assertEquals("note-switch float diamond", BankActions.noteSwitch("浮动汇率制", "钻石"));
-        assertEquals("note-switch peg note", BankActions.noteSwitch("peg", "银行券"));
+        assertEquals("note-switch peg note", BankActions.noteSwitch("peg", "央行券"));
         assertEquals("note-switch hard diamond", BankActions.noteSwitch("hard", "diamond"));
-        assertEquals("note-switch hard note", BankActions.noteSwitch("固定汇率制", "银行券"));
+        assertEquals("note-switch hard note", BankActions.noteSwitch("固定汇率制", "央行券"));
         assertEquals("note-switch peg copper", BankActions.noteSwitch("联系汇率制", "铜锭"));
     }
 
     @Test
     void managementButtonsUseTheTypedAmountAndDoNotInventOne() {
-        assertEquals("从存款转入准备金 256 银行券", BankAdminScreen.amountButton("从存款转入准备金", "256", "银行券"));
+        assertEquals("从存款转入准备金 256 央行券", BankAdminScreen.amountButton("从存款转入准备金", "256", "央行券"));
         assertEquals("无准备金增发 3.5000 铜锭", BankAdminScreen.amountButton("无准备金增发", " 3.5000 ", "铜锭"));
         assertEquals("从准备金转回存款 钻石", BankAdminScreen.amountButton("从准备金转回存款", "", "钻石"));
         assertEquals("从准备金转回存款 钻石", BankAdminScreen.amountButton("从准备金转回存款", "   ", "钻石"));

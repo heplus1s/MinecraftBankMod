@@ -40,7 +40,7 @@ public final class PersonalSnapshotRegression {
         if (!books.transferShop(issuer, "personal:" + books.personalNote(issuer).id(),
                 new java.math.BigDecimal("0.5"), true).success()) throw new AssertionError("personal shop transfer");
         String snapshot = BankUiSnapshot.json(books, issuer, true, "admin", false);
-        if (!snapshot.contains("银行券  0.125") || !snapshot.contains("泉  0.5"))
+        if (!snapshot.contains("央行券  0.125") || !snapshot.contains("泉  0.5"))
             throw new AssertionError("shop fractional subaccounts missing: " + snapshot);
         System.out.println("PASS: personal snapshot totals, paper no-double-count, reserves separate, reload");
     }

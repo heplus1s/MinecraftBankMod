@@ -47,19 +47,19 @@ public final class BankRates {
     public static String bankNoteQuote(JsonObject data) {
         String direct = amount(BankSnapshot.text(data, "diamondsPerNote"));
         if (!UNAVAILABLE.equals(direct)) {
-            return "1 银行券 = " + direct + " 钻石";
+            return "1 央行券 = " + direct + " 钻石";
         }
         BankSnapshot.MoneyRow note = centralNote(data);
         if (note == null) {
-            return "1 银行券 = " + UNAVAILABLE;
+            return "1 央行券 = " + UNAVAILABLE;
         }
         String written = note.unitsPerDiamond() != null ? note.unitsPerDiamond() : note.rate();
         BigDecimal notes = parse(written);
         if (notes == null || notes.signum() == 0) {
-            return "1 银行券 = " + UNAVAILABLE;
+            return "1 央行券 = " + UNAVAILABLE;
         }
         BigDecimal diamonds = BigDecimal.ONE.divide(notes, 6, RoundingMode.HALF_UP);
-        return "1 银行券 = " + BankHeader.fixed6(diamonds.toPlainString()) + " 钻石";
+        return "1 央行券 = " + BankHeader.fixed6(diamonds.toPlainString()) + " 钻石";
     }
 
     /** {@code price} is central bank notes for one personal note. */
@@ -69,7 +69,7 @@ public final class BankRates {
         if (UNAVAILABLE.equals(shown)) {
             return "1 【" + name + "】 = " + UNAVAILABLE;
         }
-        return "1 【" + name + "】 = " + shown + " 银行券";
+        return "1 【" + name + "】 = " + shown + " 央行券";
     }
 
     private static BankSnapshot.MoneyRow centralNote(JsonObject data) {
@@ -78,7 +78,7 @@ public final class BankRates {
             if ("note".equals(row.id())) {
                 return row;
             }
-            if ("银行券".equals(row.name())) {
+            if ("央行券".equals(row.name())) {
                 named = row;
             }
         }

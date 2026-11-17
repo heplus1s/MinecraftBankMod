@@ -519,7 +519,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         nav(47, Items.CHEST, "取出", "nav:withdraw");
         nav(48, Items.EMERALD, "兑换", "nav:exchange");
         nav(49, Items.WRITABLE_BOOK, "银行汇票", "nav:checks");
-        nav(50, Items.NAME_TAG, "个人银行券交易", "nav:market");
+        nav(50, Items.NAME_TAG, "个人币交易", "nav:market");
         nav(52, Items.NETHER_STAR, "个人货币发行", "nav:issuance");
         if (owner.hasPermissionLevel(2)) {
             nav(51, Items.RECOVERY_COMPASS, "中央银行管理", "nav:management");
@@ -590,7 +590,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         boolean metal = "copper".equals(own.reserveCurrency()) || "diamond".equals(own.reserveCurrency());
         String reserveName = metal && books.currency(own.reserveCurrency()) != null
                 ? books.currency(own.reserveCurrency()).name()
-                : "银行券";
+                : "央行券";
         BigInteger reserveHeld = metal
                 ? books.personalReserve(uuid, own.reserveCurrency())
                 : books.centralReserve(uuid);
@@ -605,7 +605,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                         : " / 应当存入 " + CompactFormat.format(books.requiredCentralReserve(own)))).formatted(Formatting.GOLD),
                 List.of(Text.literal(metal
                                 ? "锁定 ×" + CompactFormat.format(own.locked()) + "。按准备金发行用这笔。"
-                                : "准备金账户只存银行券，不计利息").formatted(Formatting.GRAY),
+                                : "准备金账户只存央行券，不计利息").formatted(Formatting.GRAY),
                         Text.literal(metal ? "Personal issuance reserve" : "Central-bank reserve account").formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
         inventory.setStack(23, marker(Items.HOPPER,
@@ -661,7 +661,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                     List.of(Text.literal("输入币名、在线玩家和数量")), "pn:transfer-help", 1));
         } else {
             inventory.setStack(4, marker(Items.NAME_TAG,
-                    Text.literal("个人银行券交易").formatted(Formatting.YELLOW, Formatting.BOLD),
+                    Text.literal("个人币交易").formatted(Formatting.YELLOW, Formatting.BOLD),
                     List.of(Text.literal("Personal notes").formatted(Formatting.GRAY),
                             Text.literal("买入、卖出、互换，或按市场价格兑付").formatted(Formatting.DARK_GRAY),
                             Text.literal("特殊数量用 /bank note").formatted(Formatting.DARK_GRAY)),
@@ -682,7 +682,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         List<PersonalNote> notes = new ArrayList<>(books.personalNotes());
         if (notes.isEmpty()) {
             inventory.setStack(28, marker(Items.BARRIER,
-                    Text.literal("还没有个人银行券").formatted(Formatting.RED),
+                    Text.literal("还没有个人币").formatted(Formatting.RED),
                     List.of(Text.literal("No personal notes yet").formatted(Formatting.GRAY)),
                     "noop", 1));
             return;
@@ -697,7 +697,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
             return;
         }
         inventory.setStack(28, marker(Items.EMERALD,
-                Text.literal((marketMode == 1 ? "换入个人银行券「" : "个人银行券「") + listed.name() + "」").formatted(Formatting.GREEN),
+                Text.literal((marketMode == 1 ? "换入个人币「" : "个人币「") + listed.name() + "」").formatted(Formatting.GREEN),
                 List.of(Text.literal("Trade").formatted(Formatting.GRAY),
                         Text.literal("现行价格 " + CompactFormat.formatPersonalQuote(books.personalDiamondPrice(listed)) + " 钻石").formatted(Formatting.WHITE),
                         Text.literal("点击切换").formatted(Formatting.DARK_GRAY)),
@@ -709,7 +709,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
             }
             PersonalNote pay = notes.get(swapPayIndex);
             inventory.setStack(19, marker(Items.PAPER,
-                    Text.literal("付出个人银行券「" + pay.name() + "」").formatted(Formatting.GOLD),
+                    Text.literal("付出个人币「" + pay.name() + "」").formatted(Formatting.GOLD),
                     List.of(Text.literal("Pay with this note").formatted(Formatting.GRAY),
                             Text.literal("现行价格 " + CompactFormat.formatPersonalQuote(books.personalDiamondPrice(pay)) + " 钻石").formatted(Formatting.WHITE)),
                     "pn:pay", 1));
@@ -1010,7 +1010,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                 break;
             }
             inventory.setStack(holdSlot, marker(Items.PAPER,
-                    Text.literal((note.bankrupt() ? "已经宣告破产 " : "个人银行券 ") + note.name() + "  " + CompactFormat.format(held))
+                    Text.literal((note.bankrupt() ? "已经宣告破产 " : "个人币 ") + note.name() + "  " + CompactFormat.format(held))
                             .formatted(note.bankrupt() ? Formatting.DARK_GRAY : Formatting.YELLOW),
                     List.of(Text.literal(note.bankrupt() ? "Void record" : "Book entry").formatted(Formatting.GRAY),
                             Text.literal("现行价格 " + CompactFormat.formatPersonalQuote(books.personalDiamondPrice(note)) + " 钻石").formatted(Formatting.WHITE),
@@ -1024,11 +1024,11 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         BankBooks books = BankRuntime.books();
         inventory.setStack(0, marker(Items.PAPER,
                 Text.literal("M0  " + CompactFormat.formatAggregate(books.centralM0())).formatted(Formatting.WHITE),
-                List.of(Text.literal("流通中的银行券").formatted(Formatting.DARK_GRAY)),
+                List.of(Text.literal("流通中的央行券").formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
         inventory.setStack(2, marker(Items.PAPER,
                 Text.literal("M1  " + CompactFormat.formatAggregate(books.centralM1())).formatted(Formatting.WHITE),
-                List.of(Text.literal("流通中的银行券与活期存款").formatted(Formatting.DARK_GRAY)),
+                List.of(Text.literal("流通中的央行券与活期存款").formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
         inventory.setStack(6, marker(Items.MAP,
                 Text.literal("M2  " + CompactFormat.formatAggregate(books.centralM2())).formatted(Formatting.WHITE),
@@ -1036,7 +1036,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                 "noop", 1));
         inventory.setStack(8, marker(Items.GOLD_INGOT,
                 Text.literal("储蓄总池  " + CompactFormat.format(books.savingsPool("note"))).formatted(Formatting.GREEN),
-                List.of(Text.literal("银行券活期存款与手续费留存").formatted(Formatting.DARK_GRAY),
+                List.of(Text.literal("央行券活期存款与手续费留存").formatted(Formatting.DARK_GRAY),
                         Text.literal("不含发行准备金").formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
         inventory.setStack(4, marker(Items.GOLD_BLOCK,
@@ -1045,7 +1045,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                         Text.literal("汇率 " + BankPhrases.copperPerDiamond(books) + " 铜锭/钻石").formatted(Formatting.WHITE),
                         Text.literal("手续费 " + percent(books.feeFraction())).formatted(Formatting.GRAY),
                         Text.literal("中央银行年利率 " + percent(books.interestFraction())).formatted(Formatting.GOLD),
-                        Text.literal("个人银行券年利率 " + percent(books.personalInterestFraction())).formatted(Formatting.GRAY),
+                        Text.literal("个人币年利率 " + percent(books.personalInterestFraction())).formatted(Formatting.GRAY),
                         Text.literal("储蓄总池 " + CompactFormat.format(books.savingsPool("note"))).formatted(Formatting.WHITE)),
                 "noop", 1));
         int slot = 10;
@@ -1095,13 +1095,13 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         CurrencyDef note = books.primaryVirtual();
         BigDecimal tight = note == null ? null : books.tightness(note.id());
         inventory.setStack(31, marker(concrete(tight),
-                Text.literal("银行券兑付能力 " + CompactFormat.formatRatio(tight)).formatted(Formatting.WHITE),
+                Text.literal("央行券兑付能力 " + CompactFormat.formatRatio(tight)).formatted(Formatting.WHITE),
                 List.of(),
                 "noop", 1));
         inventory.setStack(40, marker(Items.CLOCK,
                 Text.literal("中央银行年利率 " + percent(books.interestFraction())).formatted(Formatting.GOLD),
-                List.of(Text.literal("个人银行券年利率 " + percent(books.personalInterestFraction())).formatted(Formatting.GRAY),
-                        Text.literal("储蓄总池 银行券 " + CompactFormat.format(books.savingsPool("note"))).formatted(Formatting.WHITE),
+                List.of(Text.literal("个人币年利率 " + percent(books.personalInterestFraction())).formatted(Formatting.GRAY),
+                        Text.literal("储蓄总池 央行券 " + CompactFormat.format(books.savingsPool("note"))).formatted(Formatting.WHITE),
                         Text.literal("利息从手续费留存里付，不动发行准备金").formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
         paintCentralIssuance(books);
@@ -1136,19 +1136,19 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                 List.of(Text.literal("Issue up to the reserve cap").formatted(Formatting.GRAY)),
                 "ad:backed", 1));
         inventory.setStack(42, marker(Items.FLINT,
-                Text.literal("注销银行券 1,000").formatted(Formatting.DARK_GREEN),
+                Text.literal("注销央行券 1,000").formatted(Formatting.DARK_GREEN),
                 List.of(Text.literal("Retire 1,000 from your balance").formatted(Formatting.GRAY)),
                 "ad:retire:1000", 1));
         inventory.setStack(43, marker(books.frozen() ? Items.RED_DYE : Items.LIME_DYE,
-                Text.literal(books.frozen() ? "银行券兑付已暂停" : "银行券兑付正常").formatted(books.frozen() ? Formatting.RED : Formatting.GREEN),
+                Text.literal(books.frozen() ? "央行券兑付已暂停" : "央行券兑付正常").formatted(books.frozen() ? Formatting.RED : Formatting.GREEN),
                 List.of(Text.literal(books.frozen() ? "Redemption suspended" : "Redemption available").formatted(Formatting.GRAY),
-                        Text.literal("点击切换。只暂停银行券兑换铜锭或钻石").formatted(Formatting.DARK_GRAY)),
+                        Text.literal("点击切换。只暂停央行券兑换铜锭或钻石").formatted(Formatting.DARK_GRAY)),
                 "ad:freeze", 1));
     }
 
     private void paintDeposit() {
         inventory.setStack(4, marker(Items.OAK_SIGN,
-                Text.literal("把铜锭、钻石或银行券放进中间空格").formatted(Formatting.GOLD),
+                Text.literal("把铜锭、钻石或央行券放进中间空格").formatted(Formatting.GOLD),
                 accountLore(BankRuntime.books(), "同面额的纸可以叠放。复制件不能重复入账"),
                 "noop", 1));
         paintAccountRow(BankRuntime.books());
@@ -1162,7 +1162,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         BankBooks books = BankRuntime.books();
         inventory.setStack(4, marker(Items.CHEST,
                 Text.literal("取出").formatted(Formatting.GOLD),
-                accountLore(books, "铜锭、钻石，以及可叠放的银行券"),
+                accountLore(books, "铜锭、钻石，以及可叠放的央行券"),
                 "noop", 1));
         paintAccountRow(books);
         int row = 0;
@@ -1269,7 +1269,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
             return def == null ? note.currency() : def.name();
         }
         PersonalNote personal = BankRuntime.books().personalNoteById(note.personalNote());
-        return personal == null ? "个人银行券" : "个人银行券「" + personal.name() + "」";
+        return personal == null ? "个人币" : "个人币「" + personal.name() + "」";
     }
 
     private String paperNameEn(PresentedNote note) {
@@ -1435,7 +1435,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
     private String payoutLabel(String payout) {
         return switch (payout) {
             case "copper" -> "兑换为铜锭";
-            case "note" -> "兑换为银行券";
+            case "note" -> "兑换为央行券";
             default -> "兑换为钻石";
         };
     }
@@ -1443,7 +1443,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
     private static String anchorLabel(String anchor) {
         return switch (anchor) {
             case "copper" -> "铜锭";
-            case "note" -> "银行券";
+            case "note" -> "央行券";
             default -> "钻石";
         };
     }

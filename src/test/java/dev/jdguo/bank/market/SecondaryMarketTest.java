@@ -241,7 +241,7 @@ class SecondaryMarketTest {
         books.creditHeld(issuerA, "note", BigInteger.valueOf(64));
         var issued = books.issueCentralPaper(issuerA, BigInteger.valueOf(64));
         PresentedNote paper = new PresentedNote("note", null, BigInteger.ONE);
-        assertEquals(NotePaper.signature(paper, "银行券"), NotePaper.signature(paper, "银行券"));
+        assertEquals(NotePaper.signature(paper, "央行券"), NotePaper.signature(paper, "央行券"));
         assertEquals(NoteSeries.key(paper), NoteSeries.key(new PresentedNote("note", null, issued.face())));
         assertNotEquals(NoteSeries.key(paper), NoteSeries.key(new PresentedNote(null, UUID.randomUUID(), BigInteger.ONE)));
 

@@ -63,7 +63,7 @@ class AnchorEligibilityTest {
         z.adopt(NoteRegime.FLOAT,"personal:"+id,null);
         assertFalse(b.renamePersonalNote(z.issuer(),id,"新名",false).success());
         assertFalse(b.renamePersonalNote(a.issuer(),id,"abc",false).success());
-        for(String reserved:List.of("银行券","钻石")) {
+        for(String reserved:List.of("央行券","钻石")) {
             assertEquals("reserved_name",b.renamePersonalNote(a.issuer(),id,reserved,false).code());
             assertEquals("reserved_name",b.createPersonalNote(UUID.randomUUID(),reserved,NoteRegime.FLOAT,"diamond",BigInteger.ONE).code());
         }

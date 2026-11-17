@@ -25,7 +25,7 @@ public final class BankActions {
         return "check " + currencyId + " " + quantity + (selfOnly ? " self" : " bearer");
     }
 
-    public static final String MAIN_HAND_BILL = "兑付手里拿着的那一张汇票。请把要兑付的汇票拿在主手。一次只兑付这一张，不会扫描背包，也不会存入铜锭、钻石或银行券。";
+    public static final String MAIN_HAND_BILL = "兑付手里拿着的那一张汇票。请把要兑付的汇票拿在主手。一次只兑付这一张，不会扫描背包，也不会存入铜锭、钻石或央行券。";
     public static final String MAIN_HAND_BUTTON = "确认兑付手里拿着的那一张汇票";
 
     /** Redeems the bill in the main hand. The core no longer scans the backpack. */
@@ -154,7 +154,7 @@ public final class BankActions {
         return switch (anchor) {
             case "diamond", "DIAMOND", "钻石" -> "diamond";
             case "copper", "COPPER", "铜锭" -> "copper";
-            case "note", "NOTE", "银行券" -> "note";
+            case "note", "NOTE", "央行券" -> "note";
             default -> null;
         };
     }
@@ -171,7 +171,7 @@ public final class BankActions {
             case "hard" -> "固定汇率制";
             default -> "浮动汇率制";
         };
-        return "请在这条命令后面输入个人银行券的名字，然后按回车。你选的是" + label
+        return "请在这条命令后面输入个人币的名字，然后按回车。你选的是" + label
                 + "。名字最多三个汉字或英文字母。";
     }
 

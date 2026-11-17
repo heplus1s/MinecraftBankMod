@@ -117,12 +117,12 @@ public final class BankBooks {
     private static final BigDecimal PEG_COMMODITY_COVERAGE = new BigDecimal("0.80");
     /**
      * Retained for older saves and the ratio command. Issuance, switching, and redemption no longer
-     * read them, except that a 联系汇率制 note anchored to 银行券 always covers 100% of par.
+     * read them, except that a 联系汇率制 note anchored to 央行券 always covers 100% of par.
      */
     private BigDecimal floatCentralRatio = BigDecimal.ZERO;
     private BigDecimal pegCentralRatio = BigDecimal.ZERO;
     private BigDecimal hardCentralRatio = BigDecimal.ZERO;
-    /** Central 银行券 posted by an issuer. Not savings, not interest-bearing, not issuance reserves. */
+    /** Central 央行券 posted by an issuer. Not savings, not interest-bearing, not issuance reserves. */
     private final Map<UUID, BigInteger> centralReserveAccounts = new LinkedHashMap<>();
     /**
      * Retained central-bank fee income, the equity slice of {@link #savingsPool}.
@@ -165,7 +165,7 @@ public final class BankBooks {
     private BigDecimal liveCopperPerDiamond;
     /** Live central notes for one diamond. Absent when the official quote has no inverse. */
     private BigDecimal liveNotesPerDiamond;
-    /** Official diamonds for one 银行券. Null when no notes are outstanding. */
+    /** Official diamonds for one 央行券. Null when no notes are outstanding. */
     private BigDecimal officialDiamondsPerNote;
     /** Shop's book balance of a personal note, keyed by the note id. */
     private final Map<UUID, BigDecimal> shopPersonal = new LinkedHashMap<>();
@@ -449,7 +449,7 @@ public final class BankBooks {
     }
 
     /**
-     * Sells already-issued 银行券 that are not yet in any account. Liability stays put.
+     * Sells already-issued 央行券 that are not yet in any account. Liability stays put.
      * The metal paid is booked into the deposit vault, not into issuance reserves.
      */
     private TxResult buyIssuedNotes(UUID player, String metal, BigInteger notes) {
@@ -743,7 +743,7 @@ public final class BankBooks {
     }
 
     /**
-     * Reserve-backed notes still issuable. The central 银行券 counts free copper, converted at the
+     * Reserve-backed notes still issuable. The central 央行券 counts free copper, converted at the
      * live copper-per-diamond rate, plus free diamonds. Metal already locked is omitted, and notes
      * already issued against that lock are not subtracted a second time.
      */
@@ -967,7 +967,7 @@ public final class BankBooks {
     }
 
     /**
-     * 「1 银行券 = xxx 钻石」, the same gap applied to diamond-equivalent issuance reserves and notes outstanding.
+     * 「1 央行券 = xxx 钻石」, the same gap applied to diamond-equivalent issuance reserves and notes outstanding.
      * {@code L = 0} or a non-positive effective reserve clears the quote. Deposit vaults are not reserves.
      */
     private void recomputeOfficialNoteQuote() {
@@ -1101,20 +1101,20 @@ public final class BankBooks {
     public String statusLabel() {
         CurrencyDef note = primaryVirtual();
         if (note == null) {
-            return frozen ? "银行券兑付已暂停" : "银行券兑付正常";
+            return frozen ? "央行券兑付已暂停" : "央行券兑付正常";
         }
         if (abundance(note.id()) == null) {
-            return "无法兑付银行券";
+            return "无法兑付央行券";
         }
         if (frozen) {
-            return "银行券兑付已暂停";
+            return "央行券兑付已暂停";
         }
         BigDecimal tight = tightness(note.id());
         if (tight == null) {
-            return "银行券兑付正常";
+            return "央行券兑付正常";
         }
         if (tight.compareTo(new BigDecimal("0.05")) < 0) {
-            return "无法兑付银行券";
+            return "无法兑付央行券";
         }
         if (tight.compareTo(new BigDecimal("0.25")) < 0) {
             return "发行准备金不足";
@@ -1122,7 +1122,7 @@ public final class BankBooks {
         if (tight.compareTo(new BigDecimal("0.80")) < 0) {
             return "发行准备金紧张";
         }
-        return "银行券兑付正常";
+        return "央行券兑付正常";
     }
 
     /** English status for {@code /bank supply}. Displays keep {@link #statusLabel()}. */
@@ -1162,6 +1162,21 @@ public final class BankBooks {
             return def.id();
         }
         return en;
+    }
+
+    /** Changes display metadata only; all balances, instruments and references retain their IDs. */
+    public TxResult renameCentralCurrency(String name, boolean authorized) {
+        if (!authorized) return TxResult.fail("denied", "只有管理员可以更名央行券。");
+        String clean = name == null ? "" : name.trim();
+        if (!clean.matches("[\\p{L}\\p{N}·_-]{1,16}"))
+            return TxResult.fail("bad_name", "名称须为 1 至 16 个文字、数字、间隔点、下划线或连字符。");
+        CurrencyDef note = primaryVirtual();
+        if (note == null) return TxResult.fail("none", "未设置央行券。");
+        if (currencies.values().stream().anyMatch(c -> !c.id().equals(note.id()) && clean.equals(c.name()))
+                || personalNotes.values().stream().anyMatch(c -> clean.equals(c.name())))
+            return TxResult.fail("duplicate_name", "该名称已被其他货币使用。");
+        currencies.put(note.id(), note.withName(clean));
+        return TxResult.ok(BigInteger.ZERO, "央行券已更名为「" + clean + "」。");
     }
 
     public CurrencyDef primaryVirtual() {
@@ -2645,6 +2660,19 @@ public final class BankBooks {
         return diamonds.divide(active, FxMath.MC);
     }
 
+    /** Real collateral value per active coin, directly in central notes when already note-backed. */
+    public BigDecimal personalCentralPrice(PersonalNote note) {
+        if (note == null) return BigDecimal.ZERO;
+        BigDecimal active = personalActiveExact(note);
+        if (active.signum() <= 0) return BigDecimal.ZERO;
+        ClearingQuote quote = quotePersonalClearingInternal(note.id(), active, true);
+        if (!quote.success()) return BigDecimal.ZERO;
+        if ("note".equals(quote.currency())) return quote.amount().divide(active, FxMath.MC);
+        BigDecimal rate = unitsPer("note", quote.currency());
+        return rate == null || rate.signum() <= 0 ? BigDecimal.ZERO
+                : quote.amount().multiply(rate, FxMath.MC).divide(active, FxMath.MC);
+    }
+
     public BigDecimal personalDiamondPrice(PersonalNote note) {
         return personalBackingDiamondPrice(note);
     }
@@ -2672,8 +2700,8 @@ public final class BankBooks {
 
     /**
      * Deposited issuance reserve that prices and redeems this note.
-     * Copper and diamond use {@code personalReserves}. A 银行券 anchor uses the issuer's
-     * 银行券 reserve account. The displayed lock is not subtracted.
+     * Copper and diamond use {@code personalReserves}. A 央行券 anchor uses the issuer's
+     * 央行券 reserve account. The displayed lock is not subtracted.
      */
     public BigInteger effectiveBacking(PersonalNote note) {
         if (note == null) {
@@ -2758,7 +2786,7 @@ public final class BankBooks {
     public RegimePreview switchPersonalRegime(UUID issuer, NoteRegime regime, String anchor) {
         PersonalNote note = personalNote(issuer);
         if (note == null) {
-            return new RegimePreview(regime, anchor, false, false, "没有这张个人银行券。");
+            return new RegimePreview(regime, anchor, false, false, "没有这张个人币。");
         }
         if (anchor == null || anchor.isBlank()) {
             anchor = note.anchor();
@@ -2832,7 +2860,7 @@ public final class BankBooks {
                     + "，尚缺 ×" + CompactFormat.format(personalNeed.subtract(haveReserve)));
         }
         if (centralNeed.signum() > 0 && haveCentral.compareTo(centralNeed) < 0) {
-            gaps.add("央行准备金账户的银行券 ×" + CompactFormat.format(haveCentral)
+            gaps.add("央行准备金账户的央行券 ×" + CompactFormat.format(haveCentral)
                     + " 少于应存的 ×" + CompactFormat.format(centralNeed)
                     + "，尚缺 ×" + CompactFormat.format(centralNeed.subtract(haveCentral)));
         }
@@ -2915,7 +2943,7 @@ public final class BankBooks {
     }
 
     /**
-     * A 银行券 anchor is counted in the central-note reserve account, for every regime.
+     * A 央行券 anchor is counted in the central-note reserve account, for every regime.
      * Commodity anchors do not use that account.
      */
     private BigInteger centralNeed(NoteRegime regime, String anchor, BigInteger par, BigInteger circulation) {
@@ -2974,7 +3002,7 @@ public final class BankBooks {
     public static String anchorZh(String anchor) {
         return switch (anchor == null ? "" : anchor) {
             case "copper" -> "铜锭";
-            case "note" -> "银行券";
+            case "note" -> "央行券";
             case "diamond" -> "钻石";
             default -> anchor;
         };
@@ -3240,7 +3268,7 @@ public final class BankBooks {
 
     /**
      * Funds the reserve that {@link #issuePersonalNote} checks for this note.
-     * Copper and diamond anchors move that personal issuance reserve. A 银行券 anchor
+     * Copper and diamond anchors move that personal issuance reserve. A 央行券 anchor
      * still uses {@link #depositCentralReserve}.
      */
     public TxResult postIssuanceReserve(UUID issuer, BigInteger amount, boolean deposit) {
@@ -3257,7 +3285,7 @@ public final class BankBooks {
     /**
      * Moves the issuer's copper or diamond savings into the personal issuance reserve
      * {@link #issuePersonalNote} locks. The metal stays in the deposit vault. Central
-     * issuance reserves and the 银行券 reserve account are not touched.
+     * issuance reserves and the 央行券 reserve account are not touched.
      */
     public TxResult depositPersonalReserve(UUID issuer, BigInteger amount) {
         PersonalNote note = personalNote(issuer);
@@ -3457,7 +3485,7 @@ public final class BankBooks {
         BigDecimal payment = Money.of(total);
         if (maximum == null) {
             return TxResult.ok(amount, "买入「" + note.name() + "」×" + amount
-                    + "，当前应付银行券 " + Money.stored(payment) + "。");
+                    + "，当前应付央行券 " + Money.stored(payment) + "。");
         }
         if (payment.compareTo(maximum) > 0) {
             return TxResult.fail("offer_price_moved", "");
@@ -3473,7 +3501,7 @@ public final class BankBooks {
         note.addBuy(amount);
         retainTradeFee(note, seller, amount);
         return TxResult.ok(amount, "已买入「" + note.name() + "」×" + amount
-                + "，支付银行券 " + Money.stored(payment) + "。");
+                + "，支付央行券 " + Money.stored(payment) + "。");
     }
 
     private UUID listedPersonalCounterparty(UUID noteId, UUID buyer, BigInteger amount) {
@@ -4295,6 +4323,7 @@ public final class BankBooks {
     public String toJson() {
         recomputeOfficialNoteQuote();
         JsonObject root = new JsonObject();
+        root.addProperty("currencyNameVersion", 1);
         root.addProperty("version", SNAPSHOT_VERSION);
         root.addProperty("checkpoint", checkpoint);
         JsonObject marketReceiptsJson = new JsonObject();
@@ -4555,6 +4584,10 @@ public final class BankBooks {
         }
         for (CurrencyDef def : fallback.currencies()) {
             defs.putIfAbsent(def.id(), def);
+        }
+        CurrencyDef legacyNote = defs.get("note");
+        if (!root.has("currencyNameVersion") && legacyNote != null && ("银行券".equals(legacyNote.name()) || "中央银行券".equals(legacyNote.name()))) {
+            defs.put("note", legacyNote.withName("央行券"));
         }
         BankBooks books = new BankBooks(defs);
         books.checkpoint = root.has("checkpoint") ? root.get("checkpoint").getAsLong() : 0;

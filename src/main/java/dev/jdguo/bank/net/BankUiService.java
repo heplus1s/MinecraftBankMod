@@ -89,6 +89,12 @@ public final class BankUiService {
             case "reserve-withdraw" -> reserve(player, books, parts, false);
             case "central-reserve-deposit" -> centralReserve(player, books, parts, true);
             case "central-reserve-withdraw" -> centralReserve(player, books, parts, false);
+            case "admin-rename" -> {
+                String name = raw.trim().substring("admin-rename".length()).trim();
+                TxResult result = BankRuntime.transact(book -> book.renameCentralCurrency(name,
+                        session.admin && player.hasPermissionLevel(2)));
+                player.sendMessage(net.minecraft.text.Text.literal(result.message()), false);
+            }
             case "admin-freeze" -> freeze(player, books, session);
             case "admin-unbacked" -> adminCredit(player, books, session, parts, false);
             case "admin-retire" -> adminCredit(player, books, session, parts, true);
@@ -362,7 +368,7 @@ public final class BankUiService {
             return;
         }
         BankRuntime.save();
-        tell(player, BankPhrases.depositPaper(books, player.getUuid(), "银行券", "bank note", deposited, deposited.compareTo(amount) < 0));
+        tell(player, BankPhrases.depositPaper(books, player.getUuid(), "央行券", "bank note", deposited, deposited.compareTo(amount) < 0));
     }
 
     private static BigInteger heldCommodityOrNotes(ServerPlayerEntity player, dev.jdguo.bank.currency.CurrencyDef def) {
@@ -631,7 +637,7 @@ public final class BankUiService {
         }
     }
 
-    /** Always the 银行券 央行准备金账户, including when the note's issuance reserve is a commodity. */
+    /** Always the 央行券 央行准备金账户, including when the note's issuance reserve is a commodity. */
     private static void centralReserve(ServerPlayerEntity player, BankBooks books, String[] parts, boolean deposit) {
         if (parts.length < 2) {
             return;

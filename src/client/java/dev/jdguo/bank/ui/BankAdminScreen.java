@@ -15,7 +15,7 @@ import java.util.List;
  */
 public final class BankAdminScreen extends Screen {
     private static final String[] CURRENCY_IDS = {"copper", "diamond", "note"};
-    private static final String[] CURRENCY_NAMES = {"铜锭", "钻石", "银行券"};
+    private static final String[] CURRENCY_NAMES = {"铜锭", "钻石", "央行券"};
 
     private enum Extra {
         UNBACKED, FROM_DEPOSITS, TO_DEPOSITS, FULL, FREEZE
@@ -34,6 +34,34 @@ public final class BankAdminScreen extends Screen {
     private ButtonWidget freezeButton;
     private BankLayout.AdminBands bands;
     private boolean closing;
+    private boolean renamePage;
+    private TextFieldWidget renameField;
+
+    private String centralName() {
+        String name = BankSnapshot.text(data, "centralCurrencyName");
+        return name == null || name.isBlank() ? "央行券" : name;
+    }
+
+    private void initRename() {
+        amount = null;
+        int w = Math.max(80, Math.min(260, width - 24));
+        int x = (width - w) / 2;
+        int y = Math.max(42, height / 2 - 35);
+        renameField = new TextFieldWidget(textRenderer, x, y, w, 20, Text.literal("央行券名称"));
+        renameField.setMaxLength(16);
+        renameField.setText(centralName());
+        addDrawableChild(renameField);
+        setFocused(renameField);
+        renameField.setFocused(true);
+        addDrawableChild(ButtonWidget.builder(Text.literal("保存名称"), button -> {
+            BankUiClient.send("admin-rename " + renameField.getText().trim());
+        }).dimensions(x, y + 30, (w - 8) / 2, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("返回央行管理"), button -> {
+            renamePage = false;
+            renameField = null;
+            clearAndInit();
+        }).dimensions(x + (w + 8) / 2, y + 30, (w - 8) / 2, 20).build());
+    }
 
     public BankAdminScreen(JsonObject data) {
         super(Text.literal(BankChrome.MANAGEMENT));
@@ -52,6 +80,7 @@ public final class BankAdminScreen extends Screen {
 
     @Override
     protected void init() {
+        if (renamePage) { initRename(); return; }
         int rows = figureRows();
         bands = BankLayout.adminBands(this.width, this.height, rows);
         if (!known(payId)) {
@@ -59,7 +88,8 @@ public final class BankAdminScreen extends Screen {
         }
         for (int i = 0; i < CURRENCY_IDS.length; i++) {
             String id = CURRENCY_IDS[i];
-            String label = id.equals(payId) ? "▶ " + CURRENCY_NAMES[i] : CURRENCY_NAMES[i];
+            String shownName = "note".equals(id) ? centralName() : CURRENCY_NAMES[i];
+            String label = id.equals(payId) ? "▶ " + shownName : shownName;
             int width = Math.max(bands.listW(), textRenderer.getWidth(label) + 8);
             currencyButtons[i] = ButtonWidget.builder(Text.literal(label), button -> choose(id))
                     .dimensions(bands.listX(), bands.listY() + i * 14, width, 14)
@@ -90,6 +120,9 @@ public final class BankAdminScreen extends Screen {
         freezeButton = extraButton(Extra.FREEZE, BankBook.freezeButton(data));
         placeExtras();
 
+        addDrawableChild(ButtonWidget.builder(Text.literal("更名设置"), button -> {
+            remember(); renamePage = true; clearAndInit();
+        }).dimensions(BankLayout.EDGE, 4, 70, 16).build());
         int closeWidth = textRenderer.getWidth(BankChrome.CLOSE) + 12;
         addDrawableChild(ButtonWidget.builder(Text.literal(BankChrome.CLOSE), button -> close())
                 .dimensions(this.width - BankLayout.EDGE - closeWidth, 4, closeWidth, 16).build());
@@ -178,6 +211,7 @@ public final class BankAdminScreen extends Screen {
 
     @Override
     public void tick() {
+        if (renameField != null) renameField.tick();
         if (amount != null) {
             amount.tick();
         }
@@ -195,6 +229,13 @@ public final class BankAdminScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        if (renamePage) {
+            renderBackground(context);
+            context.drawCenteredTextWithShadow(textRenderer, "央行券更名设置", width / 2, 12, 0xFFE8D090);
+            context.drawCenteredTextWithShadow(textRenderer, "仅修改显示名称，不改变余额或币种标识", width / 2, 28, 0xFFAAAAAA);
+            super.render(context, mouseX, mouseY, delta);
+            return;
+        }
         syncLabels();
         renderBackground(context);
         drawFigures(context);
@@ -330,7 +371,7 @@ public final class BankAdminScreen extends Screen {
     private String currencyName() {
         for (int i = 0; i < CURRENCY_IDS.length; i++) {
             if (CURRENCY_IDS[i].equals(payId)) {
-                return CURRENCY_NAMES[i];
+                return "note".equals(payId) ? centralName() : CURRENCY_NAMES[i];
             }
         }
         return "铜锭";

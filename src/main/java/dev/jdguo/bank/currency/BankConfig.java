@@ -70,7 +70,7 @@ public final class BankConfig {
                 false, null, null, null, null));
         list.add(new CurrencyDef(
                 "note", CurrencyKind.VIRTUAL, "minecraft:paper",
-                "银行券", "bank note", "yellow",
+                "央行券", "bank note", "yellow",
                 new BigInteger("1000"), new BigInteger("1000"), alpha,
                 true, "diamond", BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE));
         return new BankConfig("diamond", new BigDecimal("0.02"), new BigDecimal("0.02"), BigDecimal.ZERO,

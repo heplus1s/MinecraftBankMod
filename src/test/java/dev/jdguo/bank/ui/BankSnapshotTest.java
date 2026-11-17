@@ -17,7 +17,7 @@ class BankSnapshotTest {
                   "admin": true,
                   "currencies": [
                     {"id": "copper", "name": "铜锭", "balance": "1,000"},
-                    {"id": "note", "name": "银行券", "balance": "4"}
+                    {"id": "note", "name": "央行券", "balance": "4"}
                   ],
                   "notes": [
                     {"id": "abc", "name": "张三", "balance": "0"},
@@ -27,8 +27,8 @@ class BankSnapshotTest {
                     {"name": "钻石", "savings": "10", "reserve": "1000", "vault": "8"}
                   ],
                   "institutions": [
-                    {"name": "商店经营账户", "detail": "银行券  3"},
-                    {"name": "土地出让账户", "detail": "银行券  1"}
+                    {"name": "商店经营账户", "detail": "央行券  3"},
+                    {"name": "土地出让账户", "detail": "央行券  1"}
                   ],
                   "personal": "张三",
                   "regime": "FLOAT"

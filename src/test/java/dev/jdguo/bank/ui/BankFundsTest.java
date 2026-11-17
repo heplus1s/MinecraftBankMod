@@ -33,6 +33,6 @@ class BankFundsTest {
         String exchange = BankFunds.physicalExchangeRefusal(data, "copper", "铜锭", "10");
         assertTrue(exchange.contains("要付出 10 铜锭"));
         assertTrue(exchange.contains("不能完成这笔兑换"));
-        assertNull(BankFunds.physicalExchangeRefusal(data, "note", "银行券", "10"));
+        assertNull(BankFunds.physicalExchangeRefusal(data, "note", "央行券", "10"));
     }
 }
