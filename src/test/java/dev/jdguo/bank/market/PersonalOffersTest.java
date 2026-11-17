@@ -22,6 +22,7 @@ class PersonalOffersTest {
         BankBooks books = fixture(BigInteger.valueOf(8));
         PersonalNote note = books.personalNote(issuer);
         BigInteger four = BigInteger.valueOf(4);
+        assertTrue(books.setPersonalAutoListing(issuer, "泉", false).success());
         assertEquals("offer_empty", books.buyListedPersonal(buyer, "泉", ONE, BigDecimal.TEN).code());
         assertTrue(books.transferPersonal(issuer, holder, "泉", four).success());
         assertTrue(books.listPersonal(holder, "泉", BigInteger.TWO).success());

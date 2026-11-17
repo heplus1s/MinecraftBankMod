@@ -36,6 +36,8 @@ public final class PersonalNote {
     private long interestDay = -1L;
     /** Issuer-controlled halt of this series only. Absent on older saves, which stay open. */
     private boolean redemptionPaused;
+    /** Issuer inventory is offered dynamically, without locking it. Defaults on for legacy saves. */
+    private boolean autoListing = true;
 
     /** Floating note. {@code copperPar} chooses whether par is copper or diamonds. */
     public PersonalNote(UUID id, UUID issuer, String name, boolean copperPar, BigInteger par) {
@@ -75,6 +77,8 @@ public final class PersonalNote {
     public BigInteger interestPool() { return interestPool; }
     public long interestDay() { return interestDay; }
     public boolean redemptionPaused() { return redemptionPaused; }
+    public boolean autoListing() { return autoListing; }
+    public void setAutoListing(boolean enabled) { autoListing = enabled; }
 
     public void addDrawn(BigInteger amount) {
         if (amount != null && amount.signum() > 0) {

@@ -20,7 +20,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: integrated-mod-jars
-          path: build/libs/bankmod-1.0.5.jar
+          path: build/libs/bankmod-1.0.6.jar
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build
@@ -38,8 +38,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if gh release view v1.0.5 >/dev/null 2>&1; then
-            echo "Release v1.0.5 already exists; refusing to replace it."
+          if gh release view v1.0.6 >/dev/null 2>&1; then
+            echo "Release v1.0.6 already exists; refusing to replace it."
             exit 1
           fi
-          gh release create v1.0.5 release-jars/bankmod-1.0.5.jar --target "$GITHUB_SHA" --title "v1.0.5 内置客户端界面" --notes-file RELEASE_NOTES_1.0.5.md
+          gh release create v1.0.6 release-jars/bankmod-1.0.6.jar --target "$GITHUB_SHA" --title "v1.0.6 内置客户端界面" --notes-file RELEASE_NOTES_1.0.6.md

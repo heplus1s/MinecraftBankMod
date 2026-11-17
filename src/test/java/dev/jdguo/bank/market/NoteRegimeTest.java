@@ -94,6 +94,8 @@ class NoteRegimeTest {
         assertTrue(books.buyPersonalNote(buyer, "Bb", BigInteger.TEN).success());
         assertEquals(0, BigDecimal.ONE.compareTo(books.personalDiamondPrice(hard)));
 
+        // Secondary holders must explicitly offer inventory before it can be taken.
+        assertTrue(books.listPersonal(buyer, "Bb", BigInteger.ONE).success());
         SwapTrade swap = books.swapPersonalNotes(issuerA, "Aa", "Bb", BigInteger.ONE);
         assertTrue(swap.success(), swap.code());
         assertEquals(BigInteger.ONE, swap.paidNotes());

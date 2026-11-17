@@ -211,6 +211,20 @@ public final class BankTerminalScreen extends Screen {
         return "true".equals(BankSnapshot.text(data, "externalPersonalMarket"));
     }
 
+    private void openPersonalMarket() {
+        try {
+            Object opened = Class.forName("dev.jdguo.market.ui.MarketUiClient")
+                    .getMethod("requestPersonalMarket").invoke(null);
+            if (!Boolean.TRUE.equals(opened)) {
+                notice = "市场连接尚未就绪，请稍后重试。";
+                if (client != null) client.execute(this::clearAndInit);
+            }
+        } catch (ReflectiveOperationException | LinkageError unavailable) {
+            notice = "请安装市场模组 1.0.6 或更新版本以打开个人币交易界面。";
+            if (client != null) client.execute(this::clearAndInit);
+        }
+    }
+
     private void openPersonalCommand(String command) {
         if (client != null) {
             client.setScreen(new ChatScreen(command));
@@ -236,7 +250,7 @@ public final class BankTerminalScreen extends Screen {
         marketBalanceY = stack.secondY() + stack.secondH() + 4;
         if (external) {
             int[] columns = twoColumns();
-            addDrawableChild(textButton("前往市场", columns[0], stack.firstY(), () -> openPersonalCommand("/market note")));
+            addDrawableChild(textButton("前往市场", columns[0], stack.firstY(), this::openPersonalMarket));
             ButtonWidget transfer = addDrawableChild(textButton("转给玩家", columns[1], stack.firstY(),
                     () -> openPersonalCommand("/bank note transfer " + (noteName.isBlank() ? "" : "\"" + noteName + "\" "))));
             transfer.active = !notes.isEmpty();
@@ -316,6 +330,20 @@ public final class BankTerminalScreen extends Screen {
         String regimeName = BankSnapshot.regimeName(data);
         y = paneText(pane, "当前发行制度：" + (regimeName == null ? BankBook.MISSING : regimeName), left, y, textWidth, 0xFFE6E6E6);
         JsonObject own = BankSnapshot.ownNote(data);
+        boolean autoSale = "true".equals(BankSnapshot.text(own, "autoListing"));
+        AutoSaleSwitch saleSwitch = new AutoSaleSwitch(left, y + 4, right - left, autoSale, () -> {
+            String id = BankSnapshot.text(own, "id");
+            if (id != null) send("note-auto-listing " + id + (autoSale ? " off" : " on"));
+        });
+        saleSwitch.active = "true".equals(BankSnapshot.text(own, "autoListingAvailable"))
+                && !"true".equals(BankSnapshot.text(own, "pendingSettlement"));
+        pane.addControl(saleSwitch, left, y + 4);
+        y += 30;
+        y = paneText(pane, "开启则发行者余额全部待售；关闭撤下自己的卖单，不关闭市场条目。",
+                left, y, textWidth, 0xFFAAAAAA);
+        String offered = BankSnapshot.text(own, "offered");
+        y = paneText(pane, (autoSale ? "自动待售数量：" : "手动挂牌数量：") + (offered == null ? BankBook.MISSING : offered),
+                left, y, textWidth, 0xFFE8D090);
         if ("true".equals(BankSnapshot.text(own, "canRename"))) {
             y = paneButtons(pane, left, right, y + 4, List.of("修改货币名称"), List.of(() -> open(Page.ISSUANCE_RENAME)));
             y += 6;
