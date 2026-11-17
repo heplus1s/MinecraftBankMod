@@ -10,6 +10,14 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BankRatesTest {
+    @Test void customCentralNameIsUsedInBothQuoteDirections() {
+        JsonObject data = JsonParser.parseString("{\"currencies\":[{\"id\":\"note\",\"name\":\"华夏券\",\"unitsPerDiamond\":\"2\"}],\"notes\":[{\"name\":\"泉\",\"price\":\"3\"}]}").getAsJsonObject();
+        assertEquals("1 华夏券 = 0.500000 钻石", BankRates.bankNoteQuote(data));
+        assertTrue(BankRates.column(data).contains("1 【泉】 = 3.000000 华夏券"));
+        data.addProperty("centralCurrencyName", "新券");
+        assertEquals("新券", BankRates.centralName(data));
+    }
+
     @Test
     void personalQuotesKeepSixDigitsAndShowZeroAsZero() {
         JsonObject data = JsonParser.parseString("""

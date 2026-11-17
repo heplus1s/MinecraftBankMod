@@ -1,10 +1,10 @@
 import json,zipfile,pathlib
 root=pathlib.Path(__file__).resolve().parents[1]
 meta=json.loads((root/'src/main/resources/fabric.mod.json').read_text())
-jar=root/('build/libs/'+meta['id']+'-1.0.3.jar')
+jar=root/('build/libs/'+meta['id']+'-1.0.4.jar')
 with zipfile.ZipFile(jar) as z:
  m=json.loads(z.read('fabric.mod.json'))
- assert m['version']=='1.0.3'
+ assert m['version']=='1.0.4'
  assert m['environment']=='*'
  assert not m.get('jars'), 'Do not nest standalone UI artifacts'
  for entry in m['entrypoints']['main']+m['entrypoints']['client']:
