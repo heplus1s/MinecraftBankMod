@@ -122,9 +122,7 @@ public final class BankMod implements ModInitializer {
             }
             for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
                 if (player.currentScreenHandler instanceof BankScreenHandler handler) {
-                    if (dev.jdguo.bank.net.BankUiNetwork.wantsUi(player)) {
-                        player.closeHandledScreen();
-                    } else {
+                    if (!dev.jdguo.bank.net.BankUiNetwork.upgradeChest(player)) {
                         handler.tick();
                     }
                 }
@@ -148,6 +146,14 @@ public final class BankMod implements ModInitializer {
             return ActionResult.PASS;
         }
         OutletPoint outlet = BankRuntime.books().outletByMarker(entity.getUuid());
+        // Display parts ride the registered interaction marker. Never open a nearby
+        // outlet merely because a random entity has a copied tag.
+        if (outlet == null && entity.hasVehicle()) {
+            Entity root = entity.getRootVehicle();
+            if (root.getCommandTags().contains(DisplayService.MARKER_TAG)) {
+                outlet = BankRuntime.books().outletByMarker(root.getUuid());
+            }
+        }
         if (outlet == null) {
             return ActionResult.PASS;
         }

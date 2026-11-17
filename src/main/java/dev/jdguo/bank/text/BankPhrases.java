@@ -347,7 +347,7 @@ public final class BankPhrases {
     }
 
     public static Spoken badOutletName() {
-        return line(Tone.RED, "网点名字只能是 1 到 32 个 ASCII 字符：字母或数字开头，后面只能是字母、数字、下划线或连字符。", "Outlet names must be 1-32 characters: a letter or digit, then letters, digits, underscore, or hyphen.");
+        return line(Tone.RED, "网点名字支持 1 到 32 个中文、字母、数字、空格、下划线或连字符。", "Outlet names allow 1-32 Unicode letters, digits, spaces, underscores or hyphens.");
     }
 
     public static Spoken noSuchOutlet() {

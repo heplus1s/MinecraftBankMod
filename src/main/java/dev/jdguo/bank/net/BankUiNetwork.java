@@ -23,8 +23,11 @@ public final class BankUiNetwork {
     public static final Identifier HELLO = new Identifier("bankmod", "hello");
     public static final Identifier ACTION = new Identifier("bankmod", "action");
     public static final Identifier SYNC = new Identifier("bankmod", "sync");
+    public static final Identifier CLOSE = new Identifier("bankmod", "close_ui");
+    public static final Identifier SYNC_CHUNK = new Identifier("bankmod", "sync_chunk");
 
     private static final Map<UUID, Integer> versions = new ConcurrentHashMap<>();
+    private static final java.util.Set<UUID> chestFallback = ConcurrentHashMap.newKeySet();
     private static final Map<UUID, Session> sessions = new ConcurrentHashMap<>();
 
     private BankUiNetwork() {}
@@ -34,33 +37,37 @@ public final class BankUiNetwork {
             if (BankRuntime.state == null || server.getTicks() % 20 != 0) return;
             long checkpoint = BankRuntime.books().checkpoint();
             for (var entry : sessions.entrySet()) {
-                if (entry.getValue().lastCheckpoint == checkpoint) continue;
                 ServerPlayerEntity online = server.getPlayerManager().getPlayer(entry.getKey());
-                if (online != null && wantsUi(online)) sync(online);
+                if (online == null) continue;
+                // Permission changes need no ledger checkpoint; revoke idle sessions too.
+                Session active = session(online);
+                if (active == null || active.lastCheckpoint == checkpoint) continue;
+                if (wantsUi(online)) sync(online);
             }
         });
         ServerPlayNetworking.registerGlobalReceiver(HELLO, (server, player, handler, buf, response) -> {
             final int version;
             try { version = buf.readVarInt(); } catch (RuntimeException invalid) { return; }
             server.execute(() -> {
+                if (server.getPlayerManager().getPlayer(player.getUuid()) != player || player.networkHandler != handler) return;
+                if (chestFallback.contains(player.getUuid())) return;
                 versions.put(player.getUuid(), version);
                 if (version != PROTOCOL) sessions.remove(player.getUuid());
-                if (version == PROTOCOL && player.currentScreenHandler instanceof dev.jdguo.bank.gui.BankScreenHandler chest) {
-                    String outlet = chest.outletName();
-                    boolean admin = chest.remoteAdmin();
-                    player.closeHandledScreen();
-                    open(player, outlet, admin);
-                }
+                upgradeChest(player);
             });
         });
         ServerPlayNetworking.registerGlobalReceiver(ACTION, (server, player, handler, buf, response) -> {
             final String action;
             try { action = buf.readString(200); } catch (RuntimeException invalid) { return; }
             server.execute(() -> {
+                if (server.getPlayerManager().getPlayer(player.getUuid()) != player || player.networkHandler != handler) return;
                 if (wantsUi(player)) BankUiService.handle(player, action);
             });
         });
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+            ServerPlayerEntity current = server.getPlayerManager().getPlayer(handler.player.getUuid());
+            if (current != null && current != handler.player) return;
+            chestFallback.remove(handler.player.getUuid());
             versions.remove(handler.player.getUuid());
             sessions.remove(handler.player.getUuid());
         });
@@ -71,14 +78,24 @@ public final class BankUiNetwork {
         return version != null && version == PROTOCOL && ServerPlayNetworking.canSend(player, SYNC);
     }
 
+    /** Upgrade both /bank admin and a kiosk's management tab without losing context. */
+    public static boolean upgradeChest(ServerPlayerEntity player) {
+        if (!wantsUi(player) || !(player.currentScreenHandler instanceof dev.jdguo.bank.gui.BankScreenHandler chest)) return false;
+        String outlet = chest.outletName();
+        boolean admin = BankUiAccess.management(chest.remoteAdmin(), chest.managementPage(), player.hasPermissionLevel(2));
+        player.closeHandledScreen();
+        open(player, outlet, admin);
+        return true;
+    }
+
     public static void open(ServerPlayerEntity player, String outlet, boolean admin) {
         dev.jdguo.bank.instruments.NotePaper.refreshPersonalLabel(player.getMainHandStack(), BankRuntime.books());
-        sessions.put(player.getUuid(), new Session(outlet, admin));
+        sessions.put(player.getUuid(), new Session(outlet, admin && player.hasPermissionLevel(2)));
         sync(player);
     }
 
     public static void sync(ServerPlayerEntity player) {
-        Session session = sessions.get(player.getUuid());
+        Session session = session(player);
         if (session == null || !ServerPlayNetworking.canSend(player, SYNC)) {
             return;
         }
@@ -97,14 +114,58 @@ public final class BankUiNetwork {
         CentralPolicyUi.addPreview(payload, session);
         CentralAdjustmentUi.addPreview(payload, session);
         if (session.admin && session.fundingPreview != null) payload.add("fundingPreview", session.fundingPreview);
-        PacketByteBuf buf = PacketByteBufs.create();
-        buf.writeString(payload.toString(), 32767);
-        ServerPlayNetworking.send(player, SYNC, buf);
+        String encoded = payload.toString();
+        if (encoded.length() > 32767) {
+            if (encoded.length() > UiSnapshotChunks.MAX_CHARS || !ServerPlayNetworking.canSend(player, SYNC_CHUNK)) {
+                fallbackToChest(player, session);
+                return;
+            }
+            var chunks = UiSnapshotChunks.split(encoded);
+            int transfer = ++session.snapshotTransfer;
+            for (int i = 0; i < chunks.size(); i++) {
+                PacketByteBuf buf = PacketByteBufs.create();
+                buf.writeVarInt(transfer);
+                buf.writeVarInt(i);
+                buf.writeVarInt(chunks.size());
+                buf.writeString(chunks.get(i), UiSnapshotChunks.CHUNK_CHARS);
+                ServerPlayNetworking.send(player, SYNC_CHUNK, buf);
+            }
+        } else {
+            PacketByteBuf buf = PacketByteBufs.create();
+            buf.writeString(encoded, 32767);
+            ServerPlayNetworking.send(player, SYNC, buf);
+        }
         session.lastCheckpoint = books.checkpoint();
     }
 
+    private static void fallbackToChest(ServerPlayerEntity player, Session session) {
+        chestFallback.add(player.getUuid());
+        versions.remove(player.getUuid());
+        sessions.remove(player.getUuid());
+        BankRuntime.LOGGER.warn("Using vanilla bank menu for {}: UI snapshot exceeds negotiated transport limit", player.getUuid());
+        player.sendMessage(net.minecraft.text.Text.literal("银行数据超出当前图形界面传输容量，已切换箱子界面；更新客户端后可重新连接。"), false);
+        dev.jdguo.bank.gui.BankMenus.openChest(player, session.outlet, session.admin,
+                session.admin ? dev.jdguo.bank.gui.BankScreenHandler.Page.MANAGEMENT
+                        : dev.jdguo.bank.gui.BankScreenHandler.Page.SAVINGS);
+    }
+
     static Session session(ServerPlayerEntity player) {
-        return sessions.get(player.getUuid());
+        Session active = sessions.get(player.getUuid());
+        if (active != null && !BankUiAccess.sessionAllowed(active.admin, player.hasPermissionLevel(2))) {
+            sessions.remove(player.getUuid());
+            String reason = "银行管理权限已撤销，请重新打开普通银行界面。";
+            if (ServerPlayNetworking.canSend(player, CLOSE)) {
+                PacketByteBuf buf = PacketByteBufs.create();
+                buf.writeString(reason, 200);
+                ServerPlayNetworking.send(player, CLOSE, buf);
+            } else {
+                // Legacy clients still receive the vanilla close-screen packet.
+                player.closeHandledScreen();
+                player.sendMessage(net.minecraft.text.Text.literal(reason), false);
+            }
+            return null;
+        }
+        return active;
     }
 
     static void forget(ServerPlayerEntity player) {
@@ -130,6 +191,7 @@ public final class BankUiNetwork {
         String exchangeMessage = "";
         long exchangeExpires;
         long lastCheckpoint = -1;
+        int snapshotTransfer;
 
         Session(String outlet, boolean admin) {
             this.outlet = outlet;

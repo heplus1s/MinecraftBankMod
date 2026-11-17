@@ -111,6 +111,10 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         return remoteAdmin;
     }
 
+    public boolean managementPage() {
+        return page == Page.MANAGEMENT;
+    }
+
     public void tick() {
         int now = owner.getServer().getTicks();
         if (now - paintTick >= 20) {
@@ -120,9 +124,8 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
 
     @Override
     public boolean canUse(PlayerEntity player) {
-        if (player instanceof ServerPlayerEntity serverPlayer && dev.jdguo.bank.net.BankUiNetwork.wantsUi(serverPlayer)) {
-            return false;
-        }
+        // Negotiation alone must not close this menu. BankUiNetwork atomically
+        // replaces it only once the graphical screen can actually be sent.
         if (remoteAdmin && player.hasPermissionLevel(2)) {
             return true;
         }

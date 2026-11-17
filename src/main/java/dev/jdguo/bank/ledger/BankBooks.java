@@ -5168,6 +5168,7 @@ public final class BankBooks {
             o.addProperty("lift", outlet.lift());
             o.addProperty("hologram", outlet.hologram());
             o.add("hologramId", outlet.hologramId() == null ? JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(outlet.hologramId().toString()));
+            o.addProperty("quarterTurns", outlet.quarterTurns());
             o.add("markerId", outlet.markerId() == null ? JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(outlet.markerId().toString()));
             outletJson.add(o);
         }
@@ -5488,6 +5489,7 @@ public final class BankBooks {
                         !o.has("hologram") || o.get("hologram").getAsBoolean(),
                         nullableUuid(o, "hologramId"),
                         nullableUuid(o, "markerId")));
+                books.outlets.get(books.outlets.size() - 1).setQuarterTurns(o.has("quarterTurns") ? o.get("quarterTurns").getAsInt() : 0);
             }
         }
         if (root.has("prefs")) {
