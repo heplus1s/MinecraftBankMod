@@ -136,7 +136,7 @@ public final class BankSnapshot {
 
     public static boolean isHard(MoneyRow row) {
         return "copper".equals(row.id()) || "diamond".equals(row.id()) || "note".equals(row.id())
-                || "铜锭".equals(row.name()) || "钻石".equals(row.name()) || "银行券".equals(row.name());
+                || "铜锭".equals(row.name()) || "钻石".equals(row.name()) || "央行券".equals(row.name());
     }
 
     public static String balancePhrase(String amount) {

@@ -49,6 +49,11 @@ public final class CurrencyDef {
                 null, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE);
     }
 
+    public CurrencyDef withName(String name) {
+        return new CurrencyDef(id, kind, itemId, name, nameEn, color, initialReserve, initialLiability,
+                alphaPermille, issuable, backing, parPerBacking, haircut, minReserveRatio);
+    }
+
     public String id() { return id; }
     public CurrencyKind kind() { return kind; }
     public String itemId() { return itemId; }

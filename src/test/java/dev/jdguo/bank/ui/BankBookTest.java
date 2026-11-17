@@ -22,7 +22,7 @@ class BankBookTest {
         List<String> preface = BankBook.preface(data);
 
         assertTrue(preface.contains("兑付状态：兑付正常"));
-        assertTrue(preface.contains("银行券兑换铜锭或钻石：正常"));
+        assertTrue(preface.contains("央行券兑换铜锭或钻石：正常"));
         assertTrue(preface.contains("流通中现金（M0）：0"));
         assertTrue(preface.contains("狭义货币（M1）：0"));
         assertTrue(preface.contains("广义货币（M2）：0"));
@@ -46,10 +46,10 @@ class BankBookTest {
         assertTrue(ledger.contains("铜锭央行储蓄：4"));
         assertTrue(ledger.contains("钻石准备金：1000"));
         assertTrue(ledger.contains("钻石央行储蓄：20"));
-        assertTrue(ledger.contains("银行券发行准备金：1000000"));
-        assertTrue(ledger.contains("银行券央行储蓄：3"));
+        assertTrue(ledger.contains("央行券发行准备金：1000000"));
+        assertTrue(ledger.contains("央行券央行储蓄：3"));
         assertTrue(ledger.contains("铜锭存款保管：9"));
-        assertFalse(String.join("\n", ledger).contains("银行券存款保管"));
+        assertFalse(String.join("\n", ledger).contains("央行券存款保管"));
         assertTrue(ledger.contains("流通中现金（M0）：0"));
         assertTrue(BankBook.actionNotes().contains(BankBook.BACKED_EXPLANATION));
         assertFalse(String.join("\n", BankBook.actionNotes()).contains("柜台还没有这个动作"));
@@ -74,7 +74,7 @@ class BankBookTest {
         institutions.add(shop);
         data.add("institutions", institutions);
 
-        assertEquals("银行券兑换铜锭或钻石：已暂停", BankBook.redemption(data));
+        assertEquals("央行券兑换铜锭或钻石：已暂停", BankBook.redemption(data));
         assertEquals(BankBook.RESUME, BankBook.freezeButton(data));
         assertTrue(BankBook.preface(data).contains("兑付能力：0.2500"));
         assertTrue(BankBook.preface(data).contains("手续费：2%"));
@@ -84,7 +84,7 @@ class BankBookTest {
                 "存款保管：暂无数据",
                 "发行额：5000",
                 "已锁定准备金：10",
-                "按准备金尚可发行：990"), BankBook.book(data, "note", "银行券"));
+                "按准备金尚可发行：990"), BankBook.book(data, "note", "央行券"));
         assertEquals(List.of("商店经营账户：余额 40"), BankBook.institutions(data));
         data.addProperty("copperBookSavings", "10.5");
         data.addProperty("copperPhysicalSavings", "10");
@@ -105,8 +105,8 @@ class BankBookTest {
         assertTrue(fromHardBooks.contains("铜锭准备金：1000000"));
         assertEquals("铜锭储蓄账面总值：20.5000", BankBook.metalLines(data, "copper", "铜锭", "copperReserve").get(0));
         assertEquals("铜锭实际硬通货储蓄总值：18", BankBook.metalLines(data, "copper", "铜锭", "copperReserve").get(1));
-        assertTrue(BankBook.noteLines(data).contains("银行券发行准备金：1000000"));
-        assertTrue(BankBook.noteLines(data).contains("银行券发行额：5000"));
+        assertTrue(BankBook.noteLines(data).contains("央行券发行准备金：1000000"));
+        assertTrue(BankBook.noteLines(data).contains("央行券发行额：5000"));
         assertFalse(String.join("\n", BankBook.metalLines(data, "copper", "铜锭", "copperReserve")).contains("发行额"));
     }
 
@@ -117,7 +117,7 @@ class BankBookTest {
         JsonArray central = new JsonArray();
         central.add(centralRow("copper", "铜锭", "1000000", "4", "9"));
         central.add(centralRow("diamond", "钻石", "1000", "20", "7"));
-        central.add(centralRow("note", "银行券", "1000000", "3", null));
+        central.add(centralRow("note", "央行券", "1000000", "3", null));
         data.add("central", central);
         return data;
     }

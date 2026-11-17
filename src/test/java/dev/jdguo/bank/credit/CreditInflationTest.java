@@ -40,7 +40,7 @@ class CreditInflationTest {
         assertNull(books.unitsPer("note", "diamond"));
         assertEquals(0, new BigDecimal(books.centralM1()).compareTo(books.centralM2()));
         assertTrue(books.tightness("note").compareTo(new BigDecimal("0.05")) < 0);
-        assertEquals("无法兑付银行券", books.statusLabel());
+        assertEquals("无法兑付央行券", books.statusLabel());
         books.checkInvariants();
     }
 

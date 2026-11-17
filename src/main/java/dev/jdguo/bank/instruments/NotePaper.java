@@ -29,10 +29,10 @@ public final class NotePaper {
         NbtCompound root = new NbtCompound();
         NbtCompound display = new NbtCompound();
         boolean personal = note.personalNote() != null;
-        String name = personal ? "个人银行券「" + label + "」" : "银行券";
+        String name = personal ? "个人币「" + label + "」" : (label == null || label.isBlank() ? "央行券" : label);
         display.putString("Name", text(name, null));
         NbtList lore = new NbtList();
-        lore.add(NbtString.of(text(personal ? "个人银行券" : "中央银行", "gray")));
+        lore.add(NbtString.of(text(personal ? "个人币" : "中央银行", "gray")));
         lore.add(NbtString.of(text(personal ? "Personal note \"" + label + "\"" : "Central bank note", "dark_gray")));
         lore.add(NbtString.of(text("面额 " + note.face().toString(), "white")));
         lore.add(NbtString.of(text("同面额可叠放，复制无效", "dark_gray")));
@@ -94,17 +94,25 @@ public final class NotePaper {
 
     static boolean refreshPersonalSignature(NbtCompound root, dev.jdguo.bank.ledger.BankBooks books) {
         PresentedNote paper = readSignature(root);
-        if (paper == null || paper.central() || books == null) return false;
-        var note = books.personalNoteById(paper.personalNote());
-        if (note == null) return false;
+        if (paper == null || books == null) return false;
+        String name;
+        if (paper.central()) {
+            var def = books.currency(paper.currency());
+            if (def == null) return false;
+            name = def.name();
+        } else {
+            var note = books.personalNoteById(paper.personalNote());
+            if (note == null) return false;
+            name = note.name();
+        }
         NbtCompound body = root.getCompound(TAG);
-        if (note.name().equals(body.getString("label"))) return false;
-        NbtCompound updated = signature(paper, note.name()).getCompound("display");
+        NbtCompound updated = signature(paper, name).getCompound("display");
+        if (updated.getString("Name").equals(root.getCompound("display").getString("Name"))) return false;
         NbtCompound display = root.getCompound("display");
         display.putString("Name", updated.getString("Name"));
         display.put("Lore", updated.get("Lore").copy());
         root.put("display", display);
-        body.putString("label", note.name());
+        if (!paper.central()) body.putString("label", name);
         return true;
     }
 

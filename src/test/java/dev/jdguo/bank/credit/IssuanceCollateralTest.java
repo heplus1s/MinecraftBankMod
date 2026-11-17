@@ -74,7 +74,7 @@ class IssuanceCollateralTest {
                         "钻石", "Diamond", "aqua", new BigInteger("100000"), new BigInteger("100000"), alpha,
                         false, null, null, null, null),
                 new CurrencyDef("note", CurrencyKind.VIRTUAL, "minecraft:paper",
-                        "银行券", "bank note", "yellow", new BigInteger("1000"), new BigInteger("1000"), alpha,
+                        "央行券", "bank note", "yellow", new BigInteger("1000"), new BigInteger("1000"), alpha,
                         true, "diamond", BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE));
         return BankBooks.create(new BankConfig("diamond", new BigDecimal("0.02"), new BigDecimal("0.02"),
                 BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null, null, 4.0,

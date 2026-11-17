@@ -54,7 +54,7 @@ class BankUiSnapshotTest {
         o.getAsJsonArray("currencies").forEach(row -> names.add(row.getAsJsonObject().get("name").getAsString()));
         assertTrue(names.contains("钻石"));
         assertTrue(names.contains("铜锭"));
-        assertTrue(names.contains("银行券"));
+        assertTrue(names.contains("央行券"));
         assertFalse(names.contains("diamond"));
         assertFalse(names.contains("copper"));
         JsonObject diamond = null;
@@ -119,7 +119,7 @@ class BankUiSnapshotTest {
         assertTrue(diamond.has("liability"));
         assertTrue(diamond.has("locked"));
 
-        assertEquals("银行券", note.get("name").getAsString());
+        assertEquals("央行券", note.get("name").getAsString());
         assertEquals(CompactFormat.format(books.supply("note").reserve()), note.get("reserve").getAsString());
         assertEquals(CompactFormat.format(books.supply("note").liability()), note.get("liability").getAsString());
         assertEquals(CompactFormat.format(books.supply("note").locked()), note.get("locked").getAsString());
@@ -131,9 +131,9 @@ class BankUiSnapshotTest {
     }
 
     /**
-     * {@code price} is central 银行券 for one personal note: {@code personalDiamondPrice}
-     * times the live 银行券-per-diamond quote. At the opening peg that is 1, so one personal
-     * note priced at one diamond is one 银行券. {@code diamondPrice} is the diamond quote alone.
+     * {@code price} is central 央行券 for one personal note: {@code personalDiamondPrice}
+     * times the live 央行券-per-diamond quote. At the opening peg that is 1, so one personal
+     * note priced at one diamond is one 央行券. {@code diamondPrice} is the diamond quote alone.
      */
     @Test
     void personalNotePriceIsCentralBankNotesAndAMissingQuoteIsOmitted() {

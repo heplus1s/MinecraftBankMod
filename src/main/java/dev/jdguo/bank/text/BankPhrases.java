@@ -74,7 +74,7 @@ public final class BankPhrases {
     public static Spoken withdrawPersonal(BankBooks books, UUID player, String name, BigInteger amount, BigInteger left) {
         String n = CompactFormat.format(amount);
         return line(Tone.GOLD,
-                "取出 个人银行券「" + name + "」×" + n + " 成功 ｜账户剩余 " + CompactFormat.format(left) + balancesZh(books, player),
+                "取出 个人币「" + name + "」×" + n + " 成功 ｜账户剩余 " + CompactFormat.format(left) + balancesZh(books, player),
                 "Withdrew personal note \"" + name + "\" ×" + n + " | " + CompactFormat.format(left) + " still on the account" + balancesEn(books, player));
     }
 
@@ -138,17 +138,17 @@ public final class BankPhrases {
             case "insufficient_reserves" -> line(Tone.RED, "银行准备金不足。", "The vault doesn't have enough reserves.");
             case "unknown_currency" -> line(Tone.RED, "没有这种货币。", "No such currency.");
             case "bad_amount" -> line(Tone.RED, "金额无效。", "That amount isn't valid.");
-            case "not_commodity" -> line(Tone.RED, "这里只收铜锭、钻石，或纸质银行券。", "This slot only takes copper ingots, diamonds, or bank-note paper.");
-            case "not_note" -> line(Tone.RED, "手上要拿着纸质银行券。", "Hold bank-note paper in your main hand.");
-            case "bankrupt" -> line(Tone.RED, "这张个人银行券已经破产，纸还在，但不能入账。", "This personal note is bankrupt. The paper stays, but it cannot be deposited.");
-            case "note_spent" -> line(Tone.RED, "这些银行券已经入过账，或是复制件，不能再存。", "These bank notes were already deposited, or they are copies.");
+            case "not_commodity" -> line(Tone.RED, "这里只收铜锭、钻石，或纸质央行券。", "This slot only takes copper ingots, diamonds, or bank-note paper.");
+            case "not_note" -> line(Tone.RED, "手上要拿着纸质央行券。", "Hold bank-note paper in your main hand.");
+            case "bankrupt" -> line(Tone.RED, "这张个人币已经破产，纸还在，但不能入账。", "This personal note is bankrupt. The paper stays, but it cannot be deposited.");
+            case "note_spent" -> line(Tone.RED, "这些央行券已经入过账，或是复制件，不能再存。", "These bank notes were already deposited, or they are copies.");
             case "note_tampered" -> line(Tone.RED, "这张纸和账对不上。", "This paper doesn't match the books.");
             case "too_many_items" -> line(Tone.RED, "一次取太多了。大额请开汇票。", "That's too many items at once. Issue a bill for a large amount.");
-            case "frozen" -> line(Tone.RED, "已暂停银行券兑付。", "Bank-note redemption is suspended.");
+            case "frozen" -> line(Tone.RED, "已暂停央行券兑付。", "Bank-note redemption is suspended.");
             case "no_market" -> line(Tone.RED, "这种货币无法报价。", "That currency cannot be quoted.");
             case "no_quote" -> line(Tone.RED, "暂无牌价，这次兑换已全部拒绝。", "There is no quote, so nothing was exchanged.");
-            case "no_unallocated" -> line(Tone.RED, "没有尚未入账的已发行银行券，这次已全部拒绝，不会新发。", "There are no unallocated issued notes to sell.");
-            case "manual_issue" -> line(Tone.RED, "银行券只能由管理员发行或注销，不能用兑换增加。", "Bank notes change only when an operator issues or retires them.");
+            case "no_unallocated" -> line(Tone.RED, "没有尚未入账的已发行央行券，这次已全部拒绝，不会新发。", "There are no unallocated issued notes to sell.");
+            case "manual_issue" -> line(Tone.RED, "央行券只能由管理员发行或注销，不能用兑换增加。", "Bank notes change only when an operator issues or retires them.");
             case "insufficient_deposits" -> line(Tone.RED, "中央银行存款不足，这次已全部拒绝，不会凭空增加准备金。", "Central-bank deposits are short, so nothing was posted.");
             case "not_issuable" -> line(Tone.RED, "这种货币不能这样发行。", "This currency can't be issued that way.");
             case "over_cap" -> line(Tone.RED, "尚可按准备金发行的额度不足，这次已全部拒绝。", "Reserve-backed room is short, so the whole issue was refused.");
@@ -446,7 +446,7 @@ public final class BankPhrases {
     }
 
     public static Spoken freeze(boolean on) {
-        return line(on ? Tone.RED : Tone.GREEN, on ? "已暂停银行券兑付" : "银行券兑付已恢复", on ? "Bank-note redemption is suspended" : "Bank-note redemption has resumed");
+        return line(on ? Tone.RED : Tone.GREEN, on ? "已暂停央行券兑付" : "央行券兑付已恢复", on ? "Bank-note redemption is suspended" : "Bank-note redemption has resumed");
     }
 
     public static Spoken feeSet(double percent) {
@@ -454,24 +454,24 @@ public final class BankPhrases {
     }
 
     public static Spoken interestSet(double percent) {
-        return line(Tone.GREEN, "央行银行券年利率已设为 " + percent + "%", "Central bank-note rate is now " + percent + "% a year");
+        return line(Tone.GREEN, "央行券年利率已设为 " + percent + "%", "Central bank-note rate is now " + percent + "% a year");
     }
 
     public static Spoken personalInterestSet(double percent) {
-        return line(Tone.GREEN, "个人银行券年利率已设为 " + percent + "%", "Personal-note rate is now " + percent + "% a year");
+        return line(Tone.GREEN, "个人币年利率已设为 " + percent + "%", "Personal-note rate is now " + percent + "% a year");
     }
 
     public static Spoken personalInterestPaid(BankBooks books, java.util.UUID player, String name, java.math.BigInteger amount) {
         String n = CompactFormat.format(amount);
         return line(Tone.GREEN,
-                "存款利息 个人银行券「" + name + "」×" + n + balancesZh(books, player),
+                "存款利息 个人币「" + name + "」×" + n + balancesZh(books, player),
                 "Savings interest personal note " + name + " ×" + n + balancesEn(books, player));
     }
 
     public static Spoken interestPaid(BankBooks books, java.util.UUID player, java.math.BigInteger amount) {
         String n = CompactFormat.format(amount);
         return line(Tone.GREEN,
-                "存款利息 银行券 ×" + n + balancesZh(books, player),
+                "存款利息 央行券 ×" + n + balancesZh(books, player),
                 "Savings interest bank note ×" + n + balancesEn(books, player));
     }
 
@@ -498,7 +498,7 @@ public final class BankPhrases {
             default -> "汇率制度";
         };
         return line(Tone.AQUA,
-                "已选定" + chosen + "。请接着输入个人银行券的名称，最多三个汉字或英文字母。",
+                "已选定" + chosen + "。请接着输入个人币的名称，最多三个汉字或英文字母。",
                 "Type the personal-note name after the regime. At most three Chinese characters or English letters.");
     }
 
@@ -513,9 +513,9 @@ public final class BankPhrases {
         String par = CompactFormat.format(note.par()) + " " + anchorZh(note.reserveCurrency());
         String parEn = CompactFormat.format(note.par()) + " " + anchorEn(note.reserveCurrency());
         String zh = switch (note.regime()) {
-            case PEG -> "个人银行券「" + note.name() + "」已记名，钉住每张 " + par + "。买卖不改这个官价。";
-            case HARD -> "个人银行券「" + note.name() + "」已记名，每张定额兑 " + par + "。发行要锁足这笔准备金。";
-            case FLOAT -> "个人银行券「" + note.name() + "」已记名，开价每张 " + par + "。个人准备金够了才能发行。";
+            case PEG -> "个人币「" + note.name() + "」已记名，钉住每张 " + par + "。买卖不改这个官价。";
+            case HARD -> "个人币「" + note.name() + "」已记名，每张定额兑 " + par + "。发行要锁足这笔准备金。";
+            case FLOAT -> "个人币「" + note.name() + "」已记名，开价每张 " + par + "。个人准备金够了才能发行。";
         };
         String en = switch (note.regime()) {
             case PEG -> "Personal note \"" + note.name() + "\" is pegged at " + parEn + " each. Trades do not move that rate.";
@@ -551,7 +551,7 @@ public final class BankPhrases {
         BigInteger held = books.centralReserve(issuer);
         BigInteger need = books.requiredCentralReserve(note);
         return line(Tone.AQUA,
-                "央行准备金账户" + name + "：银行券 ×" + CompactFormat.format(held)
+                "央行准备金账户" + name + "：央行券 ×" + CompactFormat.format(held)
                         + "，应存 ×" + CompactFormat.format(need) + "。这不是存款，也不计息。",
                 "Central-bank reserve" + (note == null ? "" : " for \"" + note.name() + "\"")
                         + ": bank note ×" + CompactFormat.format(held)
@@ -577,8 +577,8 @@ public final class BankPhrases {
     public static Spoken centralReserveMoved(boolean deposit, BigInteger amount) {
         String n = CompactFormat.format(amount);
         return deposit
-                ? line(Tone.GREEN, "已存入央行准备金账户 银行券 ×" + n + "。", "Posted bank note ×" + n + " to the central-bank reserve account.")
-                : line(Tone.GREEN, "已从央行准备金账户取出 银行券 ×" + n + "。", "Withdrew bank note ×" + n + " from the central-bank reserve account.");
+                ? line(Tone.GREEN, "已存入央行准备金账户 央行券 ×" + n + "。", "Posted bank note ×" + n + " to the central-bank reserve account.")
+                : line(Tone.GREEN, "已从央行准备金账户取出 央行券 ×" + n + "。", "Withdrew bank note ×" + n + " from the central-bank reserve account.");
     }
 
     public static Spoken centralRatioSet(String regime, double percent) {
@@ -642,7 +642,7 @@ public final class BankPhrases {
             case FLOAT -> "";
         };
         return line(Tone.AQUA,
-                "「" + note.name() + "」" + kind + price + " 钻（约 " + price + " 银行券）。M1 "
+                "「" + note.name() + "」" + kind + price + " 钻（约 " + price + " 央行券）。M1 "
                         + CompactFormat.formatAggregate(books.personalM1(note)) + "，纸币 "
                         + CompactFormat.formatAggregate(books.personalM0(note)) + "，尚可发行 "
                         + CompactFormat.format(issuable) + "。",
@@ -655,10 +655,10 @@ public final class BankPhrases {
     public static Spoken noteTrade(boolean buy, String name, BigInteger amount, BigInteger central, BigInteger copper, BankBooks books, UUID player) {
         String zhVerb = buy ? "买入" : "卖出";
         String enVerb = buy ? "Bought" : "Sold";
-        String pay = "支付银行券 ×" + CompactFormat.format(central);
+        String pay = "支付央行券 ×" + CompactFormat.format(central);
         String payEn = "paid central notes ×" + CompactFormat.format(central);
         if (!buy) {
-            pay = "收到银行券 ×" + CompactFormat.format(central);
+            pay = "收到央行券 ×" + CompactFormat.format(central);
             payEn = "received central notes ×" + CompactFormat.format(central);
         }
         return line(buy ? Tone.GREEN : Tone.DARK_RED,
@@ -670,7 +670,7 @@ public final class BankPhrases {
         String extra = "";
         String extraEn = "";
         if (trade.central().signum() > 0) {
-            extra += "，支付银行券 ×" + CompactFormat.format(trade.central());
+            extra += "，支付央行券 ×" + CompactFormat.format(trade.central());
             extraEn += ", paid bank notes ×" + CompactFormat.format(trade.central());
         }
         if (trade.copper().signum() > 0) {
@@ -723,7 +723,7 @@ public final class BankPhrases {
             parts.add("铜锭 ×" + CompactFormat.format(redemption.copper()));
         }
         if (redemption.central().signum() > 0) {
-            parts.add("银行券 ×" + CompactFormat.format(redemption.central()));
+            parts.add("央行券 ×" + CompactFormat.format(redemption.central()));
         }
         return parts.isEmpty() ? "0" : String.join("，", parts);
     }
@@ -757,12 +757,12 @@ public final class BankPhrases {
     }
 
     public static Spoken noteRedemptionPaused(PersonalNote note) {
-        String name = note == null ? "这张个人银行券" : "「" + note.name() + "」";
+        String name = note == null ? "这张个人币" : "「" + note.name() + "」";
         return line(Tone.RED, name + "已暂停兑付。", "Redemption of this personal note is paused.");
     }
 
     public static Spoken noteRedemptionResumed(PersonalNote note) {
-        String name = note == null ? "这张个人银行券" : "「" + note.name() + "」";
+        String name = note == null ? "这张个人币" : "「" + note.name() + "」";
         return line(Tone.GREEN, name + "已恢复兑付。", "Redemption of this personal note is open again.");
     }
 
@@ -790,7 +790,7 @@ public final class BankPhrases {
             case "name" -> line(Tone.RED, "名字最多三个汉字或英文字母。", "The name can be at most three Chinese characters or English letters.");
             case "taken" -> line(Tone.RED, "这个名字已经有人用了。", "That name is already taken.");
             case "reserved_name" -> line(Tone.RED, "不能使用系统货币的名称。", "System currency names are reserved.");
-            case "exists" -> line(Tone.RED, "你已经有一张个人银行券了。", "You already have a personal note.");
+            case "exists" -> line(Tone.RED, "你已经有一张个人币了。", "You already have a personal note.");
             case "reserve" -> line(Tone.RED, "个人准备金不够，还不能发行。", "Your personal reserve is not enough to issue that.");
             case "central_reserve" -> line(Tone.RED, "央行准备金账户不足，新发行暂停。通兑仍按已锁定的准备金办理。", "The central-bank reserve account is short, so new issuance is paused. Redemption still pays from locked reserves.");
             case "funds" -> line(Tone.RED, "你的账户余额不足。", "Your balance isn't enough.");
@@ -798,21 +798,21 @@ public final class BankPhrases {
             case "transfer_player" -> line(Tone.RED, "没有找到这个在线玩家。", "That player is not online.");
             case "market_external" -> line(Tone.RED, "请用 /market note 挂单或买入，通兑仍可在银行办理。", "Use /market note to list or buy. Redemption remains available at the bank.");
             case "offer_empty" -> line(Tone.RED, "没有足够数量的单笔挂单。", "No single listing has enough notes.");
-            case "offer_minimum" -> line(Tone.RED, "订单低于最小结算金额 0.0001 银行券，请提高数量。", "Total is below 0.0001 bank notes. Increase the quantity.");
+            case "offer_minimum" -> line(Tone.RED, "订单低于最小结算金额 0.0001 央行券，请提高数量。", "Total is below 0.0001 bank notes. Increase the quantity.");
             case "unlisted_funds" -> line(Tone.RED, "未挂单的持有量不足，请先减少挂单。", "Your unlisted holdings are insufficient. Reduce your listing first.");
             case "self" -> line(Tone.RED, "不能和自己买卖自己的券。", "You can't trade your own note with yourself.");
-            case "pair" -> line(Tone.RED, "不能用同一张个人银行券互换。", "Pick two different personal notes.");
+            case "pair" -> line(Tone.RED, "不能用同一张个人币互换。", "Pick two different personal notes.");
             case "quote" -> line(Tone.RED, "这个数量换不成整张，换一个数量。", "That amount doesn't buy a whole note. Try another amount.");
             case "payout" -> line(Tone.RED, "这种券不能兑成那种货币。", "That note cannot be redeemed into that currency.");
             case "initial_physical_reserve" -> line(Tone.RED, "新建个人币须先选择钻石或铜作为实物抵押；创建后可切换到无循环的其他准备金。", "New personal currencies must initially use diamond or copper collateral; a valid acyclic anchor can be selected later.");
             case "delivery_pending" -> line(Tone.RED, "这张货币还有待完成的交易，请先等待结算或恢复完成。", "This currency has a pending delivery; finish or recover it first.");
             case "anchor" -> line(Tone.RED, "这种汇率不能用这种货币。", "That regime cannot use that currency.");
-            case "paused" -> line(Tone.RED, "这张个人银行券已暂停兑付。", "Redemption of this personal note is paused.");
+            case "paused" -> line(Tone.RED, "这张个人币已暂停兑付。", "Redemption of this personal note is paused.");
             case "suspended" -> line(Tone.RED, "准备金不够按原价兑付，通兑暂停。", "Reserves cannot honor the official rate, so redemption is suspended.");
-            case "bankrupt" -> line(Tone.RED, "这张个人银行券已经破产，不能再交易或兑付。", "This personal note is bankrupt and cannot be traded or redeemed.");
-            case "closed" -> line(Tone.RED, "这张个人银行券已经破产过了。", "This personal note is already bankrupt.");
-            case "none" -> line(Tone.RED, "没有这张个人银行券。", "No personal note by that name.");
-            case "market" -> line(Tone.RED, "中央银行券现在报不出价。", "The central note has no quote right now.");
+            case "bankrupt" -> line(Tone.RED, "这张个人币已经破产，不能再交易或兑付。", "This personal note is bankrupt and cannot be traded or redeemed.");
+            case "closed" -> line(Tone.RED, "这张个人币已经破产过了。", "This personal note is already bankrupt.");
+            case "none" -> line(Tone.RED, "没有这张个人币。", "No personal note by that name.");
+            case "market" -> line(Tone.RED, "央行券现在报不出价。", "The central note has no quote right now.");
             case "par" -> line(Tone.RED, "金额无效。", "That amount isn't valid.");
             case "coverage" -> line(Tone.RED, "覆盖倍数要大于 0，并且不超过 100。", "Coverage must be above 0 and at most 100.");
             default -> line(Tone.RED, "办不到。", "That didn't work.");
@@ -827,7 +827,7 @@ public final class BankPhrases {
 
     public static Spoken noteCoverage(BigDecimal coverage) {
         return line(Tone.AQUA,
-                "个人银行券发行覆盖设为 " + coverage.stripTrailingZeros().toPlainString() + " 倍准备金。",
+                "个人币发行覆盖设为 " + coverage.stripTrailingZeros().toPlainString() + " 倍准备金。",
                 "Personal note issue coverage is now " + coverage.stripTrailingZeros().toPlainString() + " times reserves.");
     }
 
@@ -899,7 +899,7 @@ public final class BankPhrases {
             parts.add("钻 " + CompactFormat.format(amount.apply("diamond")));
         }
         if (books.currency("note") != null) {
-            parts.add("银行券 " + CompactFormat.format(amount.apply("note")));
+            parts.add("央行券 " + CompactFormat.format(amount.apply("note")));
         }
         return String.join("，", parts);
     }
@@ -967,7 +967,7 @@ public final class BankPhrases {
     private static String anchorZh(String anchor) {
         return switch (anchor) {
             case "copper" -> "铜";
-            case "note" -> "银行券";
+            case "note" -> "央行券";
             default -> "钻";
         };
     }

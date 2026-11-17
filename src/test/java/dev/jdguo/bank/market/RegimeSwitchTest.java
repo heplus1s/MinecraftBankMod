@@ -49,7 +49,7 @@ class RegimeSwitchTest {
         RegimePreview shortfall = books.switchPersonalRegime(issuer, NoteRegime.PEG, "note");
         assertFalse(shortfall.allowed());
         assertTrue(shortfall.reason().contains("联系汇率制"));
-        assertTrue(shortfall.reason().contains("银行券"));
+        assertTrue(shortfall.reason().contains("央行券"));
         assertTrue(shortfall.reason().contains("尚缺"));
         assertEquals(NoteRegime.FLOAT, note.regime());
         assertEquals(new BigInteger("100"), note.locked());
@@ -77,7 +77,7 @@ class RegimeSwitchTest {
         assertFalse(renamed.allowed());
         assertTrue(renamed.reason().contains("已锁定"));
         assertTrue(renamed.reason().contains("不能改记到"));
-        assertTrue(renamed.reason().contains("银行券"));
+        assertTrue(renamed.reason().contains("央行券"));
         assertEquals("diamond", locked.anchor());
 
         BankBooks fresh = BankBooks.create(BankConfig.defaults());
@@ -111,7 +111,7 @@ class RegimeSwitchTest {
         }
         assertEquals("实物货币", snapshot.getAsJsonArray("anchors").get(0).getAsJsonObject().get("group").getAsString());
         assertEquals("发行货币", snapshot.getAsJsonArray("anchors").get(2).getAsJsonObject().get("group").getAsString());
-        assertEquals("银行券", snapshot.getAsJsonArray("anchors").get(2).getAsJsonObject().get("name").getAsString());
+        assertEquals("央行券", snapshot.getAsJsonArray("anchors").get(2).getAsJsonObject().get("name").getAsString());
     }
 
     @Test

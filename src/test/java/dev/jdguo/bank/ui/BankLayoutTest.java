@@ -44,7 +44,7 @@ class BankLayoutTest {
                 assertEquals("硬通货兑换", tabs.get(3).label());
                 assertEquals("开立汇票", tabs.get(4).label());
                 assertEquals("兑付汇票", tabs.get(5).label());
-                assertEquals("个人银行券交易", tabs.get(6).label());
+                assertEquals("个人币交易", tabs.get(6).label());
                 assertEquals(20, BankLayout.drawerHeight(false, 4));
                 assertTrue(BankLayout.drawerHeight(true, 4) > 20);
                 assertTrue(BankLayout.drawerHeight(true, 8) <= 20 + 72);

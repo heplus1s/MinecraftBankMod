@@ -42,6 +42,8 @@ public final class BankTerminalScreen extends Screen {
     private String policyLower;
     private String policyUpper;
     private String renameText = "";
+    private String createName = "";
+    private String createRegime = "float";
     private int marketBalanceY = -1;
     private int bookScroll;
     private int issuanceScroll;
@@ -267,10 +269,20 @@ public final class BankTerminalScreen extends Screen {
             y = placeScrollDrawer(pane, "regime", left, right, y, List.of(
                     new ChoiceListWidget.Choice("float", "浮动汇率制"),
                     new ChoiceListWidget.Choice("peg", "联系汇率制"),
-                    new ChoiceListWidget.Choice("hard", "固定汇率制")), "float");
+                    new ChoiceListWidget.Choice("hard", "固定汇率制")), createRegime);
             y += 6;
-            y = paneText(pane, "还没有记名。点选一种发行制度后，聊天框会先说明要输入个人银行券的名字。名字写在命令后面，再按回车。",
-                    left, y, textWidth, 0xFFE6E6E6);
+            y = policyField(pane, "货币名称（最多三个汉字或英文字母）", createName, left, right, y,
+                    value -> createName = value);
+            y = paneButtons(pane, left, right, y + 4, List.of("确认创建个人币"), List.of(() -> {
+                if (!createName.matches("[\\p{IsHan}a-zA-Z]{1,3}")) {
+                    showNotice("请输入一至三个汉字或英文字母作为货币名称。");
+                    return;
+                }
+                send("note-create " + createRegime + " diamond " + createName + " 1");
+            }));
+            y = paneText(pane, "先创建名称和制度，再存入准备金及发行。创建本身不会新增流通货币。",
+                    left, y + 6, textWidth, 0xFFE6E6E6);
+            if (!notice.isBlank()) y = paneText(pane, notice, left, y, textWidth, 0xFFFFCC88);
             for (String rule : List.of(
                     "浮动：实际准备金支持价随储备与有效流通变化，可手动增发。",
                     "联系：设定目标区间，只以对应储蓄及发行人可用币调节。",
@@ -334,7 +346,7 @@ public final class BankTerminalScreen extends Screen {
         }
         if (BankSnapshot.bankrupt(data)) {
             y += 4;
-            y = paneText(pane, "这张个人银行券已经破产。", left, y, textWidth, 0xFFFF7777);
+            y = paneText(pane, "这张个人币已经破产。", left, y, textWidth, 0xFFFF7777);
             pane.finish(y);
             pane.setScroll(issuanceScroll);
             return;
@@ -347,18 +359,14 @@ public final class BankTerminalScreen extends Screen {
             y += 2;
         }
         String freezeLabel = Boolean.TRUE.equals(paused) ? "恢复兑付" : "暂停兑付";
-        y = paneButtons(pane, left, right, y, List.of("按数量增发", "按数量收回"), List.of(
+        y = paneButtons(pane, left, right, y, List.of("按数量增发", "按数量收回", freezeLabel), List.of(
                 () -> sendAmount(BankActions::issueUnbacked),
-                () -> sendAmount(BankActions::noteRetire)));
-        y += 4;
-        y = paneButtons(pane, left, right, y, List.of(freezeLabel), List.of(
+                () -> sendAmount(BankActions::noteRetire),
                 () -> send(Boolean.TRUE.equals(paused) ? BankActions.noteUnfreeze() : BankActions.noteFreeze())));
         y += 4;
-        y = paneButtons(pane, left, right, y, List.of("存入指定准备金", "取出指定准备金"), List.of(
+        y = paneButtons(pane, left, right, y, List.of("存入准备金", "取出准备金", "按准备金发行"), List.of(
                 () -> sendAmount(BankActions::reserveDeposit),
-                () -> sendAmount(BankActions::reserveWithdraw)));
-        y += 4;
-        y = paneButtons(pane, left, right, y, List.of("按准备金发行"), List.of(
+                () -> sendAmount(BankActions::reserveWithdraw),
                 () -> sendAmount(BankActions::noteIssue)));
         y += 8;
         String rule = BankRegimes.FLOAT_RULE;
@@ -377,7 +385,7 @@ public final class BankTerminalScreen extends Screen {
                         case "policyTarget" -> "制度目标／参考：";
                         default -> "基础资产折合央行券（仅估值）：";
                     };
-                    y = paneText(pane, label + value, left, y, textWidth, 0xFFE8D090);
+                    y = paneText(pane, label + BankHeader.fixed6(value), left, y, textWidth, 0xFFE8D090);
                 }
             }
         }
@@ -886,7 +894,7 @@ public final class BankTerminalScreen extends Screen {
                 break;
             }
             int color = 0xFFE6E6E6;
-            if (line.startsWith("1 钻石") || line.startsWith("1 银行券") || line.startsWith("1 【")) {
+            if (line.startsWith("1 钻石") || line.startsWith("1 央行券") || line.startsWith("1 【")) {
                 color = 0xFFE8D090;
             } else if (line.contains(BankRates.UNAVAILABLE)) {
                 color = 0xFFAAAAAA;
@@ -942,7 +950,7 @@ public final class BankTerminalScreen extends Screen {
         int start = mainLeft() + Math.max(0, (mainWidth() - column * 2 - gap) / 2);
         int titleY = contentTop() + 34;
         context.drawText(textRenderer, "个人存款", start, titleY, 0xFFD0B060, false);
-        context.drawText(textRenderer, "持有的个人银行券", start + column + gap, titleY, 0xFFD0B060, false);
+        context.drawText(textRenderer, "持有的个人币", start + column + gap, titleY, 0xFFD0B060, false);
         int left = titleY + 16;
         int right = titleY + 16;
         List<BankSnapshot.MoneyRow> currencies = BankSnapshot.currencies(data);
@@ -957,16 +965,30 @@ public final class BankTerminalScreen extends Screen {
         List<BankSnapshot.NoteRow> held = BankSnapshot.heldNotes(data);
         int noteX = start + column + gap;
         if (held.isEmpty()) {
-            context.drawText(textRenderer, "没有持有个人银行券。", noteX, right, 0xFFAAAAAA, false);
+            context.drawText(textRenderer, "没有持有个人币。", noteX, right, 0xFFAAAAAA, false);
             return;
         }
         for (BankSnapshot.NoteRow note : held) {
             right = drawWrapped(context, note.name(), noteX, right, column, 0xFFE6E6E6);
             right = drawWrapped(context, "账面余额：" + note.balance(), noteX, right, column, 0xFFB7C7B0);
-            right = drawWrapped(context, note.price() == null ? BankRates.UNAVAILABLE : "现价：" + note.price(),
+            right = drawWrapped(context, note.price() == null ? personalQuoteStatus(note.id()) : "现价：" + note.price() + " " + centralName(),
                     noteX, right, column, note.price() == null ? 0xFFAAAAAA : 0xFFE8D090);
             right += 4;
         }
+    }
+
+    private String personalQuoteStatus(String id) {
+        if (data.has("notes") && data.get("notes").isJsonArray()) {
+            for (var entry : data.getAsJsonArray("notes")) {
+                if (!entry.isJsonObject()) continue;
+                JsonObject row = entry.getAsJsonObject();
+                if (java.util.Objects.equals(id, BankSnapshot.text(row, "id"))) {
+                    String status = BankSnapshot.text(row, "quoteStatus");
+                    if (status != null) return status;
+                }
+            }
+        }
+        return BankRates.UNAVAILABLE;
     }
 
     private void drawIssuanceTitle(DrawContext context) {
@@ -1065,7 +1087,7 @@ public final class BankTerminalScreen extends Screen {
     private void drawMarketHeading(DrawContext context) {
         int x = mainLeft();
         int y = contentTop();
-        context.drawText(textRenderer, "个人银行券交易", x, y, 0xFFD0B060, false);
+        context.drawText(textRenderer, "个人币交易", x, y, 0xFFD0B060, false);
         drawFitted(context, marketHeading(), x, y + 12, mainWidth(), 0xFFAAAAAA);
     }
 
@@ -1112,12 +1134,17 @@ public final class BankTerminalScreen extends Screen {
         context.drawText(textRenderer, line, item.x, textY, 0xFFB7C7B0, false);
         if ("note".equals(item.role)) {
             BankSnapshot.NoteRow note = findNote(item.widget.selectedId());
-            String quote = note == null || note.price() == null ? BankRates.UNAVAILABLE : "现价：" + note.price();
+            String quote = note == null || note.price() == null ? personalQuoteStatus(note.id()) : "现价：" + note.price() + " " + centralName();
             context.drawText(textRenderer, quote, item.x, textY + 12, note == null || note.price() == null ? 0xFFAAAAAA : 0xFFE8D090, false);
         }
     }
 
-    private static String anchorName(String anchor) {
+    private String centralName() {
+        String name = BankSnapshot.text(data, "centralCurrencyName");
+        return name == null || name.isBlank() ? "央行券" : name;
+    }
+
+    private String anchorName(String anchor) {
         String token = BankActions.anchorToken(anchor);
         if (token == null) {
             return anchor == null ? BankBook.MISSING : anchor;
@@ -1125,7 +1152,7 @@ public final class BankTerminalScreen extends Screen {
         return switch (token) {
             case "diamond" -> "钻石";
             case "copper" -> "铜锭";
-            default -> "银行券";
+            default -> centralName();
         };
     }
 
@@ -1133,14 +1160,10 @@ public final class BankTerminalScreen extends Screen {
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (issuancePane != null && issuancePane.contains(mouseX, mouseY)) {
             issuancePane.mouseClicked(mouseX, mouseY, button);
-            if (amount != null) {
-                amount.setFocused(amount.isMouseOver(mouseX, mouseY));
-            }
+
             return true;
         }
-        if (amount != null && issuancePane != null) {
-            amount.setFocused(false);
-        }
+        if (issuancePane != null) issuancePane.clearFocus();
         for (var child : children()) {
             if (child instanceof ChoiceListWidget) {
                 continue;
@@ -1223,18 +1246,13 @@ public final class BankTerminalScreen extends Screen {
         if (keyCode == 256) {
             return super.keyPressed(keyCode, scanCode, modifiers);
         }
-        if (amount != null && issuancePane != null && amount.isFocused()) {
-            amount.keyPressed(keyCode, scanCode, modifiers);
-            return true;
-        }
+        if (issuancePane != null && issuancePane.keyPressed(keyCode, scanCode, modifiers)) return true;
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     @Override
     public boolean charTyped(char chr, int modifiers) {
-        if (amount != null && issuancePane != null && amount.isFocused()) {
-            return amount.charTyped(chr, modifiers);
-        }
+        if (issuancePane != null && issuancePane.charTyped(chr, modifiers)) return true;
         return super.charTyped(chr, modifiers);
     }
 
@@ -1252,12 +1270,12 @@ public final class BankTerminalScreen extends Screen {
                 if (!id.equals(marketMode)) {
                     marketMode = id;
                     if ("redeem".equals(id)) {
-                        receiveId = currencyId(BankSnapshot.hardCurrencies(data), "银行券", "note");
+                        receiveId = currencyId(BankSnapshot.hardCurrencies(data), "央行券", "note");
                     }
                 }
             }
             case "payee" -> payeeSelf = "self".equals(id);
-            case "regime" -> askForNoteName(id);
+            case "regime" -> { createRegime = id; openDrawer = ""; client.execute(this::clearAndInit); }
             case "switchRegime" -> switchRegime = id;
             case "switchAnchor" -> {
                 if (!id.startsWith("group:")) {
@@ -1353,7 +1371,7 @@ public final class BankTerminalScreen extends Screen {
     private void submitMarket(String quantity) {
         String note = selected("note", noteName);
         if (note.isBlank()) {
-            notice = "请选择一张个人银行券。";
+            notice = "请选择一张个人币。";
             return;
         }
         switch (marketMode) {
@@ -1361,7 +1379,7 @@ public final class BankTerminalScreen extends Screen {
             case "swap" -> {
                 String other = selected("other", otherNote);
                 if (other.isBlank() || other.equals(note)) {
-                    notice = "请再选择一张要换成的个人银行券。";
+                    notice = "请再选择一张要换成的个人币。";
                     return;
                 }
                 send(BankActions.noteSwap(note, other, quantity));
@@ -1522,7 +1540,7 @@ public final class BankTerminalScreen extends Screen {
             case "pay" -> "付出  ";
             case "receive" -> "得到  ";
             case "other" -> "换成  ";
-            case "note" -> "个人银行券  ";
+            case "note" -> "个人币  ";
             default -> "";
         };
     }
@@ -1539,10 +1557,10 @@ public final class BankTerminalScreen extends Screen {
             return "挂牌买卖在市场办理。这里可以转账或从发行准备金通兑。";
         }
         return switch (marketMode) {
-            case "sell" -> "卖出个人银行券，只换成银行券，不动发行人的准备金。";
-            case "swap" -> "把一张个人银行券换成另一张，不动发行人的准备金。";
+            case "sell" -> "卖出个人币，只换成央行券，不动发行人的准备金。";
+            case "swap" -> "把一张个人币换成另一张，不动发行人的准备金。";
             case "redeem" -> "按实际抵押链兑付到个人储蓄；实物只按整数提取。";
-            default -> "买入个人银行券，只用银行券支付，不动发行人的准备金。";
+            default -> "买入个人币，只用央行券支付，不动发行人的准备金。";
         };
     }
 
@@ -1660,25 +1678,10 @@ public final class BankTerminalScreen extends Screen {
     }
 
     private int drawWrapped(DrawContext context, String line, int x, int y, int maxWidth, int color) {
-        if (line == null || line.isEmpty()) {
-            return y + 12;
-        }
-        String rest = line;
-        while (!rest.isEmpty() && y < this.height) {
-            String part = rest;
-            while (textRenderer.getWidth(part) > maxWidth && part.length() > 1) {
-                int split = part.lastIndexOf(' ');
-                if (split <= 0) {
-                    break;
-                }
-                part = part.substring(0, split);
-            }
+        for (String part : BankText.lines(line, Math.max(1, maxWidth), textRenderer::getWidth)) {
+            if (y >= this.height) break;
             context.drawText(textRenderer, part, x, y, color, false);
             y += 12;
-            if (part.equals(rest)) {
-                break;
-            }
-            rest = rest.substring(part.length()).stripLeading();
         }
         return y;
     }
@@ -1700,7 +1703,7 @@ public final class BankTerminalScreen extends Screen {
             case "硬通货兑换" -> Page.EXCHANGE;
             case "开立汇票" -> Page.ISSUE;
             case "兑付汇票" -> Page.REDEEM;
-            case "个人银行券交易" -> Page.MARKET;
+            case "个人币交易" -> Page.MARKET;
             default -> Page.SAVINGS;
         };
     }
@@ -1746,7 +1749,7 @@ public final class BankTerminalScreen extends Screen {
             String label = note.name();
             for (BankSnapshot.MoneyRow money : BankSnapshot.currencies(data)) {
                 if (money.name().equals(note.name())) {
-                    label = "个人银行券 " + note.name();
+                    label = "个人币 " + note.name();
                     break;
                 }
             }

@@ -2,6 +2,7 @@ package dev.jdguo.bank.ui;
 
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.widget.ClickableWidget;
+import net.minecraft.client.gui.widget.TextFieldWidget;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -100,11 +101,33 @@ final class IssuancePane {
         drawBar(context);
     }
 
+    void clearFocus() {
+        for (Control control : controls) control.widget.setFocused(false);
+    }
+
+    boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        for (Control control : controls) {
+            if (control.widget instanceof TextFieldWidget field && field.isFocused()) {
+                field.keyPressed(keyCode, scanCode, modifiers);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    boolean charTyped(char chr, int modifiers) {
+        for (Control control : controls) {
+            if (control.widget instanceof TextFieldWidget field && field.isFocused()) return field.charTyped(chr, modifiers);
+        }
+        return false;
+    }
+
     boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (!contains(mouseX, mouseY)) {
             return false;
         }
         apply();
+        clearFocus();
         if (onBar(mouseX) && contentHeight > height) {
             int top = thumbTop();
             int thumb = thumbHeight();
@@ -116,6 +139,7 @@ final class IssuancePane {
         for (int i = controls.size() - 1; i >= 0; i--) {
             ClickableWidget widget = controls.get(i).widget;
             if (widget.mouseClicked(mouseX, mouseY, button)) {
+                widget.setFocused(true);
                 return true;
             }
         }

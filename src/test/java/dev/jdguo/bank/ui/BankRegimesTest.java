@@ -50,16 +50,16 @@ class BankRegimesTest {
         note.addProperty("regimeName", "浮动汇率制");
         note.addProperty("live", "0.000000");
         JsonArray switches = new JsonArray();
-        switches.add(offer("peg", "note", "联系汇率制，锚为银行券", true, null));
+        switches.add(offer("peg", "note", "联系汇率制，锚为央行券", true, null));
         switches.add(offer("hard", "diamond", "固定汇率制，锚为钻石", false, "现价已经偏离面值"));
-        switches.add(offer("hard", "note", "固定汇率制，锚为银行券", true, null));
+        switches.add(offer("hard", "note", "固定汇率制，锚为央行券", true, null));
         note.add("switches", switches);
         data.add("ownNote", note);
 
         assertTrue(BankRegimes.switchesKnown(data));
         List<BankRegimes.Offer> offers = BankRegimes.offers(data);
         assertEquals("note-switch peg note", offers.get(0).command());
-        assertEquals("可以切换为联系汇率制，锚为银行券", offers.get(0).button());
+        assertEquals("可以切换为联系汇率制，锚为央行券", offers.get(0).button());
         assertNull(offers.get(1).button());
         assertEquals("现价已经偏离面值", offers.get(1).refusal());
         assertNull(offers.get(2).command());
@@ -80,7 +80,7 @@ class BankRegimesTest {
         List<String> lines = BankRegimes.issuanceHoldings(data);
         assertTrue(lines.contains("发行准备金：钻石 2001"));
         assertTrue(lines.contains("已锁定：10"));
-        assertFalse(String.join("\n", lines).contains("央行银行券准备金"));
+        assertFalse(String.join("\n", lines).contains("央行券准备金"));
 
         JsonObject peg = new JsonObject();
         JsonObject pegNote = new JsonObject();
@@ -89,7 +89,7 @@ class BankRegimesTest {
         pegNote.addProperty("centralReserve", "40");
         peg.add("ownNote", pegNote);
         List<String> pegLines = BankRegimes.issuanceHoldings(peg);
-        assertTrue(pegLines.contains("央行银行券准备金：40"));
+        assertTrue(pegLines.contains("央行券准备金：40"));
         assertTrue(pegLines.get(0).contains("暂无数据"));
 
         JsonObject named = new JsonObject();
@@ -105,7 +105,7 @@ class BankRegimesTest {
         assertTrue(namedLines.contains("可动用：10.5000"));
 
         List<BankRegimes.AnchorRow> defaults = BankRegimes.anchorRows(new JsonObject());
-        assertEquals(List.of("实物货币", "铜锭", "钻石", "发行货币", "银行券"),
+        assertEquals(List.of("实物货币", "铜锭", "钻石", "发行货币", "央行券"),
                 defaults.stream().map(BankRegimes.AnchorRow::label).toList());
         assertTrue(defaults.get(0).group());
         assertFalse(defaults.get(1).group());
@@ -118,7 +118,7 @@ class BankRegimesTest {
         data.addProperty("bankrupt", true);
         data.add("switches", new JsonArray());
 
-        assertEquals("这张个人银行券已经破产，不能切换发行制度。", BankRegimes.blockReason(data));
+        assertEquals("这张个人币已经破产，不能切换发行制度。", BankRegimes.blockReason(data));
     }
 
     private static JsonObject offer(String regime, String anchor, String name, boolean allowed, String reason) {

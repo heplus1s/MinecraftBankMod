@@ -38,13 +38,25 @@ class NotePaperTest {
     }
 
     @Test
+    void renamedCentralPaperRetainsIdentity() {
+        var books = BankBooks.create(BankConfig.defaults());
+        var paper = new PresentedNote("note", null, BigInteger.TEN);
+        var root = NotePaper.signature(paper, "银行券");
+        assertTrue(books.renameCentralCurrency("大明通宝", true).success());
+        assertTrue(NotePaper.refreshPersonalSignature(root, books));
+        assertEquals(paper, NotePaper.readSignature(root));
+        assertTrue(root.getCompound("display").getString("Name").contains("大明通宝"));
+        assertFalse(NotePaper.refreshPersonalSignature(root, books));
+    }
+
+    @Test
     void sameFaceCentralPaperSharesOneIdentityAndStacksAsAPile() {
         PresentedNote one = new PresentedNote("note", null, BigInteger.ONE);
         PresentedNote again = new PresentedNote("note", null, BigInteger.ONE);
         assertEquals(NoteSeries.key(one), NoteSeries.key(again));
-        assertEquals(NotePaper.signature(one, "银行券"), NotePaper.signature(again, "银行券"));
-        assertEquals(NoteSeries.identity("note", null, BigInteger.ONE, "银行券"),
-                NoteSeries.identity("note", null, BigInteger.ONE, "银行券"));
+        assertEquals(NotePaper.signature(one, "央行券"), NotePaper.signature(again, "央行券"));
+        assertEquals(NoteSeries.identity("note", null, BigInteger.ONE, "央行券"),
+                NoteSeries.identity("note", null, BigInteger.ONE, "央行券"));
 
         NoteSeries.PaperSlip pile = NoteSeries.plan(BigInteger.valueOf(64));
         assertEquals(BigInteger.ONE, pile.face());
@@ -62,8 +74,8 @@ class NotePaperTest {
         PresentedNote faceTen = new PresentedNote("note", null, BigInteger.TEN);
         assertNotEquals(NoteSeries.key(central), NoteSeries.key(personal));
         assertNotEquals(NoteSeries.key(central), NoteSeries.key(faceTen));
-        assertNotEquals(NotePaper.signature(central, "银行券"), NotePaper.signature(personal, "Ada"));
-        assertFalse(NotePaper.signature(central, "银行券").equals(NotePaper.signature(faceTen, "银行券")));
+        assertNotEquals(NotePaper.signature(central, "央行券"), NotePaper.signature(personal, "Ada"));
+        assertFalse(NotePaper.signature(central, "央行券").equals(NotePaper.signature(faceTen, "央行券")));
     }
 
     @Test

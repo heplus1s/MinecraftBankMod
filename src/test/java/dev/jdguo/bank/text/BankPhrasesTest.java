@@ -23,7 +23,7 @@ class BankPhrasesTest {
         assertEquals(BigInteger.ZERO, books.centralM1());
         assertEquals(0, new BigDecimal("1000").compareTo(books.unitsPer("copper", "diamond")));
         assertEquals("1000", BankPhrases.copperPerDiamond(books));
-        assertEquals("银行券", books.currency("note").name());
+        assertEquals("央行券", books.currency("note").name());
         assertEquals("bank note", books.currency("note").nameEn());
         assertEquals(0, BigDecimal.ONE.compareTo(books.currency("note").parPerBacking()));
         assertNull(books.unitsPer("note", "diamond"));
@@ -72,7 +72,7 @@ class BankPhrasesTest {
         UUID player = UUID.randomUUID();
         books.deposit(player, "copper", BigInteger.valueOf(64));
         Spoken deposit = BankPhrases.deposit(books, player, "copper", BigInteger.valueOf(64));
-        assertEquals("[银行] 存入 铜锭 ×64 成功 ｜余额：铜 64，钻 0，银行券 0", deposit.zh());
+        assertEquals("[银行] 存入 铜锭 ×64 成功 ｜余额：铜 64，钻 0，央行券 0", deposit.zh());
         assertEquals("[Bank] Deposited copper ×64 | Balance: Cu 64, Dia 0, bank note 0", deposit.en());
         assertEquals(Tone.GOLD, deposit.tone());
         assertFalse(deposit.zh().contains("银票"));
@@ -84,7 +84,7 @@ class BankPhrasesTest {
 
         books.withdraw(player, "copper", BigInteger.TEN, false);
         Spoken withdraw = BankPhrases.withdraw(books, player, "copper", BigInteger.TEN);
-        assertEquals("[银行] 取出 铜×10 ｜余额：铜 54，钻 1，银行券 0", withdraw.zh());
+        assertEquals("[银行] 取出 铜×10 ｜余额：铜 54，钻 1，央行券 0", withdraw.zh());
         assertEquals(Tone.GOLD, withdraw.tone());
 
         Spoken bought = BankPhrases.exchange(books, player, "copper", "diamond", BigInteger.ONE);

@@ -9,13 +9,13 @@ import java.util.List;
 public final class BankBook {
     public static final String MISSING = "暂无数据";
     public static final String CIRCULATION_NOTE = "以上是流通量统计，不是准备金。";
-    public static final String FREEZE_NOTE = "只暂停或恢复用银行券兑换铜锭或钻石。普通存取不受影响。";
+    public static final String FREEZE_NOTE = "只暂停或恢复用央行券兑换铜锭或钻石。普通存取不受影响。";
     public static final String UNBACKED_NOTE = "不增加准备金。增发所选货币，并记入操作者的账户。";
     public static final String RETIRE_NOTE = "从操作者的账户扣减所选货币，并减少发行额。";
     public static final String BACKED_BUTTON = "按准备金满额发行";
     public static final String BACKED_EXPLANATION = "按管理列表里当前选中的货币，发行该货币按准备金尚可发行的剩余额度。这不是无准备金增发。";
-    public static final String PAUSE = "暂停银行券兑付";
-    public static final String RESUME = "恢复银行券兑付";
+    public static final String PAUSE = "暂停央行券兑付";
+    public static final String RESUME = "恢复央行券兑付";
 
     private BankBook() {
     }
@@ -41,13 +41,13 @@ public final class BankBook {
     public static String redemption(JsonObject data) {
         Boolean frozen = BankSnapshot.frozen(data);
         if (frozen != null) {
-            return "银行券兑换铜锭或钻石：" + (frozen ? "已暂停" : "正常");
+            return "央行券兑换铜锭或钻石：" + (frozen ? "已暂停" : "正常");
         }
         String status = BankSnapshot.text(data, "status");
         if (status == null) {
-            return "银行券兑换铜锭或钻石：" + MISSING;
+            return "央行券兑换铜锭或钻石：" + MISSING;
         }
-        return "银行券兑换铜锭或钻石：" + (status.contains("暂停") ? "已暂停" : "正常");
+        return "央行券兑换铜锭或钻石：" + (status.contains("暂停") ? "已暂停" : "正常");
     }
 
     public static String freezeButton(JsonObject data) {
@@ -63,7 +63,7 @@ public final class BankBook {
     }
 
     /**
-     * Reserve and savings lines for 铜锭, 钻石, and 银行券.
+     * Reserve and savings lines for 铜锭, 钻石, and 央行券.
      * They do not depend on which currency an adjustment will use.
      */
     public static List<String> visibleLedger(JsonObject data) {
@@ -71,7 +71,7 @@ public final class BankBook {
         lines.addAll(preface(data));
         lines.addAll(currencyLines(data, "copper", "铜锭", "copperReserve", false));
         lines.addAll(currencyLines(data, "diamond", "钻石", "diamondReserve", false));
-        lines.addAll(currencyLines(data, "note", "银行券", "noteReserve", true));
+        lines.addAll(currencyLines(data, "note", "央行券", "noteReserve", true));
         for (BankSnapshot.CentralRow row : BankSnapshot.central(data)) {
             if (isCore(row)) {
                 continue;
@@ -147,22 +147,22 @@ public final class BankBook {
      * 发行额, 已锁定准备金, and 按准备金尚可发行 appear only when the snapshot has them.
      */
     public static List<String> noteLines(JsonObject data) {
-        BankSnapshot.CentralRow row = find(data, "note", "银行券");
+        BankSnapshot.CentralRow row = find(data, "note", "央行券");
         String reserve = BankSnapshot.text(data, "noteReserve");
         if (reserve == null && row != null) {
             reserve = row.reserve();
         }
         List<String> lines = new ArrayList<>();
-        lines.add(field("银行券发行准备金", reserve));
-        lines.add(field("银行券央行储蓄", row == null ? null : row.savings()));
+        lines.add(field("央行券发行准备金", reserve));
+        lines.add(field("央行券央行储蓄", row == null ? null : row.savings()));
         if (row != null && row.liability() != null) {
-            lines.add(field("银行券发行额", row.liability()));
+            lines.add(field("央行券发行额", row.liability()));
         }
         if (row != null && row.locked() != null) {
-            lines.add(field("银行券已锁定准备金", row.locked()));
+            lines.add(field("央行券已锁定准备金", row.locked()));
         }
         if (row != null && row.backedRoom() != null) {
-            lines.add(field("银行券按准备金尚可发行", row.backedRoom()));
+            lines.add(field("央行券按准备金尚可发行", row.backedRoom()));
         }
         return lines;
     }
@@ -224,7 +224,7 @@ public final class BankBook {
 
     private static boolean isCore(BankSnapshot.CentralRow row) {
         return "copper".equals(row.id()) || "diamond".equals(row.id()) || "note".equals(row.id())
-                || "铜锭".equals(row.name()) || "钻石".equals(row.name()) || "银行券".equals(row.name());
+                || "铜锭".equals(row.name()) || "钻石".equals(row.name()) || "央行券".equals(row.name());
     }
 
     private static BankSnapshot.CentralRow find(JsonObject data, String currencyId, String currencyName) {

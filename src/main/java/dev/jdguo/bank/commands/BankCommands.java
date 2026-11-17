@@ -623,7 +623,7 @@ public final class BankCommands {
         } else {
             PersonalNote personal = books().personalNoteById(presented.personalNote());
             String name = personal == null ? "?" : personal.name();
-            zh = "个人银行券「" + name + "」";
+            zh = "个人币「" + name + "」";
             en = "personal note \"" + name + "\"";
         }
         return ok(source, BankPhrases.depositPaper(books(), player.getUuid(), zh, en, result.amount(), "trimmed".equals(result.code())));

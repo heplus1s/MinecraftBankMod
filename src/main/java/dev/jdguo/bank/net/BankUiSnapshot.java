@@ -44,6 +44,7 @@ public final class BankUiSnapshot {
         }
         CurrencyDef centralNote = books.primaryVirtual();
         if (centralNote != null) {
+            o.addProperty("centralCurrencyName", centralNote.name());
             putDiamondsPerNote(o, books, centralNote.id());
         }
         JsonArray currencies = new JsonArray();
@@ -56,7 +57,7 @@ public final class BankUiSnapshot {
             row.addProperty("name", def.name());
             row.addProperty("balance", shown);
             // rate / unitsPerDiamond: units of this currency for one numeraire or one diamond.
-            // diamondsPerNote, on the central note only: diamonds for one 银行券.
+            // diamondsPerNote, on the central note only: diamonds for one 央行券.
             boolean officialNote = centralNote != null && def.id().equals(centralNote.id());
             if ("copper".equals(def.id())) {
                 BigDecimal quote = books.unitsPer("copper", "diamond");
@@ -126,7 +127,7 @@ public final class BankUiSnapshot {
             JsonArray institutions = new JsonArray();
             CurrencyDef note = books.primaryVirtual();
             String noteId = note == null ? "note" : note.id();
-            String noteName = note == null || note.name() == null || note.name().isBlank() ? "银行券" : note.name();
+            String noteName = note == null || note.name() == null || note.name().isBlank() ? "央行券" : note.name();
             institutions.add(institutionExact("商店经营账户", noteName, books.shopOperatingExact(noteId)));
             for (PersonalNote personal : books.personalNotes()) {
                 BigDecimal held = books.shopOperatingExact("personal:" + personal.id());
@@ -152,7 +153,7 @@ public final class BankUiSnapshot {
                     BigDecimal rate = "note".equals(asset.getKey()) ? BigDecimal.ONE : books.unitsPer("note", asset.getKey());
                     if (rate != null && rate.signum() > 0) {
                         row.addProperty("detail", row.get("detail").getAsString() + "（估值 "
-                                + Money.stored(asset.getValue().multiply(rate, FxMath.MC)) + " 银行券，非现金余额）");
+                                + Money.stored(asset.getValue().multiply(rate, FxMath.MC)) + " 央行券，非现金余额）");
                     }
                     institutions.add(row);
                 }
@@ -218,8 +219,8 @@ public final class BankUiSnapshot {
     }
 
     /**
-     * {@code price} is central 银行券 for one personal note: diamond price times the live
-     * 银行券-per-diamond quote. {@code diamondPrice} is that same note in diamonds.
+     * {@code price} is central 央行券 for one personal note: diamond price times the live
+     * 央行券-per-diamond quote. {@code diamondPrice} is that same note in diamonds.
      * Both are omitted when either quote is missing, so the client can say 暂无牌价.
      */
     private static void putPersonalNotePrice(JsonObject row, BankBooks books, PersonalNote note) {
@@ -230,13 +231,20 @@ public final class BankUiSnapshot {
         if (central == null) {
             return;
         }
+        BigDecimal centralPrice = books.personalCentralPrice(note);
+        if (centralPrice.signum() > 0) row.addProperty("price", CompactFormat.formatPersonalQuote(centralPrice));
         BigDecimal diamonds = books.personalDiamondPrice(note);
-        BigDecimal notesPerDiamond = quoted(books, central.id(), "diamond");
-        if (diamonds == null || diamonds.signum() <= 0 || notesPerDiamond == null) {
-            return;
+        if (diamonds.signum() > 0) row.addProperty("diamondPrice", CompactFormat.formatPersonalQuote(diamonds));
+        if (centralPrice.signum() <= 0) {
+            BigDecimal active = books.personalActiveExact(note);
+            String reason = books.personalReserveSwitching(note.id()) ? "准备金更换中，暂停报价"
+                    : note.redemptionPaused() ? "兑付暂停，暂不报价"
+                    : active.signum() <= 0 ? "尚无流通货币"
+                    : books.effectiveBackingExact(note).signum() <= 0 ? "尚无可用准备金"
+                    : "央行券换算牌价暂不可用";
+            row.addProperty("quoteStatus", reason);
         }
-        row.addProperty("price", CompactFormat.formatPersonalQuote(diamonds.multiply(notesPerDiamond, FxMath.MC)));
-        row.addProperty("diamondPrice", CompactFormat.formatPersonalQuote(diamonds));
+
     }
 
     /** Units of {@code pay} for one unit of {@code receive}, or null when the books cannot quote. */
@@ -251,7 +259,7 @@ public final class BankUiSnapshot {
         return rate;
     }
 
-    /** Official 「1 银行券 = xxx 钻石」, including 0. Omitted only when no notes are outstanding. */
+    /** Official 「1 央行券 = xxx 钻石」, including 0. Omitted only when no notes are outstanding. */
     private static void putDiamondsPerNote(JsonObject row, BankBooks books, String noteId) {
         BigDecimal quote = books.unitsPer("diamond", noteId);
         if (quote == null) {
@@ -365,7 +373,7 @@ public final class BankUiSnapshot {
         JsonArray anchors = new JsonArray();
         anchors.add(anchorChoice("diamond", "钻石", "实物货币"));
         anchors.add(anchorChoice("copper", "铜锭", "实物货币"));
-        anchors.add(anchorChoice("note", "银行券", "发行货币"));
+        anchors.add(anchorChoice("note", "央行券", "发行货币"));
         return anchors;
     }
 
@@ -379,7 +387,7 @@ public final class BankUiSnapshot {
 
     /**
      * Commodity issuance reserve that 按准备金发行 locks. {@code reserve} / {@code required}
-     * stay the 银行券 央行准备金账户 and are not these figures.
+     * stay the 央行券 央行准备金账户 and are not these figures.
      */
     private static void putIssuanceReserve(JsonObject row, BankBooks books, UUID player, PersonalNote note) {
         String currency = note.reserveCurrency();

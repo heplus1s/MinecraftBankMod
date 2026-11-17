@@ -20,9 +20,9 @@ class BankRatesTest {
                 ]}
                 """).getAsJsonObject();
         var lines = BankRates.column(data);
-        assertTrue(lines.contains("1 【泉】 = 0.123456 银行券"));
-        assertTrue(lines.contains("1 【元】 = 0.000001 银行券"));
-        assertTrue(lines.contains("1 【券】 = 0 银行券"));
+        assertTrue(lines.contains("1 【泉】 = 0.123456 央行券"));
+        assertTrue(lines.contains("1 【元】 = 0.000001 央行券"));
+        assertTrue(lines.contains("1 【券】 = 0 央行券"));
     }
 
     @Test
@@ -35,9 +35,9 @@ class BankRatesTest {
 
         assertTrue(lines.contains("兑付正常"));
         assertEquals("1 钻石 = 暂无牌价", BankRates.centralQuote(data));
-        assertEquals("1 银行券 = 暂无牌价", BankRates.bankNoteQuote(data));
+        assertEquals("1 央行券 = 暂无牌价", BankRates.bankNoteQuote(data));
         assertTrue(lines.contains("1 钻石 = 暂无牌价"));
-        assertTrue(lines.contains("1 银行券 = 暂无牌价"));
+        assertTrue(lines.contains("1 央行券 = 暂无牌价"));
         assertFalse(String.join("\n", lines).contains("铜锭"));
         assertFalse(String.join("\n", lines).contains("各货币牌价"));
         assertFalse(String.join("\n", lines).contains("汇率"));
@@ -62,11 +62,11 @@ class BankRatesTest {
         data.add("notes", notes);
 
         assertEquals("1 钻石 = 1000.000000 铜锭", BankRates.centralQuote(data));
-        assertEquals("1 银行券 = 1.000000 钻石", BankRates.bankNoteQuote(data));
-        assertEquals("1 【张三】 = 2.500000 银行券", BankRates.personalQuote(BankSnapshot.notes(data).get(0)));
+        assertEquals("1 央行券 = 1.000000 钻石", BankRates.bankNoteQuote(data));
+        assertEquals("1 【张三】 = 2.500000 央行券", BankRates.personalQuote(BankSnapshot.notes(data).get(0)));
         assertEquals("1 【李四】 = 暂无牌价", BankRates.personalQuote(BankSnapshot.notes(data).get(1)));
         var lines = BankRates.column(data);
-        assertTrue(lines.contains("1 【张三】 = 2.500000 银行券"));
+        assertTrue(lines.contains("1 【张三】 = 2.500000 央行券"));
         assertFalse(String.join("\n", lines).contains("铜锭  "));
     }
 
@@ -74,7 +74,7 @@ class BankRatesTest {
     void manyNotesPerDiamondBecomeASmallDiamondPrice() {
         JsonObject note = new JsonObject();
         note.addProperty("id", "note");
-        note.addProperty("name", "银行券");
+        note.addProperty("name", "央行券");
         note.addProperty("balance", "4");
         note.addProperty("unitsPerDiamond", "1000");
         JsonArray currencies = new JsonArray();
@@ -82,16 +82,16 @@ class BankRatesTest {
         JsonObject data = new JsonObject();
         data.add("currencies", currencies);
 
-        assertEquals("1 银行券 = 0.001000 钻石", BankRates.bankNoteQuote(data));
+        assertEquals("1 央行券 = 0.001000 钻石", BankRates.bankNoteQuote(data));
         data.addProperty("diamondsPerNote", "0.5");
-        assertEquals("1 银行券 = 0.500000 钻石", BankRates.bankNoteQuote(data));
+        assertEquals("1 央行券 = 0.500000 钻石", BankRates.bankNoteQuote(data));
     }
 
     private static JsonArray currencies(boolean quoted) {
         JsonArray currencies = new JsonArray();
         currencies.add(money("copper", "铜锭", "12", null));
         currencies.add(money("diamond", "钻石", "2", null));
-        JsonObject note = money("note", "银行券", "4", quoted ? "1" : null);
+        JsonObject note = money("note", "央行券", "4", quoted ? "1" : null);
         if (quoted) {
             note.addProperty("unitsPerDiamond", "1");
         }
