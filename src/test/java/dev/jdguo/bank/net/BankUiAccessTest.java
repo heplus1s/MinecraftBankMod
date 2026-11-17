@@ -4,6 +4,23 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class BankUiAccessTest {
+    @Test void forgedManagementActionsNeedBothSessionAndCurrentPermission() {
+        String[] actions = {"admin-rename", "admin-adjust-confirm", "admin-funding-confirm",
+                "admin-treasury-withdraw", "admin-freeze", "admin-unbacked", "admin-retire",
+                "admin-backed", "admin-reserve-from-deposits", "admin-future-operation"};
+        for (String action : actions) {
+            assertFalse(BankUiAccess.actionAllowed(action, false, false), action);
+            assertFalse(BankUiAccess.actionAllowed(action, true, false), action);
+            assertFalse(BankUiAccess.actionAllowed(action, false, true), action);
+            assertTrue(BankUiAccess.actionAllowed(action, true, true), action);
+        }
+    }
+    @Test void ordinaryActionsRemainAvailableWithoutOperatorPermission() {
+        assertTrue(BankUiAccess.actionAllowed("withdraw", false, false));
+        assertTrue(BankUiAccess.actionAllowed("note-create", false, false));
+        assertFalse(BankUiAccess.actionAllowed(null, true, true));
+    }
+
     @Test void activeAdminSessionIsRevokedWithoutAnyLedgerChange() {
         assertTrue(BankUiAccess.sessionAllowed(true, true));
         assertFalse(BankUiAccess.sessionAllowed(true, false));
