@@ -96,6 +96,8 @@ class SecondaryMarketTest {
         assertTrue(quote.residualDiamonds().compareTo(books.personalDiamondPrice(receive)) < 0);
         assertTrue(quote.copper().signum() > 0);
 
+        // A secondary holder must explicitly offer inventory before another player may swap it.
+        assertTrue(books.listPersonal(buyer, "Bb", BigInteger.TEN).success());
         SwapTrade swap = books.swapPersonalNotes(issuerA, "Aa", "Bb", BigInteger.ONE);
 
         assertTrue(swap.success(), swap.code());
