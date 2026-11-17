@@ -1,9 +1,17 @@
 package dev.jdguo.bank.market;
 
 import java.math.BigInteger;
+import java.math.BigDecimal;
+import dev.jdguo.bank.ledger.Money;
 
 /** Outcome of creating, issuing, or trading a personal note. */
-public record NoteTrade(boolean success, String code, PersonalNote note, BigInteger centralPaid, BigInteger copperPaid) {
+public record NoteTrade(boolean success, String code, PersonalNote note, BigInteger centralPaid, BigInteger copperPaid, BigDecimal centralPaidExact) {
+    public NoteTrade(boolean success, String code, PersonalNote note, BigInteger centralPaid, BigInteger copperPaid) {
+        this(success, code, note, centralPaid, copperPaid, Money.of(centralPaid));
+    }
+    public static NoteTrade okExact(PersonalNote note, BigDecimal central) {
+        return new NoteTrade(true, "ok", note, Money.units(central), BigInteger.ZERO, Money.of(central));
+    }
     public static NoteTrade ok(PersonalNote note, BigInteger centralPaid, BigInteger copperPaid) {
         return new NoteTrade(true, "ok", note, centralPaid == null ? BigInteger.ZERO : centralPaid,
                 copperPaid == null ? BigInteger.ZERO : copperPaid);

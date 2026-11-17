@@ -55,6 +55,7 @@ public final class BankBooks {
     private final Map<String, CurrencyDef> currencies;
     /** Central-owned savings. Never migrated from customer custody; old saves start at zero. */
     private final Map<String, BigDecimal> treasury = new LinkedHashMap<>();
+    private final JsonArray systemFundingLog = new JsonArray();
     private final Map<String, Supply> supplies = new LinkedHashMap<>();
     private final Map<UUID, Map<String, BigDecimal>> accounts = new LinkedHashMap<>();
     /** Per-player reserves for a later personal mint. Not savings, and not the central vault. */
@@ -407,6 +408,7 @@ public final class BankBooks {
         if (supply("diamond").freeReserveExact().compareTo(diamonds) < 0) {
             return TxResult.fail("insufficient_reserves", "Issuance reserves cannot cover this redemption");
         }
+        FractionChange change = quoteFractionChange("diamond", diamonds);
         CurrencyDef note = primaryVirtual();
         if (note != null) {
             supply(note.id()).addLiability(Money.of(notes).negate());
@@ -414,8 +416,9 @@ public final class BankBooks {
         supply("diamond").addReserve(diamonds.negate());
         addSavings("diamond", diamonds);
         creditBalance(player, "diamond", diamonds);
+        String changeMessage = settleFractionChange(player, change);
         recomputeOfficialNoteQuote();
-        return TxResult.ok(Money.units(diamonds), "Redeemed notes");
+        return TxResult.ok(Money.units(diamonds), "Redeemed notes" + changeMessage);
     }
 
     private TxResult cancelNotesForMetal(UUID player, String metal, BigInteger metalQty) {
@@ -647,7 +650,7 @@ public final class BankBooks {
     }
 
     public TxResult redeemCheck(UUID player, PresentedCheck presented) {
-        CheckBook.RedeemCode code = checks.redeem(player, presented, System.currentTimeMillis());
+        CheckBook.RedeemCode code = checks.validate(player, presented);
         return switch (code) {
             case UNKNOWN -> TxResult.fail("invalid_check", "Unrecognized bill");
             case TAMPERED -> TxResult.fail("tampered", "The bill doesn't match the stub");
@@ -655,9 +658,12 @@ public final class BankBooks {
             case WRONG_PAYEE -> TxResult.fail("wrong_payee", "This bill isn't made out to you");
             case OK -> {
                 if ("note".equals(presented.currency())) {
-                    yield cashNotes(player, presented.amount());
+                    TxResult payout = cashNotes(player, presented.amount());
+                    if (payout.success()) checks.redeem(player, presented, System.currentTimeMillis());
+                    yield payout;
                 }
                 creditBalance(player, presented.currency(), presented.amount());
+                checks.redeem(player, presented, System.currentTimeMillis());
                 CurrencyDef def = need(presented.currency());
                 String name = def == null ? presented.currency() : label(def);
                 yield TxResult.ok(presented.amount(), "Redeemed " + name + " " + CompactFormat.format(presented.amount()));
@@ -1640,6 +1646,39 @@ public final class BankBooks {
         return TxResult.ok(Money.units(posted), intoTreasury ? "Contributed own savings to central treasury" : "Withdrew central treasury to own savings");
     }
 
+    public BigDecimal systemFundingBalance(String account) {
+        return ordinarySystemBalance(account, centralNoteId());
+    }
+    public JsonArray systemFundingLog() { return systemFundingLog.deepCopy(); }
+
+    /** Existing central-owned notes only; caller also gates the admin session. */
+    public TxResult fundSystemAccount(UUID operator, boolean administrator, String account,
+                                      BigDecimal amount, BigDecimal expectedTreasury, BigDecimal expectedAccount) {
+        if (!administrator || operator == null) return TxResult.fail("permission", "仅管理员可拨款");
+        if (!"shop".equals(account) && !"land".equals(account))
+            return TxResult.fail("bad_account", "未知系统账户");
+        if (amount == null || amount.signum() <= 0 || amount.scale() > Money.SCALE)
+            return TxResult.fail("bad_amount", "请输入正数，最多四位小数");
+        String currency = centralNoteId();
+        BigDecimal source = treasuryExact(currency), target = systemFundingBalance(account);
+        if (expectedTreasury == null || expectedAccount == null || source.compareTo(expectedTreasury) != 0
+                || target.compareTo(expectedAccount) != 0)
+            return TxResult.fail("stale_quote", "账户余额变化，请重新预览");
+        if (source.compareTo(amount) < 0) return TxResult.fail("insufficient_treasury", "央行自有央行券不足，不动用玩家存款");
+        treasury.put(currency, Money.of(source.subtract(amount)));
+        addOrdinarySystem(account, currency, amount);
+        JsonObject entry = new JsonObject();
+        entry.addProperty("operator", operator.toString());
+        entry.addProperty("time", System.currentTimeMillis());
+        entry.addProperty("account", account);
+        entry.addProperty("amount", Money.stored(amount));
+        entry.addProperty("treasuryAfter", Money.stored(treasuryExact(currency)));
+        entry.addProperty("accountAfter", Money.stored(systemFundingBalance(account)));
+        systemFundingLog.add(entry);
+        while (systemFundingLog.size() > 200) systemFundingLog.remove(0);
+        return TxResult.ok(Money.units(amount), "系统账户拨款完成");
+    }
+
     /** Issued-note sale proceeds: caller has checked and debited the same payer's physical savings.
      * Keep both the custody asset and its matching savings liability in step.
      */
@@ -1648,6 +1687,45 @@ public final class BankBooks {
             throw new IllegalStateException("Cannot collect unavailable custody assets");
         addSavings(currency, amount.negate());
         treasury.put(currency, Money.of(treasuryExact(currency).add(amount)));
+    }
+
+    /** A quote captured BEFORE the underlying payout changes reserves or circulating supply. */
+    private record FractionChange(String currency, BigDecimal physical, BigDecimal notes) {}
+
+    private FractionChange quoteFractionChange(String currency, BigDecimal payout) {
+        CurrencyDef def = need(currency);
+        if (def == null || def.kind() != CurrencyKind.COMMODITY || payout == null || payout.signum() <= 0) return null;
+        BigDecimal fraction = payout.remainder(BigDecimal.ONE);
+        if (fraction.signum() == 0) return null;
+        BigDecimal price = unitsPer(centralNoteId(), currency);
+        if (price == null || price.signum() <= 0) return new FractionChange(currency, fraction, Money.ZERO);
+        // Never round away entitlement or round up against the treasury. If exact settlement
+        // cannot be expressed at ledger precision, retain the original physical claim instead.
+        BigDecimal notes = fraction.multiply(price);
+        if (notes.stripTrailingZeros().scale() > Money.SCALE || notes.signum() <= 0)
+            notes = Money.ZERO;
+        return new FractionChange(currency, fraction, Money.of(notes));
+    }
+
+    /**
+     * Optional funded change, AFTER the payout is credited. Only the NEW fraction is exchanged;
+     * historical fractions are untouched. Failure is a no-op, not a loss of the original claim.
+     * This is used only for final payouts, never reversible shop/land delivery transfers.
+     */
+    private String settleFractionChange(UUID player, FractionChange change) {
+        if (change == null) return "";
+        String notes = centralNoteId();
+        if (change.notes().signum() <= 0 || treasuryExact(notes).compareTo(change.notes()) < 0
+                || balanceExact(player, change.currency()).compareTo(change.physical()) < 0
+                || supply(change.currency()).depositVaultExact().compareTo(change.physical()) < 0)
+            return "; 实物零头权益保留（央行券资金或精确报价不足）";
+        // Existing treasury notes change owner. No note issuance, liability adjustment or
+        // use of another depositor's note balance is permitted here.
+        debitBalance(player, change.currency(), change.physical());
+        collectCustodyIntoTreasury(change.currency(), change.physical());
+        treasury.put(notes, Money.of(treasuryExact(notes).subtract(change.notes())));
+        creditBalance(player, notes, change.notes());
+        return "; 实物零头 " + Money.display(change.physical()) + " 已结算为 " + Money.display(change.notes()) + " 央行券";
     }
 
     /** Moves only central-owned physical assets between treasury and issuance reserves. */
@@ -2599,13 +2677,15 @@ public final class BankBooks {
         AnchorEligibility eligibility = personalReserveEligibility(note.id(), anchor);
         if (!eligibility.allowed()) return TxResult.fail(eligibility.code(), eligibility.reason());
         BigDecimal reserve = effectiveBackingExact(note); String old = note.anchor(); UUID nested = nestedId(old);
+        FractionChange change = quoteFractionChange(old, reserve);
         if (nested == null) creditBalance(issuer, old, reserve);
         else setPersonalExact(nested, issuer, personalHoldingExact(nested, issuer).add(reserve));
         if ("note".equals(old)) supply("note").addLiability(reserve);
         setBackingExact(note, Money.ZERO);
         note.adopt(note.regime(), anchor, null); note.setLocked(BigInteger.ZERO);
         reserveDust.put(note.id(), Money.ZERO); reserveSwitching.add(note.id());
-        return TxResult.ok(Money.units(reserve), "Reserve returned; pricing and settlement paused until funded");
+        String changeMessage = settleFractionChange(issuer, change);
+        return TxResult.ok(Money.units(reserve), "Reserve returned; pricing and settlement paused until funded" + changeMessage);
     }
     /** New reverse trade, not a refund: use current real backing ratios; no rate when active supply is zero. */
     public ClearingQuote quotePersonalFromSystem(UUID id, BigDecimal quantity) {
@@ -2776,14 +2856,18 @@ public final class BankBooks {
             return signature.equals(existing.get("signature").getAsString()) && "settled".equals(existing.get("status").getAsString())
                     ? TxResult.ok(Money.units(amount), "Already redeemed") : TxResult.fail("reference_conflict", "Redemption reference conflict");
         }
+        ClearingQuote payout = quotePersonalClearing(id, amount);
+        FractionChange change = payout.success() ? quoteFractionChange(payout.currency(), payout.amount()) : null;
         TxResult result = settlePersonalToSystem(player, id, amount, account, reference);
         if (!result.success()) return result;
         JsonObject receipt = clearingReceipts.get(reference);
         String currency = receipt.get("currency").getAsString(); BigDecimal delivered = Money.parse(receipt.get("amount").getAsString());
         settledAssets.get(account).put(currency, Money.of(systemSettlementBalance(account, currency).subtract(delivered)));
         creditBalance(player, currency, delivered);
+        String changeMessage = settleFractionChange(player, change);
+        receipt.addProperty("changeSettlement", changeMessage);
         receipt.addProperty("delivery", "savings"); receipt.addProperty("pendingDelivery", false);
-        return result;
+        return TxResult.ok(result.amount(), result.message() + changeMessage);
     }
 
     public JsonObject personalSettlementReceipt(String reference) {
@@ -3428,11 +3512,13 @@ public final class BankBooks {
         if (personalFreeReserveExact(note).compareTo(amount) < 0)
             return TxResult.fail("short_reserve", "Only uncommitted reserve can be withdrawn; use explicit reserve replacement to pause settlement");
         String anchor = note.anchor(); UUID nested = nestedId(anchor);
+        FractionChange change = quoteFractionChange(anchor, amount);
         setBackingExact(note, effectiveBackingExact(note).subtract(amount));
         if (nested == null) creditBalance(issuer, anchor, amount);
         else setPersonalExact(nested, issuer, personalHoldingExact(nested, issuer).add(amount));
         if ("note".equals(anchor)) supply("note").addLiability(amount);
-        return TxResult.ok(Money.units(amount), "Uncommitted reserve returned to savings");
+        String changeMessage = settleFractionChange(issuer, change);
+        return TxResult.ok(Money.units(amount), "Uncommitted reserve returned to savings" + changeMessage);
     }
 
     public NoteTrade issuePersonalNote(UUID issuer, BigInteger amount) {
@@ -3853,14 +3939,9 @@ public final class BankBooks {
         if (diamondEach.signum() <= 0) return NoteTrade.fail("reserve");
         BigDecimal diamonds = diamondEach.multiply(new BigDecimal(amount), FxMath.MC);
         BigDecimal notesPerDiamond = unitsPer("note", "diamond");
-        BigDecimal exactCentral = Money.of(diamonds.multiply(notesPerDiamond, FxMath.MC));
-        BigInteger central = exactCentral.setScale(0, RoundingMode.DOWN).toBigInteger();
-        BigDecimal fraction = exactCentral.subtract(new BigDecimal(central));
-        BigInteger copper = fraction.multiply(new BigDecimal(copperPerDiamond()), FxMath.MC)
-                .setScale(0, RoundingMode.HALF_UP).toBigInteger();
-        if (copper.signum() < 0) {
-            copper = BigInteger.ZERO;
-        }
+        // Charge at most one ledger quantum above the quote, never free sub-quantum trades.
+        BigDecimal central = diamonds.multiply(notesPerDiamond, FxMath.MC).setScale(Money.SCALE, RoundingMode.CEILING);
+        if (central.signum() <= 0) return NoteTrade.fail("market");
         UUID payer = buy ? actor : note.issuer();
         UUID payee = buy ? note.issuer() : actor;
         UUID noteSource = buy ? note.issuer() : actor;
@@ -3870,17 +3951,12 @@ public final class BankBooks {
         if (sourceAvailable.compareTo(amount) < 0) {
             return NoteTrade.fail("empty");
         }
-        if (balanceExact(payer, "note").compareTo(Money.of(central)) < 0
-                || balanceExact(payer, "copper").compareTo(Money.of(copper)) < 0) {
+        if (balanceExact(payer, "note").compareTo(central) < 0) {
             return NoteTrade.fail("funds");
         }
         if (central.signum() > 0) {
             debitBalance(payer, "note", central);
             creditBalance(payee, "note", central);
-        }
-        if (copper.signum() > 0) {
-            debitBalance(payer, "copper", copper);
-            creditBalance(payee, "copper", copper);
         }
         if (buy) setPersonalOffer(note.id(), noteSource, personalOffered(note.id(), noteSource).subtract(amount));
         addHolding(note.id(), noteSource, amount.negate());
@@ -3891,12 +3967,12 @@ public final class BankBooks {
             note.addSell(amount);
         }
         retainTradeFee(note, note.issuer(), amount);
-        return NoteTrade.ok(note, central, copper);
+        return NoteTrade.okExact(note, central);
     }
 
     /**
      * Swap {@code receiveAmount} of {@code receiveName} for whole notes of {@code payName}
-     * at {@code P_receive / P_pay}. The remainder is paid in central notes and copper.
+     * at {@code P_receive / P_pay}. The remainder is paid in fractional central notes.
      * Holdings move between the player and a counterparty. Issuer reserves stay put.
      * The issuer cannot take the other side of their own note.
      */
@@ -3935,8 +4011,7 @@ public final class BankBooks {
         if (personalHolding(pay.id(), player).subtract(personalLockedOffer(pay.id(), player)).compareTo(quote.payNotes()) < 0) {
             return SwapTrade.fail("empty");
         }
-        if (balance(player, "note").compareTo(quote.central()) < 0
-                || balance(player, "copper").compareTo(quote.copper()) < 0) {
+        if (balanceExact(player, "note").compareTo(quote.centralExact()) < 0) {
             return SwapTrade.fail("funds");
         }
         addHolding(pay.id(), player, quote.payNotes().negate());
@@ -3944,13 +4019,9 @@ public final class BankBooks {
         setPersonalOffer(receive.id(), counterparty, personalOffered(receive.id(), counterparty).subtract(receiveAmount));
         addHolding(receive.id(), counterparty, receiveAmount.negate());
         addHolding(receive.id(), player, receiveAmount);
-        if (quote.central().signum() > 0) {
-            debitBalance(player, "note", quote.central());
-            creditBalance(counterparty, "note", quote.central());
-        }
-        if (quote.copper().signum() > 0) {
-            debitBalance(player, "copper", quote.copper());
-            creditBalance(counterparty, "copper", quote.copper());
+        if (quote.centralExact().signum() > 0) {
+            debitBalance(player, "note", quote.centralExact());
+            creditBalance(counterparty, "note", quote.centralExact());
         }
         // Buying pressure lifts the note that was received. Selling pressure leans on the note that was paid.
         // The next trade reads those flows; it does not reuse this fill.
@@ -3958,7 +4029,7 @@ public final class BankBooks {
         pay.addSell(quote.payNotes());
         retainTradeFee(receive, player, receiveAmount);
         retainTradeFee(pay, counterparty, quote.payNotes());
-        return SwapTrade.ok(pay, receive, quote.payNotes(), receiveAmount, quote.central(), quote.copper());
+        return SwapTrade.okExact(pay, receive, quote.payNotes(), receiveAmount, quote.centralExact());
     }
 
     /**
@@ -4685,6 +4756,7 @@ public final class BankBooks {
         JsonObject owned = new JsonObject();
         treasury.forEach((id, amount) -> owned.addProperty(id, Money.stored(amount)));
         root.add("centralTreasury", owned);
+        root.add("systemFundingLog", systemFundingLog.deepCopy());
         JsonObject dust = new JsonObject();
         interestDust.forEach((id, amount) -> dust.addProperty(id.toString(), amount.toPlainString()));
         root.add("interestDust", dust);
@@ -4954,6 +5026,10 @@ public final class BankBooks {
         }
         books.lastInterestDay = root.has("lastInterestDay") ? root.get("lastInterestDay").getAsLong() : -1L;
         // Missing field intentionally means zero. Customer deposits must never be reclassified as equity.
+        if (root.has("systemFundingLog")) {
+            for (JsonElement entry : root.getAsJsonArray("systemFundingLog")) books.systemFundingLog.add(entry.deepCopy());
+            while (books.systemFundingLog.size() > 200) books.systemFundingLog.remove(0);
+        }
         if (root.has("centralTreasury")) {
             root.getAsJsonObject("centralTreasury").entrySet().forEach(entry -> {
                 BigDecimal amount = Money.parse(entry.getValue().getAsString());

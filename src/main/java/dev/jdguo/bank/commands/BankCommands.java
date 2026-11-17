@@ -867,7 +867,7 @@ public final class BankCommands {
             return fail(source, BankPhrases.noteRejected(result.code()));
         }
         BankRuntime.save();
-        return ok(source, BankPhrases.noteTrade(buy, result.note().name(), amount, result.centralPaid(), result.copperPaid(), books(), player));
+        return ok(source, BankPhrases.noteTrade(buy, result.note().name(), amount, result.centralPaidExact(), result.copperPaid(), books(), player));
     }
 
     private static int noteCoverage(ServerCommandSource source, String raw) {

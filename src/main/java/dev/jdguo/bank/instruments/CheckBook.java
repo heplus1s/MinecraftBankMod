@@ -35,7 +35,8 @@ public final class CheckBook {
         return Collections.unmodifiableCollection(records.values());
     }
 
-    public RedeemCode redeem(UUID player, PresentedCheck presented, long now) {
+    public RedeemCode validate(UUID player, PresentedCheck presented) {
+        if (presented == null) return RedeemCode.UNKNOWN;
         CheckRecord record = records.get(presented.id());
         if (record == null) {
             return RedeemCode.UNKNOWN;
@@ -49,7 +50,12 @@ public final class CheckBook {
         if (record.payee() != null && !record.payee().equals(player)) {
             return RedeemCode.WRONG_PAYEE;
         }
-        record.markRedeemed(player, now);
         return RedeemCode.OK;
+    }
+
+    public RedeemCode redeem(UUID player, PresentedCheck presented, long now) {
+        RedeemCode code = validate(player, presented);
+        if (code == RedeemCode.OK) records.get(presented.id()).markRedeemed(player, now);
+        return code;
     }
 }

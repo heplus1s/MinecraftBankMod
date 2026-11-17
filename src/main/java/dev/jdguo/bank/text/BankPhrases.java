@@ -654,13 +654,17 @@ public final class BankPhrases {
     }
 
     public static Spoken noteTrade(boolean buy, String name, BigInteger amount, BigInteger central, BigInteger copper, BankBooks books, UUID player) {
+        return noteTrade(buy, name, amount, Money.of(central), copper, books, player);
+    }
+
+    public static Spoken noteTrade(boolean buy, String name, BigInteger amount, BigDecimal central, BigInteger copper, BankBooks books, UUID player) {
         String zhVerb = buy ? "买入" : "卖出";
         String enVerb = buy ? "Bought" : "Sold";
-        String pay = "支付央行券 ×" + CompactFormat.format(central);
-        String payEn = "paid central notes ×" + CompactFormat.format(central);
+        String pay = "支付央行券 ×" + Money.display(central);
+        String payEn = "paid central notes ×" + Money.display(central);
         if (!buy) {
-            pay = "收到央行券 ×" + CompactFormat.format(central);
-            payEn = "received central notes ×" + CompactFormat.format(central);
+            pay = "收到央行券 ×" + Money.display(central);
+            payEn = "received central notes ×" + Money.display(central);
         }
         return line(buy ? Tone.GREEN : Tone.DARK_RED,
                 zhVerb + "「" + name + "」×" + CompactFormat.format(amount) + "，" + pay + changeZh(copper) + balancesZh(books, player),
@@ -670,9 +674,9 @@ public final class BankPhrases {
     public static Spoken noteSwap(SwapTrade trade, BankBooks books, UUID player) {
         String extra = "";
         String extraEn = "";
-        if (trade.central().signum() > 0) {
-            extra += "，支付央行券 ×" + CompactFormat.format(trade.central());
-            extraEn += ", paid bank notes ×" + CompactFormat.format(trade.central());
+        if (trade.centralExact().signum() > 0) {
+            extra += "，支付央行券 ×" + Money.display(trade.centralExact());
+            extraEn += ", paid bank notes ×" + Money.display(trade.centralExact());
         }
         if (trade.copper().signum() > 0) {
             extra += "，支付铜锭 ×" + CompactFormat.format(trade.copper());

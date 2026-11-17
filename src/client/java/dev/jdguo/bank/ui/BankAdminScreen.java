@@ -47,6 +47,7 @@ public final class BankAdminScreen extends Screen {
     private void switchPage(int next) {
         remember(); page = next; scroll = 0; pending = null;
         BankUiClient.send("admin-policy-cancel");
+        BankUiClient.send("admin-funding-cancel");
         clearAndInit();
     }
     @Override protected void init() {
@@ -83,6 +84,8 @@ public final class BankAdminScreen extends Screen {
             lines.addAll(BankBook.book(data, selected, name()));
             lines.add("注意：存款保管包含玩家存款，不等于央行自有资产。");
             lines.add(BankRates.bankNoteQuote(data));
+            button("商店储蓄管理", x, height - 30, (w - 4) / 2, () -> switchPage(8));
+            button("地产储蓄管理", x + (w + 4) / 2, height - 30, (w - 4) / 2, () -> switchPage(9));
         } else if (page == 1) {
             input("目标汇率：钻石 / 1 " + centralName(), x, w);
             button("计算发行预览", x + w - 112, 86, 112, () -> {
@@ -144,12 +147,45 @@ public final class BankAdminScreen extends Screen {
                 lines.add("确认目标：" + (pending.endsWith(" true") ? "暂停兑付" : "恢复兑付"));
                 button("确认调整", x, height - 30, w, () -> { String command = pending; pending = null; BankUiClient.send(command); });
             }
+        } else if (page == 8 || page == 9) {
+            selected = "note";
+            String account = page == 8 ? "shop" : "land";
+            String title = page == 8 ? "商店系统账户" : "地产系统账户";
+            input("拨款数量（" + centralName() + "）", x, w);
+            button("预览拨款", x + w - 112, 86, 112, () -> {
+                remember(); BankUiClient.send("admin-funding-preview " + account + " " + typed);
+            });
+            textTop = 118;
+            lines.add(title + "余额：" + BankSnapshot.text(data, account + "SystemBalance") + " " + centralName());
+            lines.add("央行自有储蓄：" + centralField("treasury") + " " + centralName());
+            lines.add("只从央行自有央行券拨入此系统账户，不使用玩家存款，不自动增发。两个系统账户独立。");
+            button("央行券注资", x, height - 30, (w - 4) / 2, () -> switchPage(6));
+            JsonObject preview = data.has("fundingPreview") ? data.getAsJsonObject("fundingPreview") : null;
+            if (preview != null && account.equals(BankSnapshot.text(preview, "account"))) {
+                lines.add("拨款：" + BankSnapshot.text(preview, "amount") + " " + centralName());
+                lines.add("拨款后央行自有：" + BankSnapshot.text(preview, "sourceAfter"));
+                lines.add("拨款后" + title + "：" + BankSnapshot.text(preview, "targetAfter"));
+                lines.add("预览有效 60 秒；账户余额变化需重新预览。");
+                button("确认拨款", x + (w + 4) / 2, height - 30, (w - 4) / 2, () -> BankUiClient.send("admin-funding-confirm"));
+                java.math.BigDecimal current = BankRates.parse(typed), quoted = BankRates.parse(BankSnapshot.text(preview, "amount"));
+                confirmation.active = current != null && quoted != null && current.compareTo(quoted) == 0;
+            }
+            if (data.has("systemFundingLog")) {
+                lines.add("最近拨款记录");
+                var entries = data.getAsJsonArray("systemFundingLog"); int shown = 0;
+                for (int i = entries.size() - 1; i >= 0 && shown < 5; i--) {
+                    var entry = entries.get(i).getAsJsonObject();
+                    if (!account.equals(BankSnapshot.text(entry, "account"))) continue;
+                    lines.add("+" + BankSnapshot.text(entry, "amount") + "，账户余额 " + BankSnapshot.text(entry, "accountAfter")); shown++;
+                }
+                if (shown == 0) lines.add("暂无拨款记录");
+            }
         } else if (page == 6 || page == 7) {
-            input("数量（" + name() + "，整数）", x, w);
+            input("数量（" + name() + ("note".equals(selected) ? "）" : "，整数）"), x, w);
             button("预览划转", x + w - 112, 86, 112, () -> {
                 remember();
                 java.math.BigDecimal quantity = BankRates.parse(typed);
-                if (quantity != null && quantity.signum() > 0 && quantity.stripTrailingZeros().scale() <= 0) {
+                if (quantity != null && quantity.signum() > 0 && ("note".equals(selected) || quantity.stripTrailingZeros().scale() <= 0)) {
                     pending = (page == 6 ? "admin-treasury-deposit " : "admin-treasury-withdraw ") + selected + " " + typed;
                     BankUiClient.send("admin-treasury-prepare " + selected + " " + typed + (page == 6 ? " deposit" : " withdraw"));
                     clearAndInit();
@@ -158,7 +194,7 @@ public final class BankAdminScreen extends Screen {
             textTop = 118;
             lines.add("央行自有储蓄：" + centralField("treasury") + " " + name());
             lines.add(page == 6 ? "来源：操作者本人储蓄。去向：央行自有储蓄。" : "来源：央行自有储蓄。去向：操作者本人储蓄。");
-            lines.add("仅可划转整数实物货币。余额不足时整笔拒绝，不从玩家保管款垫付。");
+            lines.add("实物仅支持整数；央行券最多四位小数。余额不足整笔拒绝，不从其他玩家存款垫付。");
             if (pending != null) {
                 lines.add("确认划转 " + typed + " " + name() + "？");
                 button("确认划转", x, height - 30, w, () -> { String command = pending; pending = null; BankUiClient.send(command); });
@@ -203,7 +239,7 @@ public final class BankAdminScreen extends Screen {
         int x = left(), w = bodyWidth();
         context.drawCenteredTextWithShadow(textRenderer, "央行管理", width / 2, 12, 0xFFE8D090);
         if (field != null) {
-            String label = page == 1 ? "目标：钻石 / 1 " + centralName() : page == 3 ? "回收数量（" + centralName() + "）" : page == 6 || page == 7 ? "划转数量（" + name() + "，整数）" : "央行券显示名称";
+            String label = page == 1 ? "目标：钻石 / 1 " + centralName() : page == 3 ? "回收数量（" + centralName() + "）" : page == 8 || page == 9 ? "系统账户拨款（" + centralName() + "）" : page == 6 || page == 7 ? "划转数量（" + name() + ("note".equals(selected) ? "）" : "，整数）") : "央行券显示名称";
             context.drawText(textRenderer, label, x, 68, 0xFFE8D090, false);
         }
         int contentHeight = 0;

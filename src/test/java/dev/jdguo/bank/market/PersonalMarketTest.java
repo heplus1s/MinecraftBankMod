@@ -83,8 +83,8 @@ class PersonalMarketTest {
         assertTrue(bought.success(), bought.code());
         assertEquals(BigInteger.ONE, books.personalHolding(books.personalNote(issuer).id(), buyer));
         assertEquals(new BigInteger("9"), books.personalHolding(books.personalNote(issuer).id(), issuer));
-        assertEquals(BigInteger.TEN.subtract(bought.centralPaid()), books.balance(buyer, "note"));
-        assertEquals(bought.centralPaid(), books.balance(issuer, "note"));
+        assertEquals(0, new BigDecimal("10").subtract(bought.centralPaidExact()).compareTo(books.balanceExact(buyer, "note")));
+        assertEquals(0, bought.centralPaidExact().compareTo(books.balanceExact(issuer, "note")));
         assertEquals(0, books.personalDiamondPrice(books.personalNote(issuer)).compareTo(before));
         books.checkInvariants();
     }

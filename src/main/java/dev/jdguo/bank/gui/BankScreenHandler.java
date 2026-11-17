@@ -934,7 +934,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                 return;
             }
             BankRuntime.save();
-            tell(player, BankPhrases.noteTrade(buy, result.note().name(), amount, result.centralPaid(), result.copperPaid(), books, uuid));
+            tell(player, BankPhrases.noteTrade(buy, result.note().name(), amount, result.centralPaidExact(), result.copperPaid(), books, uuid));
         }
     }
 

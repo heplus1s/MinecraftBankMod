@@ -99,6 +99,7 @@ public final class BankUiService {
                 player.sendMessage(net.minecraft.text.Text.literal(result.message()), false);
             }
             case "admin-policy-preview", "admin-policy-confirm", "admin-policy-cancel" -> CentralPolicyUi.handle(player, session, parts);
+            case "admin-funding-preview", "admin-funding-confirm", "admin-funding-cancel" -> SystemFundingUi.handle(player, session, parts);
             case "admin-treasury-prepare" -> {
                 session.treasuryCommand = null;
                 if (session.admin && player.hasPermissionLevel(2) && parts.length == 4
@@ -116,7 +117,8 @@ public final class BankUiService {
                         break;
                     }
                     try {
-                        BigDecimal quantity = dev.jdguo.bank.ledger.Money.parse(parts[2]);
+                        if (!parts[2].matches("[0-9]{1,24}(\\.[0-9]{1,4})?")) throw new IllegalArgumentException();
+                        BigDecimal quantity = new BigDecimal(parts[2]);
                         TxResult result = BankRuntime.transact(book -> book.transferTreasury(player.getUuid(),
                                 parts[1], quantity, "admin-treasury-deposit".equals(parts[0])));
                         player.sendMessage(net.minecraft.text.Text.literal(result.success() ? "央行自有储蓄划转完成" : result.message()), false);
@@ -665,7 +667,7 @@ public final class BankUiService {
             return;
         }
         BankRuntime.save();
-        tell(player, BankPhrases.noteTrade(buy, result.note().name(), amount, result.centralPaid(), result.copperPaid(), books, player.getUuid()));
+        tell(player, BankPhrases.noteTrade(buy, result.note().name(), amount, result.centralPaidExact(), result.copperPaid(), books, player.getUuid()));
     }
 
     private static void swap(ServerPlayerEntity player, BankBooks books, String[] parts) {
