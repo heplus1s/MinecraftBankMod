@@ -24,6 +24,7 @@ import dev.jdguo.bank.market.Redemption;
 import dev.jdguo.bank.market.RegimePreview;
 import dev.jdguo.bank.market.SwapTrade;
 import dev.jdguo.bank.outlet.OutletPoint;
+import dev.jdguo.bank.outlet.OutletNames;
 import dev.jdguo.bank.persistence.BankRuntime;
 import dev.jdguo.bank.text.BankPhrases;
 import dev.jdguo.bank.text.BankTalk;
@@ -53,7 +54,6 @@ import static net.minecraft.server.command.CommandManager.argument;
 import static net.minecraft.server.command.CommandManager.literal;
 
 public final class BankCommands {
-    private static final Pattern NEW_OUTLET_NAME = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_-]{0,31}");
 
     private BankCommands() {}
 
@@ -76,15 +76,20 @@ public final class BankCommands {
                                 .executes(ctx -> openAdmin(ctx.getSource()))
                                 .then(literal("accounts").executes(ctx -> accounts(ctx.getSource()))))
                         .then(literal("outlet").requires(BankCommands::op)
-                                .then(literal("set").then(argument("name", StringArgumentType.string()).executes(ctx -> setOutlet(ctx.getSource(), displays, StringArgumentType.getString(ctx, "name"), false))))
-                                .then(literal("move").then(argument("name", StringArgumentType.string()).executes(ctx -> setOutlet(ctx.getSource(), displays, StringArgumentType.getString(ctx, "name"), true))))
-                                .then(literal("remove").then(argument("name", StringArgumentType.string()).executes(ctx -> removeOutlet(ctx.getSource(), displays, StringArgumentType.getString(ctx, "name")))))
-                                .then(literal("tp").then(argument("name", StringArgumentType.string()).executes(ctx -> teleport(ctx.getSource(), StringArgumentType.getString(ctx, "name")))))
-                                .then(literal("radius").then(argument("name", StringArgumentType.string()).then(argument("blocks", DoubleArgumentType.doubleArg(1, 32)).executes(ctx -> radius(ctx.getSource(), StringArgumentType.getString(ctx, "name"), DoubleArgumentType.getDouble(ctx, "blocks"))))))
-                                .then(literal("lift").then(argument("name", StringArgumentType.string()).then(argument("blocks", DoubleArgumentType.doubleArg(0.5, 16)).executes(ctx -> lift(ctx.getSource(), displays, StringArgumentType.getString(ctx, "name"), DoubleArgumentType.getDouble(ctx, "blocks"))))))
+                                .then(literal("set").then(argument("name", StringArgumentType.greedyString()).executes(ctx -> setOutlet(ctx.getSource(), displays, OutletNames.commandName(StringArgumentType.getString(ctx, "name")), false))))
+                                .then(literal("move").then(argument("name", StringArgumentType.greedyString()).executes(ctx -> setOutlet(ctx.getSource(), displays, OutletNames.commandName(StringArgumentType.getString(ctx, "name")), true))))
+                                .then(literal("remove").then(argument("name", StringArgumentType.greedyString()).executes(ctx -> removeOutlet(ctx.getSource(), displays, OutletNames.commandName(StringArgumentType.getString(ctx, "name"))))))
+                                .then(literal("tp").then(argument("name", StringArgumentType.greedyString()).executes(ctx -> teleport(ctx.getSource(), OutletNames.commandName(StringArgumentType.getString(ctx, "name"))))))
+                                .then(literal("rotate")
+                                .then(literal("north").then(argument("name", StringArgumentType.greedyString()).executes(ctx -> rotateOutlet(ctx.getSource(), displays, OutletNames.commandName(StringArgumentType.getString(ctx, "name")), 0))))
+                                .then(literal("east").then(argument("name", StringArgumentType.greedyString()).executes(ctx -> rotateOutlet(ctx.getSource(), displays, OutletNames.commandName(StringArgumentType.getString(ctx, "name")), 1))))
+                                .then(literal("south").then(argument("name", StringArgumentType.greedyString()).executes(ctx -> rotateOutlet(ctx.getSource(), displays, OutletNames.commandName(StringArgumentType.getString(ctx, "name")), 2))))
+                                .then(literal("west").then(argument("name", StringArgumentType.greedyString()).executes(ctx -> rotateOutlet(ctx.getSource(), displays, OutletNames.commandName(StringArgumentType.getString(ctx, "name")), 3)))))
+                                .then(literal("radius").then(argument("name", StringArgumentType.string()).then(argument("blocks", DoubleArgumentType.doubleArg(1, 32)).executes(ctx -> radius(ctx.getSource(), OutletNames.commandName(StringArgumentType.getString(ctx, "name")), DoubleArgumentType.getDouble(ctx, "blocks"))))))
+                                .then(literal("lift").then(argument("name", StringArgumentType.string()).then(argument("blocks", DoubleArgumentType.doubleArg(0.5, 16)).executes(ctx -> lift(ctx.getSource(), displays, OutletNames.commandName(StringArgumentType.getString(ctx, "name")), DoubleArgumentType.getDouble(ctx, "blocks"))))))
                                 .then(literal("hologram").then(argument("name", StringArgumentType.string())
-                                        .then(literal("on").executes(ctx -> hologram(ctx.getSource(), displays, StringArgumentType.getString(ctx, "name"), true)))
-                                        .then(literal("off").executes(ctx -> hologram(ctx.getSource(), displays, StringArgumentType.getString(ctx, "name"), false)))))
+                                        .then(literal("on").executes(ctx -> hologram(ctx.getSource(), displays, OutletNames.commandName(StringArgumentType.getString(ctx, "name")), true)))
+                                        .then(literal("off").executes(ctx -> hologram(ctx.getSource(), displays, OutletNames.commandName(StringArgumentType.getString(ctx, "name")), false)))))
                         )
                         .then(literal("credit").requires(BankCommands::op)
                                 .then(literal("unbacked").then(playerAmount("unbacked")))
@@ -327,6 +332,17 @@ public final class BankCommands {
         }
         BankRuntime.save();
         return ok(source, BankPhrases.outletSet(name, pos.getX(), pos.getY(), pos.getZ()));
+    }
+
+    private static int rotateOutlet(ServerCommandSource source, DisplayService displays, String name, int turns) {
+        OutletPoint outlet = books().outlet(name);
+        if (outlet == null) return fail(source, BankPhrases.noSuchOutlet());
+        displays.discardMarker(source.getServer(), outlet);
+        outlet.setQuarterTurns(turns);
+        BankRuntime.save();
+        displays.ensureMarker(source.getServer(), outlet);
+        source.sendMessage(Text.literal("柜台朝向已更新：" + name + " / " + new String[]{"北", "东", "南", "西"}[turns]));
+        return 1;
     }
 
     private static int removeOutlet(ServerCommandSource source, DisplayService displays, String name) {
@@ -938,7 +954,7 @@ public final class BankCommands {
     }
 
     private static boolean validNewOutletName(String name) {
-        return name != null && NEW_OUTLET_NAME.matcher(name).matches();
+        return OutletNames.valid(name);
     }
 
     private static boolean op(ServerCommandSource source) {

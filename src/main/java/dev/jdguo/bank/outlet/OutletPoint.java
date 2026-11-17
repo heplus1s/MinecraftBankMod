@@ -14,6 +14,7 @@ public final class OutletPoint {
     private boolean hologram;
     private UUID hologramId;
     private UUID markerId;
+    private int quarterTurns;
 
     public OutletPoint(String name, String world, int x, int y, int z, double radius, double lift,
                        boolean hologram, UUID hologramId) {
@@ -32,6 +33,16 @@ public final class OutletPoint {
         this.hologram = hologram;
         this.hologramId = hologramId;
         this.markerId = markerId;
+    }
+
+    /** Zero is the legacy north-facing model; clockwise quarter turns. */
+    public int quarterTurns() { return quarterTurns; }
+    public void setQuarterTurns(int value) { quarterTurns = Math.floorMod(value, 4); }
+    public float rotatedX(float x, float z) {
+        return switch (quarterTurns) { case 1 -> -z; case 2 -> -x; case 3 -> z; default -> x; };
+    }
+    public float rotatedZ(float x, float z) {
+        return switch (quarterTurns) { case 1 -> x; case 2 -> -z; case 3 -> -x; default -> z; };
     }
 
     public String name() { return name; }

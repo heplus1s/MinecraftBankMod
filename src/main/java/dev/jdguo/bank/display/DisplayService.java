@@ -219,7 +219,7 @@ public final class DisplayService {
         counter.setVelocity(Vec3d.ZERO);
         counter.refreshPositionAndAngles(x, y, z, counter.getYaw(), 0.0f);
         if (counter.getPassengerList().isEmpty()) {
-            attachCounter(counter);
+            attachCounter(counter, outlet);
         }
         if (spawned) {
             BankRuntime.save();
@@ -227,15 +227,15 @@ public final class DisplayService {
     }
 
     /** Desk, pale top, brass edge, bookshelf back, and a lectern. Offsets are from the counter's feet. */
-    private void attachCounter(InteractionEntity counter) {
-        counterPart(counter, Blocks.DARK_OAK_PLANKS, -0.75f, 0.0f, -0.38f, 1.5f, 0.92f, 0.76f);
-        counterPart(counter, Blocks.SMOOTH_QUARTZ, -0.80f, 0.92f, -0.42f, 1.6f, 0.10f, 0.84f);
-        counterPart(counter, Blocks.GOLD_BLOCK, -0.80f, 1.00f, -0.46f, 1.6f, 0.04f, 0.05f);
-        counterPart(counter, Blocks.BOOKSHELF, -0.60f, 0.0f, 0.28f, 1.2f, 1.55f, 0.28f);
-        counterPart(counter, Blocks.LECTERN, -0.28f, 1.02f, -0.16f, 0.55f, 0.55f, 0.55f);
+    private void attachCounter(InteractionEntity counter, OutletPoint outlet) {
+        counterPart(counter, outlet, Blocks.DARK_OAK_PLANKS, -0.75f, 0.0f, -0.38f, 1.5f, 0.92f, 0.76f);
+        counterPart(counter, outlet, Blocks.SMOOTH_QUARTZ, -0.80f, 0.92f, -0.42f, 1.6f, 0.10f, 0.84f);
+        counterPart(counter, outlet, Blocks.GOLD_BLOCK, -0.80f, 1.00f, -0.46f, 1.6f, 0.04f, 0.05f);
+        counterPart(counter, outlet, Blocks.BOOKSHELF, -0.60f, 0.0f, 0.28f, 1.2f, 1.55f, 0.28f);
+        counterPart(counter, outlet, Blocks.LECTERN, -0.28f, 1.02f, -0.16f, 0.55f, 0.55f, 0.55f);
     }
 
-    private void counterPart(InteractionEntity counter, Block block, float tx, float ty, float tz, float sx, float sy, float sz) {
+    private void counterPart(InteractionEntity counter, OutletPoint outlet, Block block, float tx, float ty, float tz, float sx, float sy, float sz) {
         DisplayEntity.BlockDisplayEntity display = new DisplayEntity.BlockDisplayEntity(EntityType.BLOCK_DISPLAY, counter.getWorld());
         display.setSilent(true);
         display.setInvulnerable(true);
@@ -247,9 +247,10 @@ public final class DisplayService {
         state.putString("Name", Registries.BLOCK.getId(block).toString());
         nbt.put("block_state", state);
         NbtCompound transformation = new NbtCompound();
-        transformation.put("translation", vec(tx, ty, tz));
+        transformation.put("translation", vec(outlet.rotatedX(tx, tz), ty, outlet.rotatedZ(tx, tz)));
         transformation.put("scale", vec(sx, sy, sz));
-        transformation.put("left_rotation", vec(0, 0, 0, 1));
+        float angle = (float) (outlet.quarterTurns() * Math.PI / 4);
+        transformation.put("left_rotation", vec(0, (float) -Math.sin(angle), 0, (float) Math.cos(angle)));
         transformation.put("right_rotation", vec(0, 0, 0, 1));
         nbt.put("transformation", transformation);
         display.readNbt(nbt);
