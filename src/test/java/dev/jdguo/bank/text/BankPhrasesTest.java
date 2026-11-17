@@ -37,11 +37,12 @@ class BankPhrasesTest {
         UUID player = UUID.randomUUID();
         books.deposit(player, "diamond", BigInteger.TEN);
         books.setOpeningReserve("diamond", new BigInteger("2000"));
+        assertEquals(0, new BigDecimal("2010").compareTo(books.commodityHoldingsExact("diamond")));
         assertEquals(new BigInteger("2000"), books.supply("diamond").anchor());
         assertEquals(new BigInteger("2000"), books.supply("diamond").reserve());
         assertEquals(BigInteger.TEN, books.supply("diamond").depositVault());
         assertEquals(BigInteger.TEN, books.balance(player, "diamond"));
-        assertEquals(0, new BigDecimal("501.2531").compareTo(books.unitsPer("copper", "diamond")));
+        assertEquals(0, new BigDecimal("497.5124").compareTo(books.unitsPer("copper", "diamond")));
         books.checkInvariants();
     }
 

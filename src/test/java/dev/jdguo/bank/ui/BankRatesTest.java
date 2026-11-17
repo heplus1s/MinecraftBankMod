@@ -42,11 +42,11 @@ class BankRatesTest {
         var lines = BankRates.column(data);
 
         assertTrue(lines.contains("兑付正常"));
-        assertEquals("1 钻石 = 暂无牌价", BankRates.centralQuote(data));
+        assertEquals("钻石兑铜锭：暂无牌价", BankRates.centralQuote(data));
         assertEquals("1 央行券 = 暂无牌价", BankRates.bankNoteQuote(data));
-        assertTrue(lines.contains("1 钻石 = 暂无牌价"));
+        assertTrue(lines.contains("钻石兑铜锭：暂无牌价"));
         assertTrue(lines.contains("1 央行券 = 暂无牌价"));
-        assertFalse(String.join("\n", lines).contains("铜锭"));
+        assertEquals(1, lines.stream().filter(line -> line.contains("铜锭")).count());
         assertFalse(String.join("\n", lines).contains("各货币牌价"));
         assertFalse(String.join("\n", lines).contains("汇率"));
         assertFalse(String.join("\n", lines).contains("M0"));
