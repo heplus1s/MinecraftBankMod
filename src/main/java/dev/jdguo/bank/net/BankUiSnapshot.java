@@ -129,12 +129,7 @@ public final class BankUiSnapshot {
             }
             o.add("hardBooks", hardBooks);
             o.addProperty("feePercent", percent(books.feeFraction()));
-            if (centralNote != null) {
-                BigDecimal tight = books.tightness(centralNote.id());
-                if (tight != null) {
-                    o.addProperty("tightness", CompactFormat.formatRatio(tight));
-                }
-            }
+            o.add("redemptionDetails", books.redemptionDetails());
             putMoney(o, "copperReserve", books.currency("copper") == null ? null : books.supply("copper").reserveExact());
             putMoney(o, "diamondReserve", books.currency("diamond") == null ? null : books.supply("diamond").reserveExact());
             putMoney(o, "noteReserve", centralNote == null ? null : books.supply(centralNote.id()).reserveExact());

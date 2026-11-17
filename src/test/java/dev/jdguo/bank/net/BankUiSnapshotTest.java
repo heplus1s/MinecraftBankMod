@@ -132,7 +132,8 @@ class BankUiSnapshotTest {
         assertTrue(snapshot.get("admin").getAsBoolean());
         assertFalse(snapshot.get("frozen").getAsBoolean());
         assertEquals("2%", snapshot.get("feePercent").getAsString());
-        assertEquals(CompactFormat.formatRatio(books.tightness("note")), snapshot.get("tightness").getAsString());
+        assertFalse(snapshot.has("tightness"));
+        assertTrue(snapshot.has("redemptionDetails"));
         assertTrue(snapshot.has("institutions"));
         assertEquals("0", snapshot.get("m0").getAsString());
         assertEquals("0", snapshot.get("m1").getAsString());

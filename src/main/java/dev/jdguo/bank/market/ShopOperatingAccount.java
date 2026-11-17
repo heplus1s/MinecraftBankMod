@@ -53,10 +53,7 @@ public final class ShopOperatingAccount {
         if (currency != null && currency.startsWith("personal:")) {
             try {
                 BankBooks books = BankRuntime.books();
-                var quote = books.quoteSystemPayout(UUID.fromString(currency.substring(9)),
-                        books.systemAvailableBalance("shop", "note"));
-                return quote.get("success").getAsBoolean()
-                        ? new BigDecimal(quote.get("privateAmount").getAsString()) : BigDecimal.ZERO;
+                return books.systemPersonalPayoutCapacity("shop", UUID.fromString(currency.substring(9)));
             } catch (IllegalArgumentException invalid) { return BigDecimal.ZERO; }
         }
         return BankRuntime.books().systemAvailableBalance("shop", currency);

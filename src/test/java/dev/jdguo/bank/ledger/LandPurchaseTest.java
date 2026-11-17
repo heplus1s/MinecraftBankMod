@@ -44,7 +44,7 @@ class LandPurchaseTest {
     }
     @Test void personalCollateralReceiptSurvivesRestartAndRefund() {
         BankBooks b=funded();
-        var coin=RecursiveClearingRegression.coin(b,payer,"地币","diamond",100);
+        var coin=RecursiveClearingRegression.coin(b,payer,"地币","note",100);
         assertTrue(b.depositPersonalReserveExact(payer,new BigDecimal("10")).success());
         String tender="personal:"+coin.id(); var q=b.quoteLandPurchase("note",BigInteger.ONE,tender);
         assertTrue(q.get("success").getAsBoolean(),q.toString());
