@@ -318,7 +318,11 @@ class SettlementHooksTest {
             assertEquals(0, new BigDecimal("0.5000").compareTo((BigDecimal) playerBalance.invoke(account, buyer, personal)));
             assertEquals(0, ((BigDecimal) balance.invoke(account, personal)).signum()); // Pending delivery assets cannot be reused.
             assertTrue(books.completeSystemPayment("decimal-purchase").success());
-            assertEquals(0, BigDecimal.ZERO.compareTo((BigDecimal) balance.invoke(account, personal)));
+            BigDecimal unitPrice = books.personalDiamondPrice(books.personalNote(buyer)).multiply(books.unitsPer("note", "diamond"));
+            BigDecimal expectedCapacity = new BigDecimal("0.0600").divide(unitPrice, Money.SCALE, java.math.RoundingMode.DOWN)
+                    .min(new BigDecimal("0.5000"));
+            assertEquals(0, expectedCapacity.compareTo((BigDecimal) balance.invoke(account, personal)));
+            assertEquals(0, new BigDecimal("0.0600").compareTo(books.systemAvailableBalance("shop", "note")));
             assertEquals(0, new BigDecimal("2.2500").compareTo(books.systemSettlementBalance("shop", "diamond")));
             assertEquals(BigInteger.ZERO, books.shopOperating("note")); // Only the earlier 0.06 fraction exists, no appraised notes were minted.
 
@@ -326,19 +330,44 @@ class SettlementHooksTest {
             assertEquals(0, new BigDecimal("0.9400").compareTo((BigDecimal) playerBalance.invoke(account, buyer, "note")));
             assertEquals(0, new BigDecimal("0.0600").compareTo((BigDecimal) balance.invoke(account, "note")));
             assertEquals(0, new BigDecimal("0.5000").compareTo((BigDecimal) playerBalance.invoke(account, buyer, personal)));
-            assertEquals(0, BigDecimal.ZERO.compareTo((BigDecimal) balance.invoke(account, personal)));
+            assertEquals(0, expectedCapacity.compareTo((BigDecimal) balance.invoke(account, personal)));
             BankBooks loaded = BankRuntime.books();
             assertEquals("mixed_quote_required", loaded.transferShopReferenced(buyer, personal,
                     new BigDecimal("0.2500"), false, "decimal-old-payout").code());
-            JsonObject payout = loaded.quoteSystemPayout(series, new BigDecimal("0.0500"));
-            assertEquals("0", payout.get("privateAmount").getAsString()); // No issuer-listed whole coin exists.
-            assertTrue(loaded.executeSystemPayout(buyer, series, new BigDecimal("0.0500"),
+            // The entire 0.05 budget exceeds the remaining fractional offer. Never silently pay cash instead.
+            String beforeRejected = loaded.toJson();
+            JsonObject refused = loaded.quoteSystemPayout(series, new BigDecimal("0.0500"));
+            assertFalse(refused.get("success").getAsBoolean());
+            assertEquals("insufficient_offer", refused.get("code").getAsString());
+            assertEquals(beforeRejected, loaded.toJson());
+
+            BigDecimal budget = new BigDecimal("0.0001");
+            JsonObject payout = loaded.quoteSystemPayout(series, budget);
+            assertTrue(payout.get("success").getAsBoolean(), payout.toString());
+            BigDecimal quantity = new BigDecimal(payout.get("privateAmount").getAsString());
+            assertTrue(quantity.signum() > 0 && quantity.compareTo(new BigDecimal("0.5000")) < 0);
+            assertEquals(0, new BigDecimal(payout.get("centralRemainder").getAsString()).signum());
+            BigDecimal reserveBefore = loaded.effectiveBackingExact(loaded.personalNote(buyer));
+            BigDecimal liabilityBefore = loaded.supply("note").liabilityExact();
+            assertTrue(loaded.executeSystemPayout(seller, series, budget,
                     payout.get("fingerprint").getAsString(), "decimal-payout").success());
+            // Escrowed delivery cannot spend the same offer or credit the recipient early.
+            assertEquals(0, ((BigDecimal) balance.invoke(account, personal)).signum());
+            assertEquals(0, ((BigDecimal) playerBalance.invoke(account, seller, personal)).signum());
+            assertEquals(0, new BigDecimal("0.9400").compareTo(loaded.balanceExact(buyer, "note")));
+            loaded = BankBooks.fromJson(loaded.toJson(), BankConfig.defaults());
+            BankRuntime.state = new BankWorldState(loaded);
             assertTrue(loaded.completeSystemPayment("decimal-payout").success());
-            assertEquals(0, new BigDecimal("0.5000").compareTo((BigDecimal) playerBalance.invoke(account, buyer, personal)));
-            assertEquals(0, new BigDecimal("0.9900").compareTo((BigDecimal) playerBalance.invoke(account, buyer, "note")));
-            assertEquals(0, new BigDecimal("0.0100").compareTo((BigDecimal) balance.invoke(account, "note")));
-            assertEquals(0, BigDecimal.ZERO.compareTo((BigDecimal) balance.invoke(account, personal)));
+            assertEquals(0, new BigDecimal("0.5000").subtract(quantity).compareTo((BigDecimal) playerBalance.invoke(account, buyer, personal)));
+            assertEquals(0, quantity.compareTo((BigDecimal) playerBalance.invoke(account, seller, personal)));
+            assertEquals(0, loaded.balanceExact(seller, "note").signum()); // Recipient gets only personal currency.
+            assertEquals(0, new BigDecimal("0.9401").compareTo((BigDecimal) playerBalance.invoke(account, buyer, "note")));
+            assertEquals(0, new BigDecimal("0.0599").compareTo((BigDecimal) balance.invoke(account, "note")));
+            BigDecimal afterCapacity = new BigDecimal("0.0599").divide(unitPrice, Money.SCALE, java.math.RoundingMode.DOWN)
+                    .min(new BigDecimal("0.5000").subtract(quantity));
+            assertEquals(0, afterCapacity.compareTo((BigDecimal) balance.invoke(account, personal)));
+            assertEquals(0, reserveBefore.compareTo(loaded.effectiveBackingExact(loaded.personalNote(buyer))));
+            assertEquals(0, liabilityBefore.compareTo(loaded.supply("note").liabilityExact()));
             assertEquals(0, new BigDecimal("2.2500").compareTo(loaded.systemSettlementBalance("shop", "diamond")));
             loaded.checkInvariants();
         } finally {

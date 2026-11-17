@@ -87,7 +87,7 @@ public final class ShopOperatingAccount {
         return BankRuntime.books().quoteSystemPayout(coin, centralBudget).toString();
     }
 
-    /** Atomically buys actually listed issuer coins and pays any remainder in central notes. */
+    /** Atomically buys actually listed fractional issuer coins; new payouts never substitute central-note change. */
     public TxResult payIssuerOffer(UUID player, UUID coin, BigDecimal centralBudget,
                                    String fingerprint, String reference) {
         return BankRuntime.transact(books -> books.executeSystemPayout(

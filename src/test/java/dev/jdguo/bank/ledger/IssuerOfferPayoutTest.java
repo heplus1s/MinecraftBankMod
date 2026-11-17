@@ -138,4 +138,33 @@ class IssuerOfferPayoutTest {
         assertFalse(q.get("success").getAsBoolean()); assertEquals("precision",q.get("code").getAsString());
         assertEquals(before,f.books.toJson());
     }
+    @Test void fractionalReadCapacityUsesRealNoteBudgetNotPendingPhysicalProceeds() {
+        BankBooks b=BankBooks.create(BankConfig.defaults());UUID issuer=UUID.randomUUID(), recipient=UUID.randomUUID();
+        b.creditHeld(issuer,"note",d("1")); b.transferShop(issuer,"note",d("0.06"),true);
+        assertTrue(b.createPersonalNote(issuer,"Tst",false,BigInteger.ONE).success());UUID coin=b.personalNote(issuer).id();
+        b.deposit(issuer,"diamond",BigInteger.valueOf(3));b.depositPersonalReserveExact(issuer,d("3"));
+        b.issuePersonalNoteUnbacked(issuer,BigInteger.TWO);
+        assertTrue(b.transferShopReferenced(issuer,"personal:"+coin,d("1.5"),true,"capacity-sale").success());
+        equal(b.systemPersonalPayoutCapacity("shop",coin),BigDecimal.ZERO);
+        equal(b.systemAvailableBalance("shop","note"),d("0.06"));
+        assertTrue(b.completeSystemPayment("capacity-sale").success());
+        equal(b.systemPersonalPayoutCapacity("shop",coin),d("0.5"));
+        equal(b.systemAvailableBalance("shop","note"),d("0.06"));
+        equal(b.systemSettlementBalance("shop","diamond"),d("2.25"));
+        String before=b.toJson();JsonObject rejected=b.quoteSystemPayout(coin,d("0.05"));
+        assertFalse(rejected.get("success").getAsBoolean());assertEquals("insufficient_offer",rejected.get("code").getAsString());
+        assertEquals(before,b.toJson());
+        b=BankBooks.fromJson(before,BankConfig.defaults());
+        equal(b.systemPersonalPayoutCapacity("shop",coin),d("0.5"));
+        JsonObject q=b.quoteSystemPayout(coin,d("0.0001"));assertTrue(q.get("success").getAsBoolean(),q.toString());
+        BigDecimal qty=d(q.get("privateAmount").getAsString());assertTrue(qty.signum()>0 && qty.compareTo(d("0.5"))<0);
+        assertTrue(b.executeSystemPayout(recipient,coin,d("0.0001"),q.get("fingerprint").getAsString(),"capacity-pay").success());
+        equal(b.systemPersonalPayoutCapacity("shop",coin),BigDecimal.ZERO);
+        equal(b.personalHoldingExact(coin,recipient),BigDecimal.ZERO);
+        b=BankBooks.fromJson(b.toJson(),BankConfig.defaults());assertTrue(b.completeSystemPayment("capacity-pay").success());
+        equal(b.personalHoldingExact(coin,recipient),qty);equal(b.personalHoldingExact(coin,issuer),d("0.5").subtract(qty));
+        equal(b.balanceExact(recipient,"note"),BigDecimal.ZERO);equal(b.balanceExact(issuer,"note"),d("0.9401"));
+        equal(b.systemAvailableBalance("shop","note"),d("0.0599"));equal(b.systemSettlementBalance("shop","diamond"),d("2.25"));
+        b.checkInvariants();
+    }
 }
