@@ -345,14 +345,20 @@ public final class BankUiService {
      */
     private static void depositHeld(ServerPlayerEntity player, BankBooks books) {
         ItemStack hand = player.getMainHandStack();
-        MainHandBill result = redeemMainHandBill(books, player.getUuid(), CheckItems.read(hand));
-        if (result.clearHand()) {
-            hand.setCount(0);
+        PresentedCheck check = CheckItems.read(hand);
+        if (check == null) {
+            tell(player, BankPhrases.failure(BankPhrases.Kind.REDEEM, "hold_bill", null, null));
+            return;
         }
-        if (result.saveLedger()) {
-            BankRuntime.save();
-        }
-        tell(player, result.spoken());
+        // Persist both payment and check cancellation before consuming the physical ticket.
+        // A crash leaving the item behind is safe: the durable check record rejects its replay.
+        TxResult result = BankRuntime.transact(candidate -> candidate.redeemCheck(player.getUuid(), check));
+        if (result.success() || "already_redeemed".equals(result.code()) || "tampered".equals(result.code())) hand.setCount(0);
+        tell(player, result.success()
+                ? BankPhrases.redeemResult(BankRuntime.books(), player.getUuid(), check.currency(), result)
+                : "save_failed".equals(result.code()) || "bank_not_ready".equals(result.code())
+                    ? new dev.jdguo.bank.text.Spoken("[银行] " + result.message() + "，汇票已保留。", "Bill retained: " + result.message(), dev.jdguo.bank.text.Tone.RED)
+                    : BankPhrases.failure(BankPhrases.Kind.REDEEM, result.code(), check.currency(), null));
     }
 
     /** {@code check} is the bill in the main hand, or null when that hand is empty or is not a bill. */
@@ -363,7 +369,7 @@ public final class BankUiService {
         TxResult result = books.redeemCheck(player, check);
         boolean clear = result.success() || "already_redeemed".equals(result.code()) || "tampered".equals(result.code());
         dev.jdguo.bank.text.Spoken spoken = result.success()
-                ? BankPhrases.redeem(books, player, check.currency(), result.amount(), result.copperPaid())
+                ? BankPhrases.redeemResult(books, player, check.currency(), result)
                 : BankPhrases.failure(BankPhrases.Kind.REDEEM, result.code(), check.currency(), null);
         return new MainHandBill(spoken, clear, result.success());
     }

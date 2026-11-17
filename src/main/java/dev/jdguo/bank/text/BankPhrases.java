@@ -147,7 +147,7 @@ public final class BankPhrases {
             case "frozen" -> line(Tone.RED, "已暂停央行券兑付。", "Bank-note redemption is suspended.");
             case "no_market" -> line(Tone.RED, "这种货币无法报价。", "That currency cannot be quoted.");
             case "no_quote" -> line(Tone.RED, "暂无牌价，这次兑换已全部拒绝。", "There is no quote, so nothing was exchanged.");
-            case "whole_physical_required" -> line(Tone.RED, "实物不能拆分，请在硬通货兑换中按整件数量预览；铜与钻石互兑可经央行券进行。", "Physical items require whole quantities. Use the physical exchange preview.");
+            case "whole_physical_required" -> line(Tone.RED, "实物不能拆分，请在实物货币兑换中按整件数量预览；铜与钻石互兑可经央行券进行。", "Physical items require whole quantities. Use the physical exchange preview.");
             case "no_unallocated" -> line(Tone.RED, "没有尚未入账的已发行央行券，这次已全部拒绝，不会新发。", "There are no unallocated issued notes to sell.");
             case "manual_issue" -> line(Tone.RED, "央行券只能由管理员发行或注销，不能用兑换增加。", "Bank notes change only when an operator issues or retires them.");
             case "insufficient_deposits" -> line(Tone.RED, "中央银行存款不足，这次已全部拒绝，不会凭空增加准备金。", "Central-bank deposits are short, so nothing was posted.");
@@ -172,6 +172,15 @@ public final class BankPhrases {
         return line(Tone.AQUA,
                 "兑付 " + nameZh(books, currency) + " ×" + CompactFormat.format(amount) + " 成功" + changeZh(copper) + balancesZh(books, player),
                 "Paid " + shortEn(books, currency) + " ×" + CompactFormat.format(amount) + changeEn(copper) + balancesEn(books, player));
+    }
+
+    /** Preserve the exact funded-change / retained-entitlement result in both bill entry points. */
+    public static Spoken redeemResult(BankBooks books, UUID player, String currency, dev.jdguo.bank.ledger.TxResult result) {
+        Spoken base = redeem(books, player, currency, result.amount(), result.copperPaid());
+        int separator = result.message().indexOf("; 实物零头");
+        if (separator < 0) return base;
+        String detail = result.message().substring(separator + 2);
+        return new Spoken(base.zh() + "；" + detail, base.en() + "; " + detail, base.tone());
     }
 
     public static Spoken issue(BankBooks books, String currency, BigInteger amount, String playerName) {

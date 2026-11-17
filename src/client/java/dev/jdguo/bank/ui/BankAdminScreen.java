@@ -156,7 +156,13 @@ public final class BankAdminScreen extends Screen {
                 remember(); BankUiClient.send("admin-funding-preview " + account + " " + typed);
             });
             textTop = 118;
-            lines.add(title + "余额：" + BankSnapshot.text(data, account + "SystemBalance") + " " + centralName());
+            lines.add(title + "（仅列 " + centralName() + "，不含其他抵押物折价）");
+            JsonObject funds = data.has(account + "SystemFunds") ? data.getAsJsonObject(account + "SystemFunds") : new JsonObject();
+            lines.add("可用央行券：" + BankSnapshot.text(funds, "available"));
+            lines.add("经营储蓄（拨款入账处）：" + BankSnapshot.text(funds, "ordinary"));
+            lines.add("结算资产中的央行券：" + BankSnapshot.text(funds, "settled"));
+            lines.add("待交付入账锁定：" + BankSnapshot.text(funds, "heldIncoming") + "（已从可用额扣除）");
+            lines.add("待完成付款：" + BankSnapshot.text(funds, "pendingOutgoing") + "（已转出，不计入上述余额）");
             lines.add("央行自有储蓄：" + centralField("treasury") + " " + centralName());
             lines.add("只从央行自有央行券拨入此系统账户，不使用玩家存款，不自动增发。两个系统账户独立。");
             button("央行券注资", x, height - 30, (w - 4) / 2, () -> switchPage(6));
@@ -164,7 +170,7 @@ public final class BankAdminScreen extends Screen {
             if (preview != null && account.equals(BankSnapshot.text(preview, "account"))) {
                 lines.add("拨款：" + BankSnapshot.text(preview, "amount") + " " + centralName());
                 lines.add("拨款后央行自有：" + BankSnapshot.text(preview, "sourceAfter"));
-                lines.add("拨款后" + title + "：" + BankSnapshot.text(preview, "targetAfter"));
+                lines.add("拨款后经营储蓄：" + BankSnapshot.text(preview, "targetAfter"));
                 lines.add("预览有效 60 秒；账户余额变化需重新预览。");
                 button("确认拨款", x + (w + 4) / 2, height - 30, (w - 4) / 2, () -> BankUiClient.send("admin-funding-confirm"));
                 java.math.BigDecimal current = BankRates.parse(typed), quoted = BankRates.parse(BankSnapshot.text(preview, "amount"));
@@ -176,7 +182,7 @@ public final class BankAdminScreen extends Screen {
                 for (int i = entries.size() - 1; i >= 0 && shown < 5; i--) {
                     var entry = entries.get(i).getAsJsonObject();
                     if (!account.equals(BankSnapshot.text(entry, "account"))) continue;
-                    lines.add("+" + BankSnapshot.text(entry, "amount") + "，账户余额 " + BankSnapshot.text(entry, "accountAfter")); shown++;
+                    lines.add("+" + BankSnapshot.text(entry, "amount") + "，经营储蓄 " + BankSnapshot.text(entry, "accountAfter")); shown++;
                 }
                 if (shown == 0) lines.add("暂无拨款记录");
             }

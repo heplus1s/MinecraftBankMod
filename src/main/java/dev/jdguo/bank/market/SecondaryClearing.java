@@ -20,14 +20,14 @@ public final class SecondaryClearing {
     /**
      * Price of {@code receiveAmount} notes at {@code receivePrice}, paid with as many whole
      * notes at {@code payPrice} as fit, plus fractional central notes for the remainder.
-     * Returns null when a whole pay-note does not fit or a price is missing.
+     * Returns null when a whole pay-note does not fit or a required price is missing.
+     * The legacy copper-rate argument is retained for source compatibility and is ignored.
      */
     public static Quote priceSwap(BigDecimal payPrice, BigDecimal receivePrice, BigInteger receiveAmount,
                                   BigDecimal notesPerDiamond, BigInteger copperPerDiamond) {
         if (payPrice == null || receivePrice == null || receiveAmount == null
                 || payPrice.signum() <= 0 || receivePrice.signum() <= 0 || receiveAmount.signum() <= 0
-                || notesPerDiamond == null || notesPerDiamond.signum() <= 0
-                || copperPerDiamond == null || copperPerDiamond.signum() <= 0) {
+                || notesPerDiamond == null || notesPerDiamond.signum() <= 0) {
             return null;
         }
         BigDecimal cost = receivePrice.multiply(new BigDecimal(receiveAmount), FxMath.MC);

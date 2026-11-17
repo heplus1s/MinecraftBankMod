@@ -7,7 +7,7 @@ package dev.jdguo.bank.ui;
  */
 public final class BankExchange {
     public static final String PERSONAL = "pn:";
-    public static final String REFUSAL = "个人币在这里只能和央行券，或另一张个人币兑换。铜锭、钻石兑付发行人的准备金，请用个人币交易里的通兑。";
+    public static final String REFUSAL = "实物货币兑换仅用于钻石、铜锭与央行券。购买个人币请到个人币交易与兑换中的市场；通兑会扣发行人的准备金。";
 
     private BankExchange() {
     }

@@ -295,19 +295,18 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         }
         PresentedCheck check = CheckItems.read(stack);
         if (check != null) {
-            TxResult result = BankRuntime.books().redeemCheck(player.getUuid(), check);
+            TxResult result = BankRuntime.transact(candidate -> candidate.redeemCheck(player.getUuid(), check));
             boolean confiscate = result.success()
                     || "already_redeemed".equals(result.code())
                     || "tampered".equals(result.code());
             if (confiscate) {
                 inventory.setStack(deposit, ItemStack.EMPTY);
             }
-            if (result.success()) {
-                BankRuntime.save();
-            }
             tell(player, result.success()
-                    ? BankPhrases.redeem(BankRuntime.books(), player.getUuid(), check.currency(), result.amount(), result.copperPaid())
-                    : BankPhrases.failure(BankPhrases.Kind.REDEEM, result.code(), check.currency(), null));
+                    ? BankPhrases.redeemResult(BankRuntime.books(), player.getUuid(), check.currency(), result)
+                    : "save_failed".equals(result.code()) || "bank_not_ready".equals(result.code())
+                        ? new dev.jdguo.bank.text.Spoken("[银行] " + result.message() + "，汇票已保留。", "Bill retained: " + result.message(), dev.jdguo.bank.text.Tone.RED)
+                        : BankPhrases.failure(BankPhrases.Kind.REDEEM, result.code(), check.currency(), null));
             return;
         }
         if (page != Page.DEPOSIT) {
@@ -522,7 +521,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         nav(47, Items.CHEST, "取出", "nav:withdraw");
         nav(48, Items.EMERALD, "兑换", "nav:exchange");
         nav(49, Items.WRITABLE_BOOK, "银行汇票", "nav:checks");
-        nav(50, Items.NAME_TAG, "个人币交易", "nav:market");
+        nav(50, Items.NAME_TAG, "个人币交易与兑换", "nav:market");
         nav(52, Items.NETHER_STAR, "个人货币发行", "nav:issuance");
         if (owner.hasPermissionLevel(2)) {
             nav(51, Items.RECOVERY_COMPASS, "中央银行管理", "nav:management");
@@ -664,7 +663,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                     List.of(Text.literal("输入币名、在线玩家和数量")), "pn:transfer-help", 1));
         } else {
             inventory.setStack(4, marker(Items.NAME_TAG,
-                    Text.literal("个人币交易").formatted(Formatting.YELLOW, Formatting.BOLD),
+                    Text.literal("个人币交易与兑换").formatted(Formatting.YELLOW, Formatting.BOLD),
                     List.of(Text.literal("Personal notes").formatted(Formatting.GRAY),
                             Text.literal("买入、卖出、互换，或按市场价格兑付").formatted(Formatting.DARK_GRAY),
                             Text.literal("特殊数量用 /bank note").formatted(Formatting.DARK_GRAY)),

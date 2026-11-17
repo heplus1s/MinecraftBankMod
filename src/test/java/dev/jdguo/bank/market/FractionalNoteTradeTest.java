@@ -17,6 +17,16 @@ class FractionalNoteTradeTest {
         assertEquals(0, new BigDecimal("0.25").compareTo(q.centralExact()));
         assertEquals(BigInteger.ZERO, q.copper());
     }
+    @Test void missingOrInvalidCopperQuoteDoesNotBlockCentralNoteChange() {
+        for (BigInteger copper : new BigInteger[] { null, BigInteger.ZERO, BigInteger.valueOf(-1) }) {
+            var quote = SecondaryClearing.priceSwap(BigDecimal.ONE, new BigDecimal("1.1"), BigInteger.ONE,
+                    new BigDecimal("2.5"), copper);
+            assertNotNull(quote);
+            assertEquals(0, new BigDecimal("0.25").compareTo(quote.centralExact()));
+            assertEquals(BigInteger.ZERO, quote.copper());
+        }
+        assertNull(SecondaryClearing.priceSwap(BigDecimal.ONE, new BigDecimal("1.1"), BigInteger.ONE, null, null));
+    }
     @Test void subQuantumResidualIsNotFree() {
         var q = SecondaryClearing.priceSwap(BigDecimal.ONE, new BigDecimal("1.00000001"), BigInteger.ONE,
                 new BigDecimal("0.01"), BigInteger.valueOf(100));

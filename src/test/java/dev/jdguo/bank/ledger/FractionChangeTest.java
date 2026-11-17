@@ -105,4 +105,20 @@ class FractionChangeTest {
         assertTrue(b.redeemCheck(issuer,paper).success());
         eq("1",b.balanceExact(issuer,"note"));
     }
+    @Test void bothProductionBillEntriesCommitBeforeConsumingAndShowExactChange() throws Exception {
+        String ui=java.nio.file.Files.readString(java.nio.file.Path.of("src/main/java/dev/jdguo/bank/net/BankUiService.java"));
+        String held=ui.substring(ui.indexOf("private static void depositHeld"),ui.indexOf("static MainHandBill redeemMainHandBill"));
+        assertTrue(held.indexOf("BankRuntime.transact") < held.indexOf("hand.setCount(0)"));
+        assertFalse(held.contains("BankRuntime.save()")); assertTrue(held.contains("BankPhrases.redeemResult"));
+        String chest=java.nio.file.Files.readString(java.nio.file.Path.of("src/main/java/dev/jdguo/bank/gui/BankScreenHandler.java"));
+        String branch=chest.substring(chest.indexOf("PresentedCheck check = CheckItems.read(stack)"));
+        branch=branch.substring(0,branch.indexOf("if (page != Page.DEPOSIT)"));
+        assertTrue(branch.indexOf("BankRuntime.transact") < branch.indexOf("inventory.setStack"));
+        assertFalse(branch.contains("BankRuntime.save()")); assertTrue(branch.contains("BankPhrases.redeemResult"));
+        BankBooks b=setup(true);
+        var paid=dev.jdguo.bank.text.BankPhrases.redeemResult(b,issuer,"note",TxResult.ok(BigInteger.ZERO,"Redeemed notes; 实物零头 0.5 已结算为 1 央行券"));
+        assertTrue(paid.zh().contains("0.5 已结算为 1 央行券"));
+        var retained=dev.jdguo.bank.text.BankPhrases.redeemResult(b,issuer,"note",TxResult.ok(BigInteger.ZERO,"Redeemed notes; 实物零头权益保留（央行券资金或精确报价不足）"));
+        assertTrue(retained.zh().contains("权益保留"));
+    }
 }

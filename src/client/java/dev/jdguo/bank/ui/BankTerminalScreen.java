@@ -263,7 +263,7 @@ public final class BankTerminalScreen extends Screen {
                 if (client != null) client.execute(this::clearAndInit);
             }
         } catch (ReflectiveOperationException | LinkageError unavailable) {
-            notice = "请安装市场模组 1.0.6 或更新版本以打开个人币交易界面。";
+            notice = "请安装市场模组 1.0.6 或更新版本以打开个人币交易与兑换界面。";
             if (client != null) client.execute(this::clearAndInit);
         }
     }
@@ -293,7 +293,7 @@ public final class BankTerminalScreen extends Screen {
         marketBalanceY = stack.secondY() + stack.secondH() + 4;
         if (external) {
             int[] columns = twoColumns();
-            addDrawableChild(textButton("前往市场", columns[0], stack.firstY(), this::openPersonalMarket));
+            addDrawableChild(textButton("市场买入/挂牌", columns[0], stack.firstY(), this::openPersonalMarket));
             ButtonWidget transfer = addDrawableChild(textButton("转给玩家", columns[1], stack.firstY(),
                     () -> openPersonalCommand("/bank note transfer " + (noteName.isBlank() ? "" : "\"" + noteName + "\" "))));
             transfer.active = !notes.isEmpty();
@@ -1007,7 +1007,7 @@ public final class BankTerminalScreen extends Screen {
             case SAVINGS -> drawSavings(context);
             case DEPOSIT -> drawHeading(context, "存入个人存款", "选择货币后，余额显示在列表下方。");
             case WITHDRAW -> drawHeading(context, "取出个人存款", "选择货币后，余额显示在列表下方。");
-            case EXCHANGE -> drawHeading(context, "硬通货兑换", "选择实物和方向 → 输入整件数量 → 预览并确认。");
+            case EXCHANGE -> drawHeading(context, "实物货币兑换", "选择实物和方向 → 输入整件数量 → 预览并确认。");
             case ISSUE -> drawHeading(context, "开立汇票", "选择币种和抬头，再填写开出的数量。");
             case REDEEM -> drawRedeem(context);
             case MARKET -> drawMarketHeading(context);
@@ -1157,7 +1157,7 @@ public final class BankTerminalScreen extends Screen {
     private void drawMarketHeading(DrawContext context) {
         int x = mainLeft();
         int y = contentTop();
-        context.drawText(textRenderer, "个人币交易", x, y, 0xFFD0B060, false);
+        context.drawText(textRenderer, "个人币交易与兑换", x, y, 0xFFD0B060, false);
         if (amount != null && pageBand != null) {
             context.drawText(textRenderer, "数量", Math.max(mainLeft(), amount.getX() - textRenderer.getWidth("数量") - 6),
                     pageBand.fieldY() + 4, 0xFFAAAAAA, false);
@@ -1779,10 +1779,10 @@ public final class BankTerminalScreen extends Screen {
         return switch (label) {
             case "存入" -> Page.DEPOSIT;
             case "取出" -> Page.WITHDRAW;
-            case "硬通货兑换" -> Page.EXCHANGE;
+            case "实物货币兑换" -> Page.EXCHANGE;
             case "开立汇票" -> Page.ISSUE;
             case "兑付汇票" -> Page.REDEEM;
-            case "个人币交易" -> Page.MARKET;
+            case "个人币交易与兑换" -> Page.MARKET;
             default -> Page.SAVINGS;
         };
     }

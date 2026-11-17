@@ -52,4 +52,31 @@ class SystemFundingTest {
         assertFalse(b.fundSystemAccount(admin, true, "shop", n("1"), n("0"), n("0")).success());
         assertEquals(before, b.toJson());
     }
+    private static void field(BankBooks b, String account, String key, String expected) {
+        eq(expected, new BigDecimal(b.systemFundingOverview(account).get(key).getAsString()));
+    }
+    @Test void overviewSeparatesOperatingSettlementAndPendingIncomingNotes() {
+        BankBooks b = funded();
+        b.creditHeld(customer, "note", n("10"));
+        assertTrue(b.fundSystemAccount(admin, true, "land", n("4"), n("20"), n("0")).success());
+        var quote = b.quoteLandPurchase("note", BigInteger.valueOf(2), "note");
+        assertTrue(b.payLandPurchase(customer, "note", BigInteger.valueOf(2), "note", quote.get("fingerprint").getAsString(), "land-preview").success());
+        field(b, "land", "ordinary", "4"); field(b, "land", "settled", "2");
+        field(b, "land", "available", "4"); field(b, "land", "heldIncoming", "2");
+        field(b, "land", "pendingOutgoing", "0");
+        BankBooks restored = BankBooks.fromJson(b.toJson(), BankConfig.defaults());
+        field(restored, "land", "heldIncoming", "2");
+        assertTrue(restored.completeSystemPayment("land-preview:t").success());
+        field(restored, "land", "available", "6"); field(restored, "land", "heldIncoming", "0");
+        eq("4", restored.systemFundingBalance("land")); // Funding expectedAccount remains ordinary.
+    }
+    @Test void overviewDoesNotDoubleSubtractOutgoingOrCountItAsSpendable() {
+        BankBooks b = funded();
+        assertTrue(b.fundSystemAccount(admin, true, "shop", n("5"), n("20"), n("0")).success());
+        assertTrue(b.transferShopReferenced(customer, "note", n("2"), false, "shop-out").success());
+        field(b, "shop", "ordinary", "3"); field(b, "shop", "available", "3");
+        field(b, "shop", "heldIncoming", "0"); field(b, "shop", "pendingOutgoing", "2");
+        assertTrue(b.completeSystemPayment("shop-out").success());
+        field(b, "shop", "pendingOutgoing", "0"); field(b, "shop", "available", "3");
+    }
 }
