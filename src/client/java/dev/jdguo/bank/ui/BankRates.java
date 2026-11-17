@@ -26,7 +26,7 @@ public final class BankRates {
         lines.add(centralQuote(data));
         lines.add(bankNoteQuote(data));
         for (BankSnapshot.NoteRow note : BankSnapshot.notes(data)) {
-            lines.add(personalQuote(note));
+            lines.add(personalQuote(note, centralName(data)));
         }
         return lines;
     }
@@ -47,29 +47,40 @@ public final class BankRates {
     public static String bankNoteQuote(JsonObject data) {
         String direct = amount(BankSnapshot.text(data, "diamondsPerNote"));
         if (!UNAVAILABLE.equals(direct)) {
-            return "1 央行券 = " + direct + " 钻石";
+            return "1 " + centralName(data) + " = " + direct + " 钻石";
         }
         BankSnapshot.MoneyRow note = centralNote(data);
         if (note == null) {
-            return "1 央行券 = " + UNAVAILABLE;
+            return "1 " + centralName(data) + " = " + UNAVAILABLE;
         }
         String written = note.unitsPerDiamond() != null ? note.unitsPerDiamond() : note.rate();
         BigDecimal notes = parse(written);
         if (notes == null || notes.signum() == 0) {
-            return "1 央行券 = " + UNAVAILABLE;
+            return "1 " + centralName(data) + " = " + UNAVAILABLE;
         }
         BigDecimal diamonds = BigDecimal.ONE.divide(notes, 6, RoundingMode.HALF_UP);
-        return "1 央行券 = " + BankHeader.fixed6(diamonds.toPlainString()) + " 钻石";
+        return "1 " + centralName(data) + " = " + BankHeader.fixed6(diamonds.toPlainString()) + " 钻石";
     }
 
     /** {@code price} is central bank notes for one personal note. */
     public static String personalQuote(BankSnapshot.NoteRow note) {
+        return personalQuote(note, "央行券");
+    }
+
+    public static String personalQuote(BankSnapshot.NoteRow note, String centralName) {
         String name = note.name() == null ? "" : note.name();
         String shown = "0".equals(note.price()) ? "0" : amount(note.price());
         if (UNAVAILABLE.equals(shown)) {
             return "1 【" + name + "】 = " + UNAVAILABLE;
         }
-        return "1 【" + name + "】 = " + shown + " 央行券";
+        return "1 【" + name + "】 = " + shown + " " + centralName;
+    }
+
+    public static String centralName(JsonObject data) {
+        String name = BankSnapshot.text(data, "centralCurrencyName");
+        BankSnapshot.MoneyRow note = centralNote(data);
+        if ((name == null || name.isBlank()) && note != null) name = note.name();
+        return name == null || name.isBlank() || name.equals("note") ? "央行券" : name;
     }
 
     private static BankSnapshot.MoneyRow centralNote(JsonObject data) {

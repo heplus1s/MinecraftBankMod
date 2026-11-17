@@ -894,7 +894,7 @@ public final class BankTerminalScreen extends Screen {
                 break;
             }
             int color = 0xFFE6E6E6;
-            if (line.startsWith("1 钻石") || line.startsWith("1 央行券") || line.startsWith("1 【")) {
+            if (line.startsWith("1 钻石") || line.startsWith("1 " + BankRates.centralName(data)) || line.startsWith("1 【")) {
                 color = 0xFFE8D090;
             } else if (line.contains(BankRates.UNAVAILABLE)) {
                 color = 0xFFAAAAAA;
