@@ -128,8 +128,8 @@ public final class BankBooks {
     /** Central 央行券 posted by an issuer. Not savings, not interest-bearing, not issuance reserves. */
     private final Map<UUID, BigInteger> centralReserveAccounts = new LinkedHashMap<>();
     /**
-     * Retained central-bank fee income, the equity slice of {@link #savingsPool}.
-     * Not issuance reserves, and not player 储蓄保管. Note interest is paid from the note slice.
+     * Non-asset fee-funded interest budget. Actual fee assets belong to treasury.
+     * Not an additional asset pool or player custody; interest is capped by available treasury.
      * Persisted as {@code interestPool} so older worlds keep the same balances.
      */
     private final Map<String, BigDecimal> interestPool = new LinkedHashMap<>();
@@ -1403,7 +1403,7 @@ public final class BankBooks {
         this.personalInterestFraction = personalInterestFraction;
     }
 
-    /** Retained fee slice. Central interest is paid from the note balance of this slice. */
+    /** Fee-funded interest budget (not an asset); spending is capped by actual treasury. */
     public BigInteger interestPool(String currency) {
         return Money.units(interestPoolExact(currency));
     }
@@ -1414,8 +1414,8 @@ public final class BankBooks {
 
     /**
      * 储蓄总池. Notes: personal book-entry deposits, outstanding checks, the shop operating
-     * account, the land-grant account, and retained fees. Commodities: the deposit vault
-     * (personal deposits and the land-grant claim on that same vault) plus retained fees.
+     * account and the land-grant account. Commodities: the deposit vault
+     * (personal deposits and the land-grant claim on that same vault).
      * Paper (M0) is public cash, not part of this pool. Issuance reserves are not included.
      */
     public BigInteger savingsPool(String currency) {
@@ -1426,10 +1426,10 @@ public final class BankBooks {
         BigInteger custody = def.kind() == CurrencyKind.COMMODITY
                 ? supply(currency).depositVault()
                 : bookSavings(currency);
-        return custody.add(interestPool(currency));
+        return custody;
     }
 
-    /** Savings pool at four decimal places, including a fractional retained fee. */
+    /** Customer savings custody at four decimal places; treasury fee income is excluded. */
     public BigDecimal savingsPoolExact(String currency) {
         CurrencyDef def = need(currency);
         if (def == null) {
@@ -1438,7 +1438,7 @@ public final class BankBooks {
         BigDecimal custody = def.kind() == CurrencyKind.COMMODITY
                 ? supply(currency).depositVaultExact()
                 : bookSavingsExact(currency);
-        return Money.of(custody.add(interestPoolExact(currency)));
+        return Money.of(custody);
     }
 
     /** Shop operating balance in {@code currency}. Zero when that slice has never been posted. */
@@ -1653,6 +1653,63 @@ public final class BankBooks {
         }
         recomputeOfficialNoteQuote();
         return TxResult.ok(Money.units(posted), intoTreasury ? "Contributed own savings to central treasury" : "Withdrew central treasury to own savings");
+    }
+
+    /** Atomic validated treasury reward; callers must enforce OP and resolve online recipients. */
+    public TxResult rewardTreasury(java.util.Collection<UUID> recipients, String currency, BigDecimal each) {
+        CurrencyDef def = need(currency);
+        if (def == null) return TxResult.fail("unknown_currency", "币种没有央行自有储蓄账户，不能凭空发放");
+        if (recipients == null || recipients.isEmpty() || recipients.stream().anyMatch(java.util.Objects::isNull))
+            return TxResult.fail("no_players", "没有有效在线玩家");
+        java.util.Set<UUID> targets = new java.util.LinkedHashSet<>(recipients);
+        if (each == null || each.signum() <= 0 || each.scale() > Money.SCALE || each.precision() > 30)
+            return TxResult.fail("bad_amount", "数量必须为正数且最多四位小数");
+        if (def.kind() == CurrencyKind.COMMODITY && each.stripTrailingZeros().scale() > 0)
+            return TxResult.fail("whole_units_required", "实物货币奖励必须为整数");
+        BigDecimal total = each.multiply(BigDecimal.valueOf(targets.size()));
+        if (treasuryExact(currency).compareTo(total) < 0)
+            return TxResult.fail("insufficient_treasury", "央行自有储蓄不足，整批未执行");
+        treasury.put(currency, Money.of(treasuryExact(currency).subtract(total)));
+        if (def.kind() == CurrencyKind.COMMODITY) addSavings(currency, total);
+        for (UUID target : targets) creditBalance(target, currency, each);
+        recomputeOfficialNoteQuote();
+        return TxResult.ok(Money.units(total), "已向 " + targets.size() + " 名玩家各奖励 "
+                + Money.stored(each) + " " + def.name() + "，合计 " + Money.stored(total) + "，来源：央行自有储蓄");
+    }
+
+    /** Purchase real issuer-listed inventory with treasury notes, then reward all recipients atomically. */
+    public TxResult rewardPersonalFromTreasury(java.util.Collection<UUID> recipients, UUID coin, BigDecimal each) {
+        if (recipients == null || recipients.isEmpty() || recipients.stream().anyMatch(java.util.Objects::isNull))
+            return TxResult.fail("no_players", "没有有效在线玩家");
+        if (each == null || each.signum() <= 0 || each.scale() > Money.SCALE || each.precision() > 30)
+            return TxResult.fail("bad_amount", "每人数量必须为正数且最多四位小数");
+        PersonalNote note = personalNoteById(coin);
+        if (note == null || !personalTradingAllowed(note)) return TxResult.fail("no_price", "个人币暂停或没有可用牌价");
+        java.util.Set<UUID> targets = new java.util.LinkedHashSet<>(recipients);
+        BigDecimal quantity = each.multiply(BigDecimal.valueOf(targets.size()));
+        BigDecimal available = issuerPayoutAvailable(note).min(personalHoldingExact(coin, note.issuer()));
+        if (available.compareTo(quantity) < 0) return TxResult.fail("insufficient_offer", "发行者实际挂牌库存不足，整批未执行");
+        String central = centralNoteId();
+        BigDecimal centralRate = unitsPer(central, "diamond");
+        BigDecimal personalPrice = personalDiamondPrice(note);
+        if (centralRate == null || centralRate.signum() <= 0 || personalPrice == null || personalPrice.signum() <= 0)
+            return TxResult.fail("no_price", "当前没有可执行的央行券认购牌价");
+        BigDecimal unitPrice = personalPrice.multiply(centralRate, FxMath.MC);
+        // One batch, one total rounded up to the smallest central-note accounting unit.
+        BigDecimal cost = quantity.multiply(unitPrice).setScale(Money.SCALE, RoundingMode.CEILING);
+        if (treasuryExact(central).compareTo(cost) < 0)
+            return TxResult.fail("insufficient_treasury", "央行自有央行券不足，整批未执行；需要 " + Money.stored(cost));
+        if (!note.autoListing()) setPersonalOffer(coin, note.issuer(), personalOffered(coin, note.issuer())
+                .subtract(quantity.setScale(0, RoundingMode.CEILING).toBigInteger()).max(BigInteger.ZERO));
+        setPersonalExact(coin, note.issuer(), personalHoldingExact(coin, note.issuer()).subtract(quantity));
+        treasury.put(central, Money.of(treasuryExact(central).subtract(cost)));
+        creditBalance(note.issuer(), central, cost);
+        for (UUID target : targets) setPersonalExact(coin, target, personalHoldingExact(coin, target).add(each));
+        recomputeOfficialNoteQuote();
+        return TxResult.ok(Money.units(quantity), "已向 " + targets.size() + " 名玩家各奖励 " + Money.stored(each) + " " + note.name()
+                + "；央行现场认购 " + Money.stored(quantity) + "，单价 " + unitPrice.toPlainString()
+                + "，实际支付发行者 " + Money.stored(cost) + " " + currency(central).name()
+                + "（总价向上取至0.0001），未新增发行");
     }
 
     public BigDecimal systemFundingBalance(String account) {
@@ -1989,7 +2046,7 @@ public final class BankBooks {
         BigDecimal landDue = accrued(Money.of(landGrant(note.id())), interestFraction,
                 landInterestDust.getOrDefault(note.id(), Money.ZERO));
         total = Money.of(total.add(shopDue).add(landDue));
-        BigDecimal pool = interestPoolExact(note.id());
+        BigDecimal pool = interestPoolExact(note.id()).min(treasuryExact(note.id()));
         if (total.signum() <= 0 || pool.signum() <= 0) {
             due.forEach((id, raw) -> rememberDust(interestDust, id, raw));
             rememberDust(shopInterestDust, note.id(), shopDue);
@@ -2006,7 +2063,6 @@ public final class BankBooks {
                 continue;
             }
             creditBalance(entry.getKey(), note.id(), share);
-            supply(note.id()).addLiability(share);
             paid.add(new InterestCredit(entry.getKey(), Money.units(share), null));
             spent = spent.add(share);
             rememberDust(interestDust, entry.getKey(), entry.getValue().subtract(share));
@@ -2068,7 +2124,6 @@ public final class BankBooks {
             return Money.ZERO;
         }
         addAggregate(book, currency, whole);
-        supply(currency).addLiability(whole);
         rememberDust(dust, currency, due.subtract(Money.of(whole)));
         return Money.of(whole);
     }
@@ -2161,16 +2216,22 @@ public final class BankBooks {
     }
 
     private void addPool(String currency, BigDecimal delta) {
-        BigDecimal next = Money.of(interestPool.getOrDefault(currency, Money.ZERO).add(Money.of(delta)));
-        if (next.signum() < 0) {
-            throw new IllegalStateException("interest pool underflow");
-        }
-        if (next.signum() == 0) {
-            interestPool.remove(currency);
-        } else {
-            interestPool.put(currency, next);
-        }
+        BigDecimal change = Money.of(delta);
+        BigDecimal budget = Money.of(interestPoolExact(currency).add(change));
+        BigDecimal owned = Money.of(treasuryExact(currency).add(change));
+        if (budget.signum() < 0 || owned.signum() < 0)
+            throw new IllegalStateException("fee-funded interest budget or treasury underflow");
+        CurrencyDef def = need(currency);
+        if (def == null) throw new IllegalStateException("unknown fee currency");
+        // Fee callers extinguished the gross note payment; the retained fee remains issued
+        // as a treasury-owned note. Paying interest subsequently transfers it, not reissues it.
+        if (change.signum() > 0 && def.kind() != CurrencyKind.COMMODITY)
+            supply(currency).addLiability(change);
+        treasury.put(currency, owned);
+        if (budget.signum() == 0) interestPool.remove(currency);
+        else interestPool.put(currency, budget);
     }
+
     public void setAlpha(String id, BigDecimal permille) { this.alphas.put(id, permille); }
     public void setClampMin(BigDecimal clampMin) { this.clampMin = clampMin; }
     public void setClampMax(BigDecimal clampMax) { this.clampMax = clampMax; }
@@ -4470,7 +4531,7 @@ public final class BankBooks {
 
     /**
      * The payer gives up {@code gross}. Only the pre-fee principal enters issuance reserves or is
-     * extinguished as convertibility. The fee enters the retained slice of the savings total pool.
+     * extinguished as convertibility. The fee enters central-owned treasury with a non-asset interest budget.
      */
     private void takePayment(UUID player, CurrencyDef pay, BigDecimal gross, BigDecimal fee) {
         debitBalance(player, pay.id(), gross);
@@ -4978,6 +5039,7 @@ public final class BankBooks {
         JsonObject pool = new JsonObject();
         interestPool.forEach((id, amount) -> pool.addProperty(id, Money.stored(amount)));
         root.add("interestPool", pool);
+        root.addProperty("feeTreasuryVersion", 1);
         JsonObject owned = new JsonObject();
         treasury.forEach((id, amount) -> owned.addProperty(id, Money.stored(amount)));
         root.add("centralTreasury", owned);
@@ -5531,6 +5593,18 @@ public final class BankBooks {
                         .subtract(books.publicM1Exact(def.id())).subtract(books.treasuryExact(def.id()));
                 if (remainder.signum() > 0) books.treasury.put(def.id(),
                         Money.of(books.treasuryExact(def.id()).add(remainder)));
+            }
+        }
+        if (!root.has("feeTreasuryVersion")) {
+            // Legacy central fee balances were separate owned assets. Personal-note
+            // issuer interest pools are deliberately untouched. Unknown currencies stay put.
+            for (Map.Entry<String, BigDecimal> entry : books.interestPool.entrySet()) {
+                CurrencyDef def = books.need(entry.getKey());
+                BigDecimal amount = entry.getValue();
+                if (def == null || amount.signum() <= 0) continue;
+                books.treasury.put(def.id(), Money.of(books.treasuryExact(def.id()).add(amount)));
+                if (def.kind() != CurrencyKind.COMMODITY)
+                    books.supply(def.id()).addLiability(amount);
             }
         }
         return books;

@@ -32,6 +32,7 @@ import dev.jdguo.bank.text.Spoken;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.command.CommandSource;
 import net.minecraft.command.argument.GameProfileArgumentType;
+import net.minecraft.command.argument.EntityArgumentType;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.registry.Registries;
@@ -91,6 +92,12 @@ public final class BankCommands {
                                         .then(literal("on").executes(ctx -> hologram(ctx.getSource(), displays, OutletNames.commandName(StringArgumentType.getString(ctx, "name")), true)))
                                         .then(literal("off").executes(ctx -> hologram(ctx.getSource(), displays, OutletNames.commandName(StringArgumentType.getString(ctx, "name")), false)))))
                         )
+                        .then(literal("reward").requires(BankCommands::op)
+                                .then(argument("players", EntityArgumentType.players())
+                                        .then(argument("amount", StringArgumentType.word())
+                                                .then(argument("currency", StringArgumentType.greedyString()).executes(ctx -> reward(
+                                                        ctx.getSource(), EntityArgumentType.getPlayers(ctx, "players"),
+                                                        StringArgumentType.getString(ctx, "amount"), StringArgumentType.getString(ctx, "currency")))))))
                         .then(literal("credit").requires(BankCommands::op)
                                 .then(literal("unbacked").then(playerAmount("unbacked")))
                                 .then(literal("backed").then(playerAmount("backed")))
@@ -728,6 +735,29 @@ public final class BankCommands {
         }
         BankRuntime.save();
         return ok(source, BankPhrases.noteUnbacked(books(), result.note(), amount));
+    }
+
+    private static int reward(ServerCommandSource source, Collection<ServerPlayerEntity> players, String rawAmount, String rawCurrency) {
+        if (!op(source)) { source.sendError(Text.literal("需要管理员权限")); return 0; }
+        if (!rawAmount.matches("[0-9]{1,24}(\\.[0-9]{1,4})?")) {
+            source.sendError(Text.literal("请输入正整数或最多四位小数，不支持科学计数法")); return 0;
+        }
+        String query = rawCurrency.trim();
+        java.util.List<CurrencyDef> matched = books().currencies().stream()
+                .filter(c -> c.id().equals(query) || c.name().equals(query) || c.nameEn().equals(query)).toList();
+        java.util.List<PersonalNote> privateMatches = books().personalNotes().stream()
+                .filter(n -> n.name().equals(query) || n.id().toString().equals(query) || ("personal:" + n.id()).equals(query)).toList();
+        if (matched.size() + privateMatches.size() != 1) {
+            source.sendError(Text.literal("币种不存在或名称重复，请使用唯一币种 ID")); return 0;
+        }
+        java.util.List<UUID> ids = players.stream().map(ServerPlayerEntity::getUuid).distinct().toList();
+        BigDecimal each = new BigDecimal(rawAmount);
+        TxResult result = BankRuntime.transact(book -> privateMatches.isEmpty()
+                ? book.rewardTreasury(ids, matched.get(0).id(), each)
+                : book.rewardPersonalFromTreasury(ids, privateMatches.get(0).id(), each));
+        if (!result.success()) { source.sendError(Text.literal(result.message())); return 0; }
+        source.sendFeedback(() -> Text.literal(result.message()), true);
+        return ids.size();
     }
 
     private static int retireNote(ServerCommandSource source, String raw) throws com.mojang.brigadier.exceptions.CommandSyntaxException {

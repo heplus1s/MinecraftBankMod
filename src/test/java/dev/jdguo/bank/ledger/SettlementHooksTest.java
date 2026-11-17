@@ -104,7 +104,7 @@ class SettlementHooksTest {
         assertEquals(new BigInteger("18"), books.shopOperating("note"));
         assertEquals(BigInteger.ZERO, books.landGrant("note"));
         assertEquals(pool, books.savingsPool("note"));
-        assertEquals(books.centralDeposits().add(books.interestPool("note")), books.savingsPool("note"));
+        assertEquals(books.centralDeposits(), books.savingsPool("note"));
         before.assertUntouched(books, buyer);
         books.checkInvariants();
     }
