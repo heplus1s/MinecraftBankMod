@@ -349,7 +349,7 @@ public final class BankAdminScreen extends Screen {
             if (mx >= cell.x() && mx < cell.x() + cell.width() && my >= cell.y() && my < cell.y() + cell.height()) tooltip = cell.help();
         }
         context.getMatrices().pop();
-        if (tooltip != null) context.drawTooltip(textRenderer, textRenderer.wrapLines(Text.literal(tooltip), Math.min(300, width - 24)), mouseX, mouseY);
+        if (tooltip != null) context.drawTooltip(textRenderer, BankOverview.wrap(tooltip, Math.min(300, width - 24), textRenderer::getWidth).stream().<Text>map(Text::literal).toList(), mouseX, mouseY);
     }
     static String amountButton(String action, String typed, String currency) {
         String amount = typed == null ? "" : typed.trim();
