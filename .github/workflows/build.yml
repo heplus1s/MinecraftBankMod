@@ -22,7 +22,7 @@ jobs:
           name: integrated-mod-jars
           path: build/libs/bankmod-1.0.16.jar
   release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[no-release]')
     needs: build
     runs-on: ubuntu-latest
     permissions:
