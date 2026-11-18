@@ -121,7 +121,7 @@ class BankUiSnapshotTest {
     }
 
     @Test
-    void adminBookListsEveryCurrencyReserveLiabilityAndIssuanceRoom() {
+    void adminBookSeparatesPhysicalAssetsFromVirtualIssuance() {
         BankBooks books = BankBooks.create(BankConfig.defaults());
         UUID player = UUID.randomUUID();
         assertEquals(new BigInteger("1000000"), books.supply("copper").reserve());
@@ -143,15 +143,17 @@ class BankUiSnapshotTest {
         JsonObject note = central(snapshot, "note");
         assertEquals("铜锭", copper.get("name").getAsString());
         assertEquals((new BigInteger("1000000")).toString(), copper.get("reserve").getAsString());
-        assertEquals((books.supply("copper").liability()).toString(), copper.get("liability").getAsString());
+        assertFalse(copper.has("liability"));
+        assertEquals("COMMODITY", copper.get("kind").getAsString());
         assertEquals((books.supply("copper").locked()).toString(), copper.get("locked").getAsString());
         assertEquals((books.supply("copper").depositVault()).toString(), copper.get("vault").getAsString());
         assertEquals((books.savingsPool("copper")).toString(), copper.get("savings").getAsString());
-        assertEquals((books.backedRoom(books.currency("copper"))).toString(), copper.get("backedRoom").getAsString());
+        assertFalse(copper.has("backedRoom"));
 
         assertEquals((new BigInteger("1000")).toString(), diamond.get("reserve").getAsString());
         assertEquals((books.supply("diamond").depositVault()).toString(), diamond.get("vault").getAsString());
-        assertTrue(diamond.has("liability"));
+        assertFalse(diamond.has("liability"));
+        assertFalse(diamond.has("backedRoom"));
         assertTrue(diamond.has("locked"));
 
         assertEquals("央行券", note.get("name").getAsString());
