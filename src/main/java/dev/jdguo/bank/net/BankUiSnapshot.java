@@ -86,9 +86,10 @@ public final class BankUiSnapshot {
             book.addProperty("treasury", Money.stored(books.treasuryExact(def.id())));
             book.addProperty("custody", Money.stored(books.custodyExact(def.id())));
             book.addProperty("reserve", Money.stored(supply.reserveExact()));
-            book.addProperty("liability", Money.stored(supply.liabilityExact()));
+            book.addProperty("kind", def.kind().name());
+            if (def.kind() != CurrencyKind.COMMODITY) book.addProperty("liability", Money.stored(supply.liabilityExact()));
             book.addProperty("locked", Money.stored(supply.lockedExact()));
-            book.addProperty("backedRoom", books.backedRoom(def).toString());
+            if (def.kind() != CurrencyKind.COMMODITY) book.addProperty("backedRoom", books.backedRoom(def).toString());
             if (def.kind() == CurrencyKind.COMMODITY) {
                 book.addProperty("vault", Money.stored(supply.depositVaultExact()));
             }
@@ -98,6 +99,9 @@ public final class BankUiSnapshot {
         o.add("accounts", accounts);
         o.add("central", central);
         if (admin) {
+            if (copperRate != null) o.addProperty("copperPerDiamondExact", copperRate.stripTrailingZeros().toPlainString());
+            BigDecimal noteQuote = centralNote == null ? null : books.unitsPer("diamond", centralNote.id());
+            if (noteQuote != null) o.addProperty("diamondsPerNoteExact", noteQuote.stripTrailingZeros().toPlainString());
             o.add("shopSystemFunds", books.systemFundingOverview("shop"));
             o.add("landSystemFunds", books.systemFundingOverview("land"));
             JsonArray fundingLog = books.systemFundingLog(), recentFunding = new JsonArray();

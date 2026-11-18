@@ -9,6 +9,7 @@ import dev.jdguo.bank.instruments.PaperTake;
 import dev.jdguo.bank.instruments.PresentedCheck;
 import dev.jdguo.bank.instruments.PresentedNote;
 import dev.jdguo.bank.ledger.BankBooks;
+import dev.jdguo.bank.ledger.Money;
 import dev.jdguo.bank.ledger.CompactFormat;
 import dev.jdguo.bank.ledger.Supply;
 import dev.jdguo.bank.ledger.TxResult;
@@ -1036,30 +1037,30 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
     private void paintManagement() {
         BankBooks books = BankRuntime.books();
         inventory.setStack(0, marker(Items.PAPER,
-                Text.literal("M0  " + CompactFormat.formatAggregate(books.centralM0())).formatted(Formatting.WHITE),
-                List.of(Text.literal("流通中的央行券").formatted(Formatting.DARK_GRAY)),
+                Text.literal("M0  " + CompactFormat.formatAggregate(books.centralM0Exact())).formatted(Formatting.WHITE),
+                List.of(Text.literal("已登记有效央行券纸币，不含央行自有储蓄").formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
         inventory.setStack(2, marker(Items.PAPER,
-                Text.literal("M1  " + CompactFormat.formatAggregate(books.centralM1())).formatted(Formatting.WHITE),
-                List.of(Text.literal("流通中的央行券与活期存款").formatted(Formatting.DARK_GRAY)),
+                Text.literal("M1  " + CompactFormat.formatAggregate(books.centralM1Exact())).formatted(Formatting.WHITE),
+                List.of(Text.literal("M0 + 央行券存款；不含央行自有储蓄").formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
         inventory.setStack(6, marker(Items.MAP,
                 Text.literal("M2  " + CompactFormat.formatAggregate(books.centralM2())).formatted(Formatting.WHITE),
-                List.of(Text.literal("M1 与按现行价格计算的准货币").formatted(Formatting.DARK_GRAY)),
+                List.of(Text.literal("M1 + 按当前价格折算的准货币；不能与 M0/M1 相加").formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
         inventory.setStack(8, marker(Items.GOLD_INGOT,
-                Text.literal("储蓄总池  " + CompactFormat.format(books.savingsPool("note"))).formatted(Formatting.GREEN),
-                List.of(Text.literal("央行券活期存款与手续费留存").formatted(Formatting.DARK_GRAY),
-                        Text.literal("不含发行准备金").formatted(Formatting.DARK_GRAY)),
+                Text.literal("央行自有储蓄  " + Money.stored(books.treasuryExact("note"))).formatted(Formatting.GREEN),
+                List.of(Text.literal("央行可拨用的自有央行券").formatted(Formatting.DARK_GRAY),
+                        Text.literal("不含存款保管池或实物准备金").formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
         inventory.setStack(4, marker(Items.GOLD_BLOCK,
                 Text.literal("中央银行管理").formatted(Formatting.AQUA, Formatting.BOLD),
                 List.of(Text.literal("Central bank").formatted(Formatting.GRAY),
-                        Text.literal("汇率 " + BankPhrases.copperPerDiamond(books) + " 铜锭/钻石").formatted(Formatting.WHITE),
+                        Text.literal("汇率 " + overviewQuote(books.unitsPer("copper", "diamond")) + " 铜锭/钻石").formatted(Formatting.WHITE),
                         Text.literal("手续费 " + percent(books.feeFraction())).formatted(Formatting.GRAY),
                         Text.literal("中央银行年利率 " + percent(books.interestFraction())).formatted(Formatting.GOLD),
                         Text.literal("个人币年利率 " + percent(books.personalInterestFraction())).formatted(Formatting.GRAY),
-                        Text.literal("储蓄总池 " + CompactFormat.format(books.savingsPool("note"))).formatted(Formatting.WHITE)),
+                        Text.literal("央行券存款保管 " + Money.stored(books.custodyExact("note"))).formatted(Formatting.WHITE)),
                 "noop", 1));
         int slot = 10;
         for (CurrencyDef def : books.currencies()) {
@@ -1070,23 +1071,24 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
             List<Text> lore = new ArrayList<>();
             lore.add(Text.literal(def.nameEn()).formatted(Formatting.GRAY));
             if (def.kind() == CurrencyKind.COMMODITY) {
-                lore.add(Text.literal("发行准备金 " + CompactFormat.format(supply.reserve())).formatted(Formatting.WHITE));
-                lore.add(Text.literal("储蓄保管 " + CompactFormat.format(supply.depositVault())).formatted(Formatting.WHITE));
-                lore.add(Text.literal("储蓄总池 " + CompactFormat.format(books.savingsPool(def.id()))).formatted(Formatting.WHITE));
-                lore.add(Text.literal("手续费利息预算（非独立余额） " + CompactFormat.format(books.interestPool(def.id()))).formatted(Formatting.GRAY));
+                lore.add(Text.literal("实物准备金 " + Money.stored(supply.reserveExact())).formatted(Formatting.WHITE));
+                lore.add(Text.literal("存款保管池 " + Money.stored(supply.depositVaultExact())).formatted(Formatting.WHITE));
+                lore.add(Text.literal("央行自有储蓄 " + Money.stored(books.treasuryExact(def.id()))).formatted(Formatting.WHITE));
+                lore.add(Text.literal("手续费利息预算（非独立余额） " + CompactFormat.formatAggregate(books.interestPool(def.id()))).formatted(Formatting.GRAY));
                 lore.add(Text.literal("实际发息受预算和央行可用储蓄双重限制").formatted(Formatting.GRAY));
-                lore.add(Text.literal("Issuance reserves stay out of the savings pool").formatted(Formatting.DARK_GRAY));
+                lore.add(Text.literal("三类账户分开记账；实物没有发行额度").formatted(Formatting.DARK_GRAY));
             } else {
-                lore.add(Text.literal("M0 " + CompactFormat.formatAggregate(books.centralM0())).formatted(Formatting.WHITE));
-                lore.add(Text.literal("M1 " + CompactFormat.formatAggregate(books.centralM1())).formatted(Formatting.WHITE));
+                lore.add(Text.literal("存款保管池 " + Money.stored(books.custodyExact(def.id()))).formatted(Formatting.WHITE));
+                lore.add(Text.literal("M0 " + CompactFormat.formatAggregate(books.centralM0Exact())).formatted(Formatting.WHITE));
+                lore.add(Text.literal("M1 " + CompactFormat.formatAggregate(books.centralM1Exact())).formatted(Formatting.WHITE));
                 lore.add(Text.literal("M2 " + CompactFormat.formatAggregate(books.centralM2())).formatted(Formatting.WHITE));
-                lore.add(Text.literal("储蓄总池 " + CompactFormat.format(books.savingsPool(def.id()))).formatted(Formatting.WHITE));
-                lore.add(Text.literal("剩余货币发行额度 " + CompactFormat.format(books.backedRoom(def))).formatted(Formatting.YELLOW));
+                lore.add(Text.literal("央行自有储蓄 " + Money.stored(books.treasuryExact(def.id()))).formatted(Formatting.WHITE));
+                lore.add(Text.literal("按准备金尚可发行 " + books.backedRoom(def).toString()).formatted(Formatting.YELLOW));
                 lore.add(Text.literal("Issuable amount is not part of M2").formatted(Formatting.DARK_GRAY));
             }
             String headline = def.kind() == CurrencyKind.COMMODITY
-                    ? def.name() + "  发行准备金 " + CompactFormat.format(supply.reserve())
-                    : def.name() + "  M1 " + CompactFormat.formatAggregate(books.centralM1());
+                    ? def.name() + "  实物准备金 " + Money.stored(supply.reserveExact())
+                    : def.name() + "  M1 " + CompactFormat.formatAggregate(books.centralM1Exact());
             inventory.setStack(slot, marker(icon(def),
                     Text.literal(headline).formatted(color(def)),
                     lore,
@@ -1101,7 +1103,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
             BigDecimal rate = books.unitsPer(def.id(), books.numeraire());
             CurrencyDef base = books.currency(books.numeraire());
             inventory.setStack(rateSlot, marker(Items.PAPER,
-                    Text.literal("1 " + base.name() + " = " + CompactFormat.formatRate(rate) + " " + def.name()).formatted(Formatting.WHITE),
+                    Text.literal("1 " + base.name() + " = " + overviewQuote(rate) + " " + def.name()).formatted(Formatting.WHITE),
                     List.of(Text.literal("手续费另计 " + percent(books.feeFraction())).formatted(Formatting.GRAY)),
                     "noop", 1));
             rateSlot += 2;
@@ -1115,10 +1117,15 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         inventory.setStack(40, marker(Items.CLOCK,
                 Text.literal("中央银行年利率 " + percent(books.interestFraction())).formatted(Formatting.GOLD),
                 List.of(Text.literal("个人币年利率 " + percent(books.personalInterestFraction())).formatted(Formatting.GRAY),
-                        Text.literal("储蓄总池 央行券 " + CompactFormat.format(books.savingsPool("note"))).formatted(Formatting.WHITE),
+                        Text.literal("央行券自有储蓄 " + Money.stored(books.treasuryExact("note"))).formatted(Formatting.WHITE),
                         Text.literal("利息从手续费留存里付，不动发行准备金").formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
         paintCentralIssuance(books);
+    }
+
+    /** Exact display only. In particular a very small real quote must never be displayed as 1. */
+    private static String overviewQuote(BigDecimal rate) {
+        return rate == null ? "暂无牌价" : rate.stripTrailingZeros().toPlainString();
     }
 
     private void paintCentralIssuance(BankBooks books) {

@@ -98,9 +98,11 @@ public final class BankBook {
         lines.add(field("准备金", row == null ? null : row.reserve()));
         lines.add(field("央行自有储蓄", row == null ? null : row.treasury()));
         lines.add(field("存款保管", row == null ? null : row.vault()));
-        lines.add(field("发行额", row == null ? null : row.liability()));
-        lines.add(field("已锁定准备金", row == null ? null : row.locked()));
-        lines.add(field("按准备金尚可发行", row == null ? null : row.backedRoom()));
+        if (!"copper".equals(currencyId) && !"diamond".equals(currencyId)) {
+            lines.add(field("发行额", row == null ? null : row.liability()));
+            lines.add(field("已锁定准备金", row == null ? null : row.locked()));
+            lines.add(field("按准备金尚可发行", row == null ? null : row.backedRoom()));
+        }
         return lines;
     }
 
@@ -220,13 +222,13 @@ public final class BankBook {
         if (row != null && row.vault() != null) {
             lines.add(field(name + "存款保管", row.vault()));
         }
-        if (row != null && row.liability() != null) {
+        if (note && row != null && row.liability() != null) {
             lines.add(field(name + "发行额", row.liability()));
         }
         if (row != null && row.locked() != null) {
             lines.add(field(name + "已锁定准备金", row.locked()));
         }
-        if (row != null && row.backedRoom() != null) {
+        if (note && row != null && row.backedRoom() != null) {
             lines.add(field(name + "按准备金尚可发行", row.backedRoom()));
         }
         return lines;

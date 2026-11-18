@@ -43,8 +43,8 @@ public final class BankAdminScreen extends Screen {
         return name == null || name.isBlank() ? "央行券" : name;
     }
     private String name() { return "note".equals(selected) ? centralName() : "copper".equals(selected) ? "铜锭" : "钻石"; }
-    private int left() { return Math.max(10, (width - 420) / 2); }
-    private int bodyWidth() { return Math.min(420, width - 20); }
+    private int left() { return Math.max(10, (width - bodyWidth()) / 2); }
+    private int bodyWidth() { return Math.min(page == 0 ? 720 : 420, width - 20); }
     private void button(String label, int x, int y, int w, Runnable action) {
         ButtonWidget button = addDrawableChild(ButtonWidget.builder(Text.literal(textRenderer.trimToWidth(label, Math.max(1, w - 8))), b -> action.run()).dimensions(x, y, w, 20).build());
         if (label.startsWith("确认")) confirmation = button;
@@ -77,21 +77,8 @@ public final class BankAdminScreen extends Screen {
         }
         textTop = 64;
         if (page == 0) {
-            String[] ids = {"copper", "diamond", "note"};
-            String[] names = {"铜锭", "钻石", centralName()};
-            int cw = (w - 8) / 3;
-            for (int i = 0; i < ids.length; i++) {
-                final String id = ids[i];
-                button((id.equals(selected) ? "▶ " : "") + names[i], x + i * (cw + 4), 60, cw,
-                        () -> { selected = id; scroll = 0; clearAndInit(); });
-            }
-            textTop = 90;
-            lines.add("央行货币供应");
-            lines.addAll(BankBook.circulationLines(data));
-            lines.add(""); lines.add(name() + "账户明细");
-            lines.addAll(BankBook.book(data, selected, name()));
-            lines.add("注意：存款保管包含玩家存款，不等于央行自有资产。");
-            lines.add(BankRates.bankNoteQuote(data));
+            // All currencies and aggregates share one measured dashboard; no long text scroller.
+            textTop = 60;
             button("商店储蓄管理", x, height - 30, (w - 4) / 2, () -> switchPage(8));
             button("地产储蓄管理", x + (w + 4) / 2, height - 30, (w - 4) / 2, () -> switchPage(9));
         } else if (page == 1) {
@@ -309,7 +296,7 @@ public final class BankAdminScreen extends Screen {
     private void remember() { if (field != null) { if (page == 5) renameDraft = field.getText(); else typed = field.getText().trim(); } }
     @Override public void tick() { if (field != null) field.tick(); }
     @Override public boolean mouseScrolled(double x, double y, double amount) {
-        scroll = Math.max(0, scroll - (int) Math.signum(amount) * 22); return true;
+        if (page != 0) scroll = Math.max(0, scroll - (int) Math.signum(amount) * 22); return true;
     }
     @Override public void render(DrawContext context, int mx, int my, float delta) {
         renderBackground(context);
@@ -317,6 +304,11 @@ public final class BankAdminScreen extends Screen {
         if (w >= 360) context.drawCenteredTextWithShadow(textRenderer, "央行管理", width / 2, 12, 0xFFE8D090);
         if (field != null) {
             context.drawText(textRenderer, textRenderer.trimToWidth(inputLabel == null ? "" : inputLabel, w), x, inputY - 16, 0xFFE8D090, false);
+        }
+        if (page == 0 && width >= 250 && height >= 230) {
+            renderOverview(context, mx, my);
+            super.render(context, mx, my, delta);
+            return;
         }
         int contentHeight = 0;
         for (String line : lines) contentHeight += Math.max(1, textRenderer.wrapLines(Text.literal(line == null ? "" : line), w).size()) * 12 + 4;
@@ -332,6 +324,32 @@ public final class BankAdminScreen extends Screen {
         context.disableScissor();
         if (contentHeight > height - 46 - textTop) context.drawText(textRenderer, "滚轮查看详情", x, height - 42, 0xFFAAAAAA, false);
         super.render(context, mx, my, delta);
+    }
+    private void renderOverview(DrawContext context, int mouseX, int mouseY) {
+        int x = left(), available = height - 100;
+        var layout = BankOverview.layout(data, bodyWidth(), available, textRenderer::getWidth);
+        if (!layout.readable()) {
+            context.drawCenteredTextWithShadow(textRenderer, "数据较长，请降低 GUI 缩放或放大窗口", width / 2, 76, 0xFFFFCC88);
+            return;
+        }
+        float scale = layout.scale();
+        float originX = x + (bodyWidth() - layout.width() * scale) / 2f;
+        context.getMatrices().push();
+        context.getMatrices().translate(originX, 60, 0);
+        context.getMatrices().scale(scale, scale, 1);
+        String tooltip = null;
+        for (var cell : layout.cells()) {
+            context.fill(cell.x(), cell.y(), cell.x() + cell.width(), cell.y() + cell.height(), cell.heading() ? 0xEE354454 : 0xDD202A34);
+            for (int i = 0; i < cell.lines().size(); i++) {
+                String line = cell.lines().get(i);
+                int textX = i >= cell.rightFrom() ? cell.x() + cell.width() - 6 - textRenderer.getWidth(line) : cell.x() + 6;
+                context.drawText(textRenderer, line, textX, cell.y() + 4 + i * 12, cell.heading() && i < cell.rightFrom() ? 0xFFE8D090 : 0xFFFFFFFF, false);
+            }
+            float mx = (mouseX - originX) / scale, my = (mouseY - 60) / scale;
+            if (mx >= cell.x() && mx < cell.x() + cell.width() && my >= cell.y() && my < cell.y() + cell.height()) tooltip = cell.help();
+        }
+        context.getMatrices().pop();
+        if (tooltip != null) context.drawTooltip(textRenderer, textRenderer.wrapLines(Text.literal(tooltip), Math.min(300, width - 24)), mouseX, mouseY);
     }
     static String amountButton(String action, String typed, String currency) {
         String amount = typed == null ? "" : typed.trim();

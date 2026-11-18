@@ -32,10 +32,7 @@ class BankBookTest {
         assertEquals(List.of(
                 "准备金：1000",
                 "央行自有储蓄：暂无数据",
-                "存款保管：7",
-                "发行额：暂无数据",
-                "已锁定准备金：暂无数据",
-                "按准备金尚可发行：暂无数据"), BankBook.book(data, "diamond", "钻石"));
+                "存款保管：7"), BankBook.book(data, "diamond", "钻石"));
         assertEquals(List.of("商店经营账户和土地出让账户：暂无数据"), BankBook.institutions(data));
         List<String> ledger = BankBook.visibleLedger(data);
         assertTrue(ledger.contains("铜锭储蓄账面总值：暂无数据"));
