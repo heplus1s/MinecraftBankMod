@@ -82,6 +82,9 @@ public final class BankBooks {
     private final java.util.Set<UUID> imported = new java.util.LinkedHashSet<>();
 
     private final Map<String, String> marketReceipts = new LinkedHashMap<>();
+    private static final String TOLL_STATE_MARKER = "__bank_toll_authority_v1__";
+    private long tollStateRevision;
+    private String tollStatePayload;
     private long checkpoint;
 
     public long checkpoint() {
@@ -108,6 +111,156 @@ public final class BankBooks {
             marketReceipts.put(reference, fingerprint);
         }
         return result;
+    }
+
+    /** Authoritative toll state shares the SAME snapshot/commit as payments and references. */
+    public JsonObject tollState() {
+        JsonObject result = new JsonObject(); result.addProperty("success", true);
+        result.addProperty("revision", tollStateRevision);
+        if (tollStatePayload == null) result.add("payload", JsonNull.INSTANCE);
+        else result.addProperty("payload", tollStatePayload);
+        return result;
+    }
+
+    /** Detect a downgraded writer that preserved receipts but discarded authoritative toll state. */
+    public boolean tollStateMissingAfterPayments() {
+        return tollStatePayload == null && (marketReceipts.containsKey(TOLL_STATE_MARKER)
+                || marketReceipts.values().stream().anyMatch(v -> v.startsWith("toll-v1|")));
+    }
+
+    public TxResult saveTollState(long expectedRevision, String payload) {
+        if (tollStateMissingAfterPayments()) return TxResult.fail("state_missing", "Toll payment receipts exist but recovery state is missing; restore/reconcile backup");
+        if (expectedRevision < 0 || expectedRevision != tollStateRevision)
+            return TxResult.fail("state_conflict", "Toll state revision changed; reload before continuing");
+        if (tollStateRevision == Long.MAX_VALUE || !validTollPayload(payload))
+            return TxResult.fail("bad_state", "Toll state must be a JSON object no larger than 16 MiB");
+        tollStatePayload = payload; tollStateRevision++;
+        // Old bank versions preserve this map even when they discard unknown root fields.
+        // Mark migration itself, not first modern payment: legacy-only worlds need protection too.
+        marketReceipts.put(TOLL_STATE_MARKER, "bank-authoritative-toll-state-v1");
+        return TxResult.ok(BigInteger.valueOf(tollStateRevision), "Toll state checkpointed");
+    }
+
+    private static boolean validTollPayload(String payload) {
+        if (payload == null || payload.length() > 16 * 1024 * 1024
+                || payload.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 16 * 1024 * 1024) return false;
+        try { return JsonParser.parseString(payload).isJsonObject(); }
+        catch (RuntimeException invalid) { return false; }
+    }
+
+    /** Toll-only ledger boundary. API callers MUST use BankRuntime.transact for durable publication. */
+    public TxResult tollPayment(UUID payer, UUID recipient, String currency, BigDecimal amount, String reference, boolean system) {
+        if (reference == null || reference.isBlank() || reference.length() > 120)
+            return TxResult.fail("bad_reference", "Invalid toll event reference");
+        if (payer == null || (!system && (recipient == null || payer.equals(recipient))))
+            return TxResult.fail("bad_account", "Invalid toll accounts");
+        if (!validTollAmount(amount))
+            return TxResult.fail("bad_amount", "Positive exact amount required (maximum 32 integer digits and four decimals)");
+        BigDecimal exact = Money.of(amount);
+        String key = "toll:" + reference;
+        String fingerprint = "toll-v1|" + payer + "|" + (system ? "system:toll" : recipient) + "|" + currency + "|" + Money.stored(exact);
+        return postMarketMovement(key, fingerprint, Money.units(exact), () -> executeToll(payer, recipient, currency, exact, key, system));
+    }
+
+    private static boolean validTollAmount(BigDecimal amount) {
+        return amount != null && amount.signum() > 0 && amount.precision() <= 128
+                && amount.scale() >= -32 && amount.scale() <= 128
+                && (long) amount.precision() - amount.scale() <= 32
+                && amount.stripTrailingZeros().scale() <= Money.SCALE;
+    }
+
+    /** Read-only caller must invoke on copyExact(): FX quote caching must not mutate live books. */
+    public TxResult previewTollSystem(String currency, BigDecimal amount) {
+        if (!validTollAmount(amount)) return TxResult.fail("bad_amount", "Positive exact amount required");
+        UUID personal = nestedId(currency); CurrencyDef def = currency == null ? null : currency(currency);
+        String terminal = currency; BigDecimal asset = Money.of(amount);
+        if (personal != null) {
+            ClearingQuote quote = quotePersonalClearing(personal, asset);
+            if (!quote.success()) return TxResult.fail(quote.code(), "Collateral cannot settle");
+            terminal = quote.currency(); asset = quote.amount();
+        } else {
+            if (def == null) return TxResult.fail("unknown_currency", "");
+            if (def.kind() == CurrencyKind.COMMODITY && amount.stripTrailingZeros().scale() > 0) return TxResult.fail("bad_amount", "Physical currency must be whole units");
+        }
+        String central = centralNoteId(); CurrencyDef terminalDef = currency(terminal);
+        if (central == null || terminalDef == null || (!central.equals(terminal) && terminalDef.kind() != CurrencyKind.COMMODITY)) return TxResult.fail("unsupported_settlement", "");
+        BigDecimal rate = central.equals(terminal) ? BigDecimal.ONE : unitsPer(central, terminal);
+        if (rate == null || rate.signum() <= 0) return TxResult.fail("no_current_rate", "");
+        BigDecimal value = asset.multiply(rate);
+        if (value.signum() <= 0 || value.stripTrailingZeros().scale() > Money.SCALE) return TxResult.fail("below_precision", "当前金额不能精确结算为四位央行券，请调整金额");
+        return TxResult.ok(Money.units(amount), "当前结算精度可用；实际收费仍复验余额、准备金、汇率和央行资金");
+    }
+
+    public TxResult tollReceipt(String reference) {
+        if (reference == null || reference.isBlank() || reference.length() > 120) return TxResult.fail("bad_reference", "");
+        return marketReceipt("toll:" + reference) ? TxResult.ok(BigInteger.ZERO, "committed") : TxResult.fail("unrecorded", "");
+    }
+
+    private TxResult executeToll(UUID payer, UUID recipient, String currency, BigDecimal amount, String key, boolean system) {
+        UUID personal = nestedId(currency);
+        CurrencyDef def = currency == null ? null : currency(currency);
+        if (personal == null && def == null) return TxResult.fail("unknown_currency", "Unknown toll currency");
+        if (def != null && def.kind() == CurrencyKind.COMMODITY && amount.stripTrailingZeros().scale() > 0)
+            return TxResult.fail("bad_amount", "Physical currency must be whole units");
+        if (!system) {
+            if (personal != null) {
+                TxResult result = transferPersonalExact(payer, recipient, currency, amount);
+                return "funds".equals(result.code()) ? TxResult.fail("insufficient_funds", result.message()) : result;
+            }
+            if (balanceExact(payer, currency).compareTo(amount) < 0) return TxResult.fail("insufficient_funds", "Not enough savings");
+            debitBalance(payer, currency, amount); creditBalance(recipient, currency, amount);
+            return TxResult.ok(Money.units(amount), "Toll transferred");
+        }
+        ClearingQuote quote = null;
+        String terminal = currency; BigDecimal asset = amount;
+        if (personal != null) {
+            quote = quotePersonalClearing(personal, amount);
+            if (!quote.success()) return TxResult.fail(quote.code(), "Collateral cannot settle");
+            if (personalHoldingExact(personal, payer).subtract(new BigDecimal(personalLockedOffer(personal, payer))).compareTo(amount) < 0)
+                return TxResult.fail("insufficient_funds", "Not enough unlisted personal currency");
+            terminal = quote.currency(); asset = quote.amount();
+        } else if (balanceExact(payer, currency).compareTo(amount) < 0) return TxResult.fail("insufficient_funds", "Not enough savings");
+        String central = centralNoteId();
+        CurrencyDef terminalDef = currency(terminal);
+        if (central == null || terminalDef == null || (!central.equals(terminal) && terminalDef.kind() != CurrencyKind.COMMODITY))
+            return TxResult.fail("unsupported_settlement", "Unsupported terminal asset");
+        BigDecimal price = central.equals(terminal) ? BigDecimal.ONE : unitsPer(central, terminal);
+        if (price == null || price.signum() <= 0) return TxResult.fail("no_current_rate", "No funded settlement rate");
+        BigDecimal proceeds = asset.multiply(price);
+        // Reject rather than silently round an entitlement or mint the difference.
+        if (proceeds.signum() <= 0 || proceeds.stripTrailingZeros().scale() > Money.SCALE)
+            return TxResult.fail("below_precision", "Settlement must be exact to four decimals");
+        proceeds = Money.of(proceeds);
+        if (!central.equals(terminal)) {
+            if (treasuryExact(central).compareTo(proceeds) < 0) return TxResult.fail("insufficient_treasury", "Central-owned notes insufficient");
+            if (supply(terminal).depositVaultExact().compareTo(asset) < 0) return TxResult.fail("insufficient_backing", "Terminal custody insufficient");
+        }
+        // All fallible validation precedes mutation; transaction persistence wraps the entire operation.
+        JsonArray legs = new JsonArray();
+        if (personal != null) {
+            setPersonalExact(personal, payer, personalHoldingExact(personal, payer).subtract(amount));
+            for (ClearingLeg leg : quote.legs()) {
+                PersonalNote note = personalNoteById(leg.noteId());
+                setBackingExact(note, effectiveBackingExact(note).subtract(leg.reserve()));
+                recoveredNotes.put(note.id(), Money.of(personalRecovered(note.id()).add(leg.notes())));
+                JsonObject row = new JsonObject(); row.addProperty("noteId", leg.noteId().toString()); row.addProperty("anchor", leg.anchor());
+                row.addProperty("notes", Money.stored(leg.notes())); row.addProperty("reserve", Money.stored(leg.reserve())); legs.add(row);
+            }
+            if (central.equals(terminal)) supply(central).addLiability(asset);
+        } else debitBalance(payer, currency, amount);
+        if (!central.equals(terminal)) {
+            collectCustodyIntoTreasury(terminal, asset);
+            treasury.put(central, Money.of(treasuryExact(central).subtract(proceeds)));
+        }
+        settledAssets.computeIfAbsent("toll", unused -> new LinkedHashMap<>()).merge(central, proceeds, BigDecimal::add);
+        JsonObject receipt = new JsonObject();
+        receipt.addProperty("kind", "toll-final"); receipt.addProperty("reference", key); receipt.addProperty("account", "toll");
+        receipt.addProperty("payer", payer.toString()); receipt.addProperty("tender", currency); receipt.addProperty("tenderAmount", Money.stored(amount));
+        receipt.addProperty("terminalCurrency", terminal); receipt.addProperty("terminalAmount", Money.stored(asset)); receipt.addProperty("rate", price.toPlainString());
+        receipt.addProperty("currency", central); receipt.addProperty("amount", Money.stored(proceeds)); receipt.addProperty("status", "settled");
+        receipt.addProperty("pendingDelivery", false); receipt.addProperty("timestamp", System.currentTimeMillis()); receipt.add("legs", legs);
+        clearingReceipts.put(key, receipt);
+        return TxResult.ok(Money.units(amount), "Toll settled in central notes");
     }
 
     private String numeraire;
@@ -5031,6 +5184,7 @@ public final class BankBooks {
         JsonObject marketReceiptsJson = new JsonObject();
         marketReceipts.forEach(marketReceiptsJson::addProperty);
         root.add("marketReceipts", marketReceiptsJson);
+        root.add("tollState", tollState());
         root.addProperty("numeraire", numeraire);
         root.addProperty("fee", feeFraction.toPlainString());
         if (liveCopperPerDiamond != null) {
@@ -5308,6 +5462,16 @@ public final class BankBooks {
             defs.put("note", legacyNote.withName("央行券"));
         }
         BankBooks books = new BankBooks(defs);
+        if (root.has("tollState")) {
+            JsonObject saved = root.getAsJsonObject("tollState");
+            books.tollStateRevision = saved.get("revision").getAsLong();
+            JsonElement payload = saved.get("payload");
+            if (books.tollStateRevision < 0 || payload == null) throw new IllegalStateException("Invalid toll checkpoint");
+            if (!payload.isJsonNull()) {
+                books.tollStatePayload = payload.getAsString();
+                if (books.tollStateRevision == 0 || !validTollPayload(books.tollStatePayload)) throw new IllegalStateException("Invalid toll payload");
+            } else if (books.tollStateRevision != 0) throw new IllegalStateException("Missing toll payload");
+        }
         books.checkpoint = root.has("checkpoint") ? root.get("checkpoint").getAsLong() : 0;
         if (root.has("marketReceipts")) {
             root.getAsJsonObject("marketReceipts").entrySet().forEach(entry ->
