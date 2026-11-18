@@ -35,6 +35,7 @@ public final class BankTerminalScreen extends Screen {
     private String marketMode = "buy";
     private boolean payeeSelf;
     private String amountText = "1";
+    private final AmountDrafts amountDrafts = new AmountDrafts();
     private String notice = "";
     private String openDrawer = "";
     private String switchRegime = "";
@@ -93,6 +94,7 @@ public final class BankTerminalScreen extends Screen {
 
     @Override
     protected void init() {
+        amountText = amountDrafts.select(page.name());
         amount = null;
         issuancePane = null;
         pageBand = null;
@@ -190,7 +192,6 @@ public final class BankTerminalScreen extends Screen {
         String metalName = currencyName(exchangeMetal);
         y = paneText(pane, (exchangeSelling ? "付出" : "得到") + "实物数量（整数 " + metalName + "）", left, y + 8, right - left, 0xFFE8D090);
         y = addIssuanceAmount(pane, left, right, right - left, y + 6);
-        amount.setTextPredicate(value -> value.matches("[0-9]{0,9}"));
         String pay = exchangeSelling ? exchangeMetal : "note", receive = exchangeSelling ? "note" : exchangeMetal;
         y = paneButtons(pane, left, right, y, List.of("预览兑换"), List.of(() -> {
             rememberAmount();
@@ -484,7 +485,18 @@ public final class BankTerminalScreen extends Screen {
         int fieldX = left + Math.max(0, (textWidth - fieldWidth) / 2);
         amount = new TextFieldWidget(textRenderer, fieldX, y, fieldWidth, 18, Text.literal("数量"));
         amount.setMaxLength(32);
-        amount.setText(amountText == null || amountText.isBlank() ? "1" : amountText);
+        if (page == Page.EXCHANGE) {
+            // Set the predicate before the text: a stale non-numeric token must
+            // never become an uneditable value in the integer-only field.
+            amount.setTextPredicate(AmountDrafts::isPhysicalInput);
+            amountText = AmountDrafts.physicalInput(amountText);
+        }
+        amount.setText(amountText);
+        amountDrafts.remember(amountText);
+        amount.setChangedListener(value -> {
+            amountText = value;
+            amountDrafts.remember(value);
+        });
         pane.addControl(amount, fieldX, y);
         ButtonWidget minus = ButtonWidget.builder(Text.literal("−"), button -> adjustIssuanceAmount(-1))
                 .dimensions(fieldX - 24, y, 20, 18).build();
@@ -887,7 +899,11 @@ public final class BankTerminalScreen extends Screen {
         int fieldWidth = Math.min(120, Math.max(70, mainWidth() / 3));
         amount = new TextFieldWidget(textRenderer, centerX(fieldWidth), fieldY, fieldWidth, 16, Text.literal("数量"));
         amount.setMaxLength(32);
-        amount.setText(amountText == null || amountText.isBlank() ? "1" : amountText);
+        amount.setText(amountText);
+        amount.setChangedListener(value -> {
+            amountText = value;
+            amountDrafts.remember(value);
+        });
         addDrawableChild(amount);
         List<String> labels = new ArrayList<>(List.of("1", "5", "10", "64"));
         if (includeAll) {
@@ -1528,6 +1544,7 @@ public final class BankTerminalScreen extends Screen {
     private void rememberAmount() {
         if (amount != null) {
             amountText = amount.getText();
+            amountDrafts.remember(amountText);
         }
     }
 

@@ -60,6 +60,17 @@ public final class BankUiService {
         }
         BankBooks books = BankRuntime.books();
         switch (parts[0]) {
+            case "admin-players" -> {
+                if (parts.length >= 2) {
+                    try {
+                        session.playerListPage = Math.max(0, Integer.parseInt(parts[1]));
+                        String[] request = raw.trim().split(" ", 3);
+                        session.playerListQuery = request.length == 3 ? request[2].trim() : "";
+                        session.playerListOpen = true;
+                    } catch (NumberFormatException invalid) { /* Ignore malformed page. */ }
+                }
+            }
+            case "admin-players-close" -> session.playerListOpen = false;
             case "page" -> page(player, session, parts);
             case "close" -> BankUiNetwork.forget(player);
             case "withdraw" -> withdraw(player, books, parts);

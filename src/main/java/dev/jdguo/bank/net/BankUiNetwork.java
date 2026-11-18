@@ -114,6 +114,8 @@ public final class BankUiNetwork {
         CentralPolicyUi.addPreview(payload, session);
         CentralAdjustmentUi.addPreview(payload, session);
         if (session.admin && session.fundingPreview != null) payload.add("fundingPreview", session.fundingPreview);
+        if (session.admin && session.playerListOpen && player.hasPermissionLevel(2))
+            payload.add("adminPlayers", AdminPlayerDirectory.page(player, books, session.playerListQuery, session.playerListPage, session.playerRoster));
         String encoded = payload.toString();
         if (encoded.length() > 32767) {
             if (encoded.length() > UiSnapshotChunks.MAX_CHARS || !ServerPlayNetworking.canSend(player, SYNC_CHUNK)) {
@@ -192,6 +194,10 @@ public final class BankUiNetwork {
         long exchangeExpires;
         long lastCheckpoint = -1;
         int snapshotTransfer;
+        final AdminPlayerDirectory.CachedRoster playerRoster = new AdminPlayerDirectory.CachedRoster();
+        boolean playerListOpen;
+        int playerListPage;
+        String playerListQuery = "";
 
         Session(String outlet, boolean admin) {
             this.outlet = outlet;

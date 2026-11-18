@@ -2314,6 +2314,17 @@ public final class BankBooks {
         return row.getOrDefault(currency, BigInteger.ZERO);
     }
 
+    /** Known bank customers, including offline holders and reserve-only accounts. */
+    public java.util.Set<UUID> customerIds() {
+        java.util.Set<UUID> ids = new java.util.HashSet<>(accounts.keySet());
+        ids.addAll(personalReserves.keySet());
+        ids.addAll(centralReserveAccounts.keySet());
+        personalNotes.values().forEach(note -> ids.add(note.issuer()));
+        personalHoldings.values().forEach(row -> ids.addAll(row.keySet()));
+        holdingFraction.values().forEach(row -> ids.addAll(row.keySet()));
+        return java.util.Set.copyOf(ids);
+    }
+
     public Map<String, BigInteger> personalReservesOf(UUID player) {
         Map<String, BigInteger> row = personalReserves.get(player);
         if (row == null) {

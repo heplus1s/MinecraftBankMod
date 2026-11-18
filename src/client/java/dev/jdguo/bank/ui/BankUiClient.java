@@ -35,7 +35,7 @@ public final class BankUiClient implements ClientModInitializer {
             client.execute(() -> {
                 if (client.getNetworkHandler() != handler || client.player == null) return;
                 chunks.clear();
-                if (client.currentScreen instanceof BankAdminScreen || client.currentScreen instanceof BankTerminalScreen)
+                if (client.currentScreen instanceof BankAdminScreen || client.currentScreen instanceof BankPlayerListScreen || client.currentScreen instanceof BankTerminalScreen)
                     client.setScreen(null);
                 client.player.sendMessage(Text.literal(reason), false);
             });
@@ -110,6 +110,11 @@ public final class BankUiClient implements ClientModInitializer {
     private static void open(MinecraftClient client, String json) {
         JsonObject data = JsonParser.parseString(json).getAsJsonObject();
         if (BankSnapshot.admin(data)) {
+            if (data.has("adminPlayers")) {
+                if (client.currentScreen instanceof BankPlayerListScreen screen) screen.show(data);
+                else client.setScreen(new BankPlayerListScreen(data));
+                return;
+            }
             if (client.currentScreen instanceof BankAdminScreen screen) {
                 screen.show(data);
                 return;

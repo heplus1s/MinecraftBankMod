@@ -17,6 +17,7 @@ import java.nio.file.StandardCopyOption;
 /** NBT holds the same JSON document that is also written beside the world for backups. */
 public final class BankWorldState extends PersistentState {
     public static final String ID = "bankmod";
+    private static final DirectorySync DIRECTORY_SYNC = new DirectorySync();
 
     private BankBooks books;
 
@@ -45,8 +46,8 @@ public final class BankWorldState extends PersistentState {
             }
             // Never silently downgrade economic commits to a non-atomic replacement.
             Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            try (var directory = java.nio.channels.FileChannel.open(path.getParent(), java.nio.file.StandardOpenOption.READ)) {
-                directory.force(true);
+            try {
+                DIRECTORY_SYNC.force(path.getParent(), BankRuntime.LOGGER::warn);
             } catch (UnsupportedOperationException unsupported) {
                 BankRuntime.LOGGER.warn("文件系统不支持目录同步，断电耐久性取决于操作系统", unsupported);
             } catch (java.nio.file.AccessDeniedException denied) {

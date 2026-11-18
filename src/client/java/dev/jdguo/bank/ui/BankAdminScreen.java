@@ -67,6 +67,7 @@ public final class BankAdminScreen extends Screen {
             return;
         }
         button("更名设置", x, 6, 76, () -> switchPage(5));
+        button("玩家存款", x + 80, 6, 76, () -> BankUiClient.send("admin-players 0"));
         button("关闭", x + w - 50, 6, 50, this::close);
         String[] tabs = {"总览", "发行管理", "准备金", "回收", "兑付"};
         int tabW = (w - 16) / 5;
@@ -313,7 +314,7 @@ public final class BankAdminScreen extends Screen {
     @Override public void render(DrawContext context, int mx, int my, float delta) {
         renderBackground(context);
         int x = left(), w = bodyWidth();
-        context.drawCenteredTextWithShadow(textRenderer, "央行管理", width / 2, 12, 0xFFE8D090);
+        if (w >= 360) context.drawCenteredTextWithShadow(textRenderer, "央行管理", width / 2, 12, 0xFFE8D090);
         if (field != null) {
             context.drawText(textRenderer, textRenderer.trimToWidth(inputLabel == null ? "" : inputLabel, w), x, inputY - 16, 0xFFE8D090, false);
         }
