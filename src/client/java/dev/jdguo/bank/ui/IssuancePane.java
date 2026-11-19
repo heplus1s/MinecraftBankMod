@@ -25,6 +25,7 @@ final class IssuancePane {
     private final List<Control> controls = new ArrayList<>();
     private final List<Drawer> drawers = new ArrayList<>();
     private final List<Line> lines = new ArrayList<>();
+    private final List<Band> bands = new ArrayList<>();
     private int scroll;
     private int contentHeight;
     private boolean dragging;
@@ -35,6 +36,8 @@ final class IssuancePane {
 
     private record Drawer(String role, ChoiceListWidget widget, int layoutX, int layoutY, int width, int height) {
     }
+
+    private record Band(int left, int top, int right, int bottom, int color) {}
 
     private record Line(String text, int x, int y, int color) {
     }
@@ -58,6 +61,10 @@ final class IssuancePane {
 
     void addLine(String text, int lineX, int lineY, int color) {
         lines.add(new Line(text, lineX, lineY, color));
+    }
+
+    void addBand(int left, int top, int right, int bottom, int color) {
+        bands.add(new Band(left, top, right, bottom, color));
     }
 
     void finish(int contentBottom) {
@@ -85,6 +92,9 @@ final class IssuancePane {
         int clipBottom = y + height - 1;
         if (clipRight > x + 1 && clipBottom > y + 1) {
             context.enableScissor(x + 1, y + 1, clipRight, clipBottom);
+            for (Band band : bands) {
+                context.fill(band.left, band.top - scroll, band.right, band.bottom - scroll, band.color);
+            }
             for (Line line : lines) {
                 context.drawText(net.minecraft.client.MinecraftClient.getInstance().textRenderer,
                         line.text, line.x, line.y - scroll, line.color, false);

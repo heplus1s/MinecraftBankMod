@@ -21,6 +21,7 @@ public final class BankAdminScreen extends Screen {
     private String renameDraft;
     private ButtonWidget confirmation;
     private boolean closing;
+    private boolean recallFunding;
     private final List<String> lines = new ArrayList<>();
     private int textTop;
     private String adjustmentMode = "quantity";
@@ -51,7 +52,8 @@ public final class BankAdminScreen extends Screen {
     }
     private void switchPage(int next) {
         int previous = page;
-        remember(); page = next; scroll = 0; pending = null;
+        remember(); page = next; scroll = 0; pending = null; recallFunding = false;
+        data.remove("fundingPreview");
         data.remove("centralAdjustmentPreview");
         BankUiClient.send("admin-policy-cancel");
         BankUiClient.send("admin-adjust-cancel");
@@ -130,44 +132,7 @@ public final class BankAdminScreen extends Screen {
                 button("确认调整", x, height - 30, w, () -> { String command = pending; pending = null; BankUiClient.send(command); });
             }
         } else if (page == 8 || page == 9) {
-            selected = "note";
-            String account = page == 8 ? "shop" : "land";
-            String title = page == 8 ? "商店系统账户" : "地产系统账户";
-            input("拨款数量（" + centralName() + "）", x, w);
-            button("预览拨款", x + w - 112, 86, 112, () -> {
-                remember(); BankUiClient.send("admin-funding-preview " + account + " " + typed);
-            });
-            textTop = 118;
-            lines.add(title + "（仅列 " + centralName() + "，不含其他抵押物折价）");
-            JsonObject funds = data.has(account + "SystemFunds") ? data.getAsJsonObject(account + "SystemFunds") : new JsonObject();
-            lines.add("可用央行券：" + BankSnapshot.text(funds, "available"));
-            lines.add("经营储蓄（拨款入账处）：" + BankSnapshot.text(funds, "ordinary"));
-            lines.add("结算资产中的央行券：" + BankSnapshot.text(funds, "settled"));
-            lines.add("待交付入账锁定：" + BankSnapshot.text(funds, "heldIncoming") + "（已从可用额扣除）");
-            lines.add("待完成付款：" + BankSnapshot.text(funds, "pendingOutgoing") + "（已转出，不计入上述余额）");
-            lines.add("央行自有储蓄：" + centralField("treasury") + " " + centralName());
-            lines.add("只从央行自有央行券拨入此系统账户，不使用玩家存款，不自动增发。两个系统账户独立。");
-            button("央行券注资", x, height - 30, (w - 4) / 2, () -> switchPage(6));
-            JsonObject preview = data.has("fundingPreview") ? data.getAsJsonObject("fundingPreview") : null;
-            if (preview != null && account.equals(BankSnapshot.text(preview, "account"))) {
-                lines.add("拨款：" + BankSnapshot.text(preview, "amount") + " " + centralName());
-                lines.add("拨款后央行自有：" + BankSnapshot.text(preview, "sourceAfter"));
-                lines.add("拨款后经营储蓄：" + BankSnapshot.text(preview, "targetAfter"));
-                lines.add("预览有效 60 秒；账户余额变化需重新预览。");
-                button("确认拨款", x + (w + 4) / 2, height - 30, (w - 4) / 2, () -> BankUiClient.send("admin-funding-confirm"));
-                java.math.BigDecimal current = BankRates.parse(typed), quoted = BankRates.parse(BankSnapshot.text(preview, "amount"));
-                confirmation.active = current != null && quoted != null && current.compareTo(quoted) == 0;
-            }
-            if (data.has("systemFundingLog")) {
-                lines.add("最近拨款记录");
-                var entries = data.getAsJsonArray("systemFundingLog"); int shown = 0;
-                for (int i = entries.size() - 1; i >= 0 && shown < 5; i--) {
-                    var entry = entries.get(i).getAsJsonObject();
-                    if (!account.equals(BankSnapshot.text(entry, "account"))) continue;
-                    lines.add("+" + BankSnapshot.text(entry, "amount") + "，经营储蓄 " + BankSnapshot.text(entry, "accountAfter")); shown++;
-                }
-                if (shown == 0) lines.add("暂无拨款记录");
-            }
+            systemFundingPage(x, w);
         } else if (page == 10) {
             tollAccountPage(x, w);
         } else if (page == 6 || page == 7) {
@@ -197,6 +162,94 @@ public final class BankAdminScreen extends Screen {
             button("保存名称", x, height - 30, w, () -> BankUiClient.send("admin-rename " + field.getText().trim()));
         }
     }
+    private void setFundingDirection(boolean recall) {
+        if (recallFunding == recall) return;
+        remember();
+        recallFunding = recall; scroll = 0;
+        data.remove("fundingPreview");
+        BankUiClient.send("admin-funding-cancel");
+        clearAndInit();
+    }
+
+    private void systemFundingPage(int x, int w) {
+        selected = "note";
+        String account = page == 8 ? "shop" : "land";
+        String title = page == 8 ? "商店系统账户" : "地产系统账户";
+        boolean supportsRecall = "true".equals(BankSnapshot.text(data, "systemFundingRecallSupported"));
+        if (!supportsRecall) recallFunding = false;
+        int half = (w - 4) / 2;
+        if (supportsRecall) {
+            button((!recallFunding ? "▶ " : "") + "央行拨入", x, 58, half, () -> setFundingDirection(false));
+            button((recallFunding ? "▶ " : "") + "拨回央行", x + half + 4, 58, half, () -> setFundingDirection(true));
+            inputY = 100;
+        }
+        input((recallFunding ? "拨回" : "拨款") + "数量（" + centralName() + "）", x, w);
+        button(recallFunding ? "预览拨回" : "预览拨款", x + w - 112, inputY, 112, () -> {
+            remember();
+            var quantity = BankRates.parse(typed);
+            if (quantity == null || quantity.signum() <= 0) return;
+            if (confirmation != null) confirmation.active = false;
+            BankUiClient.send("admin-funding-preview " + account + " " + typed + (supportsRecall ? (recallFunding ? " recall" : " fund") : ""));
+        });
+        textTop = inputY + 32;
+        JsonObject funds = data.has(account + "SystemFunds") ? data.getAsJsonObject(account + "SystemFunds") : new JsonObject();
+        JsonObject preview = data.has("fundingPreview") ? data.getAsJsonObject("fundingPreview") : null;
+        boolean matches = preview != null && account.equals(BankSnapshot.text(preview, "account"))
+                && recallFunding == "recall".equals(BankSnapshot.text(preview, "direction"));
+        if (matches) {
+            String token = BankSnapshot.text(preview, "token");
+            if (recallFunding) {
+                lines.add("拨回金额：" + value(preview, "amount") + " " + centralName());
+                lines.add("拨回后央行自有储蓄：" + value(preview, "treasuryAfter"));
+                lines.add("拨回后专户可用余额：" + value(preview, "availableAfter"));
+            } else {
+                lines.add("拨款 " + value(preview, "amount") + " " + centralName()
+                        + " → 经营储蓄 " + value(preview, "targetAfter"));
+                lines.add("拨款后央行自有储蓄：" + value(preview, "sourceAfter"));
+            }
+            lines.add("预览有效 60 秒；余额变化需重新预览。");
+            button("取消预览", x, height - 30, half, () -> {
+                remember(); data.remove("fundingPreview"); BankUiClient.send("admin-funding-cancel"); clearAndInit();
+            });
+            button(recallFunding ? "确认拨回" : "确认拨款", x + half + 4, height - 30, half, () -> {
+                confirmation.active = false;
+                BankUiClient.send("admin-funding-confirm" + (token == null || token.isBlank() ? "" : " " + token));
+            });
+            var current = BankRates.parse(typed);
+            var quoted = BankRates.parse(BankSnapshot.text(preview, "amount"));
+            confirmation.active = current != null && quoted != null && current.compareTo(quoted) == 0
+                    && (!supportsRecall || (token != null && !token.isBlank()));
+        } else {
+            button("央行券注资", x, height - 30, half, () -> switchPage(6));
+        }
+        lines.add(title + "（仅列 " + centralName() + "，不含其他抵押物折价）");
+        lines.add((recallFunding ? "可拨回余额：" : "可用余额：")
+                + value(funds, recallFunding ? "recallAvailable" : "available") + " " + centralName());
+        lines.add("经营储蓄（拨款入账处）：" + value(funds, "ordinary"));
+        lines.add("结算资产中的央行券：" + value(funds, "settled"));
+        lines.add("待交付入账锁定：" + value(funds, "heldIncoming") + "（不计入可用余额）");
+        lines.add("待完成付款：" + value(funds, "pendingOutgoing") + "（已转出）");
+        lines.add("央行自有储蓄：" + centralField("treasury") + " " + centralName());
+        lines.add(recallFunding ? "从该专户可用余额拨回央行自有储蓄，不动待结算款或玩家存款。"
+                : "仅从央行自有储蓄拨入该专户，不使用玩家存款，不自动增发。");
+        String logKey = data.has("systemFundingMovements") ? "systemFundingMovements" : "systemFundingLog";
+        if (data.has(logKey)) {
+            lines.add("最近划拨记录");
+            var entries = data.getAsJsonArray(logKey);
+            int shown = 0;
+            for (int i = entries.size() - 1; i >= 0 && shown < 5; i--) {
+                var entry = entries.get(i).getAsJsonObject();
+                if (!account.equals(BankSnapshot.text(entry, "account"))) continue;
+                boolean recalled = "recall".equals(BankSnapshot.text(entry, "direction"));
+                String after = entry.has("availableAfter") ? "可用余额 " + value(entry, "availableAfter")
+                        : "经营储蓄 " + value(entry, "accountAfter");
+                lines.add((recalled ? "拨回 −" : "拨入 +") + value(entry, "amount") + "，" + after);
+                shown++;
+            }
+            if (shown == 0) lines.add("暂无划拨记录");
+        }
+    }
+
     private void tollAccountPage(int x, int w) {
         if (!data.has("tollBalance")) {
             lines.add("正在读取收费专户；若未返回数据，请确认服务端已更新。");
@@ -326,6 +379,10 @@ public final class BankAdminScreen extends Screen {
         field.setChangedListener(value -> {
             if (confirmation != null) confirmation.active = false;
             pending = null;
+            if ((page == 8 || page == 9) && data.has("fundingPreview")) {
+                data.remove("fundingPreview");
+                BankUiClient.send("admin-funding-cancel");
+            }
             if (page == 1 || page == 3) {
                 data.remove("centralAdjustmentPreview");
                 BankUiClient.send("admin-adjust-cancel");
@@ -397,7 +454,11 @@ public final class BankAdminScreen extends Screen {
     }
     static boolean amountChars(String text) { return text != null && (text.isEmpty() || text.matches("\\d*(\\.\\d{0,4})?")); }
     @Override public void close() {
-        if (!closing) { closing = true; BankUiClient.send(BankActions.close()); }
+        if (!closing) {
+            closing = true;
+            if (page == 8 || page == 9) BankUiClient.send("admin-funding-cancel");
+            BankUiClient.send(BankActions.close());
+        }
         super.close();
     }
     @Override public boolean shouldPause() { return false; }

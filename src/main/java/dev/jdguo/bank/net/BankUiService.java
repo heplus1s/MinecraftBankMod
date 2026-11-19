@@ -85,7 +85,9 @@ public final class BankUiService {
             case "note-switch" -> switchRegime(player, books, parts);
             case "note-rename" -> renamePersonal(player, parts);
             case "note-auto-listing" -> autoListing(player, parts);
-            case "note-policy", "note-reserve-switch", "note-recovery-return" -> clearingAction(player, parts);
+            case "note-quantity-preview", "note-quantity-confirm", "note-quantity-cancel" ->
+                    PersonalQuantityUi.handle(player, session, parts);
+            case "note-policy", "note-policy-band", "note-policy-switch", "note-reserve-switch", "note-recovery-return" -> clearingAction(player, parts);
             case "note-issue" -> issue(player, books, parts, false);
             case "note-unbacked", "issue-unbacked" -> issue(player, books, parts, true);
             case "note-retire" -> retire(player, books, parts);
@@ -231,16 +233,24 @@ public final class BankUiService {
                 NoteRegime regime = NoteRegime.valueOf(parts[1].toUpperCase(java.util.Locale.ROOT));
                 BigDecimal target = exactPositive(parts[2]), lower = exactPositive(parts[3]), upper = exactPositive(parts[4]);
                 result = BankRuntime.transact(book -> book.setPersonalPolicy(player.getUuid(), regime, target, lower, upper));
+            } else if ("note-policy-band".equals(parts[0]) && parts.length == 3) {
+                BigDecimal lower = exactPositive(parts[1]), upper = exactPositive(parts[2]);
+                result = BankRuntime.transact(book -> book.setPersonalPolicyBand(player.getUuid(), lower, upper));
+            } else if ("note-policy-switch".equals(parts[0]) && parts.length == 3) {
+                NoteRegime expected = NoteRegime.valueOf(parts[1].toUpperCase(java.util.Locale.ROOT));
+                NoteRegime desired = NoteRegime.valueOf(parts[2].toUpperCase(java.util.Locale.ROOT));
+                result = BankRuntime.transact(book -> book.switchPersonalPolicyRegime(player.getUuid(), expected, desired));
             } else if ("note-reserve-switch".equals(parts[0]) && parts.length == 2) {
                 result = BankRuntime.transact(book -> book.switchPersonalReserve(player.getUuid(), parts[1]));
             } else if ("note-recovery-return".equals(parts[0]) && parts.length == 2) {
                 BigDecimal quantity = exactPositive(parts[1]);
                 result = BankRuntime.transact(book -> book.returnRecoveredPersonal(player.getUuid(), quantity));
             } else throw new IllegalArgumentException("arguments");
-            player.sendMessage(net.minecraft.text.Text.literal(result.success()
-                    ? "设置已保存。" : "未执行：" + result.code()), false);
+            boolean policyAction = parts[0].startsWith("note-policy");
+            player.sendMessage(net.minecraft.text.Text.literal(policyAction ? result.message()
+                    : result.success() ? "设置已保存。" : "未执行：" + result.code()), false);
         } catch (IllegalArgumentException invalid) {
-            player.sendMessage(net.minecraft.text.Text.literal("参数无效，请使用正数（最多四位小数），区间下限 ≤ 目标 ≤ 上限。"), false);
+            player.sendMessage(net.minecraft.text.Text.literal("个人币设置参数无效；区间须为正数且下限不大于上限，最多四位小数。"), false);
         }
     }
 

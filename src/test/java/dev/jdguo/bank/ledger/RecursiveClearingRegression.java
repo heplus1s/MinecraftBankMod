@@ -77,6 +77,8 @@ public final class RecursiveClearingRegression {
   ok(central.reversePersonalSettlement("cash").success(),"central reverse"); eq(central.supply("note").liabilityExact(),liability.toPlainString()); central.checkInvariants();
   // Explicit fixed target may run out of issuer funds, never seize the public balance.
   ok(central.transferPersonal(c,publicHolder,"银",BigInteger.valueOf(90)).success(),"public transfer");
+  // Fixture: a legacy HARD note already configured before mode-isolated settings.
+  cash.adopt(NoteRegime.HARD, cash.anchor(), null);
   ok(central.setPersonalPolicy(c,NoteRegime.HARD,d("1"),d("1"),d("1")).success(),"fixed target");
   ok(central.rebalancePersonalPolicy(c).success(),"fixed rebalance");
   eq(central.personalHoldingExact(cash.id(),publicHolder),"90"); eq(central.personalRecovered(cash.id()),"10");

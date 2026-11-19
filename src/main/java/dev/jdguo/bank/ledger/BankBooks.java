@@ -65,6 +65,7 @@ public final class BankBooks {
     private final Map<UUID, BigDecimal> recoveredNotes = new LinkedHashMap<>();
     private final java.util.Set<UUID> reserveSwitching = new java.util.HashSet<>();
     private final Map<UUID, PersonalPolicy> policies = new LinkedHashMap<>();
+    private final Map<UUID, Map<String, PersonalPolicy>> archivedPolicies = new LinkedHashMap<>();
     private final Map<String, Map<String, BigDecimal>> settledAssets = new LinkedHashMap<>();
     private final Map<String, JsonObject> clearingReceipts = new LinkedHashMap<>();
 
@@ -1978,6 +1979,7 @@ public final class BankBooks {
         row.addProperty("ordinary", Money.stored(ordinary));
         row.addProperty("settled", Money.stored(settled));
         row.addProperty("available", Money.stored(available));
+        row.addProperty("recallAvailable", Money.stored(systemRecallCapacity(account).available()));
         row.addProperty("heldIncoming", Money.stored(ordinary.add(settled).subtract(available).max(BigDecimal.ZERO)));
         row.addProperty("pendingOutgoing", Money.stored(pendingOutgoing));
         return row;
@@ -2039,16 +2041,73 @@ public final class BankBooks {
         if (source.compareTo(amount) < 0) return TxResult.fail("insufficient_treasury", "央行自有央行券不足，不动用玩家存款");
         treasury.put(currency, Money.of(source.subtract(amount)));
         addOrdinarySystem(account, currency, amount);
+        recordSystemFunding(operator, account, amount, currency, "fund");
+        return TxResult.ok(Money.units(amount), "系统账户拨款完成");
+    }
+
+    /** Keep the original backing bucket intact for each delivery rollback. */
+    public record SystemRecallCapacity(BigDecimal treasury, BigDecimal ordinary, BigDecimal settled,
+                                       BigDecimal ordinaryAvailable, BigDecimal settledAvailable, BigDecimal available,
+                                       BigDecimal incomingHeld) {}
+
+    public SystemRecallCapacity systemRecallCapacity(String account) {
+        if (!"shop".equals(account) && !"land".equals(account)) throw new IllegalArgumentException("system account");
+        String currency = centralNoteId();
+        BigDecimal ordinary = ordinarySystemBalance(account, currency);
+        BigDecimal settled = systemSettlementBalance(account, currency);
+        BigDecimal heldOrdinary = Money.ZERO, heldSettled = Money.ZERO;
+        for (JsonObject receipt : clearingReceipts.values()) {
+            if (!deliveryPending(receipt) || !account.equals(receipt.get("account").getAsString())
+                    || !currency.equals(receipt.get("currency").getAsString())) continue;
+            String kind = receipt.has("kind") ? receipt.get("kind").getAsString() : "";
+            if (kind.isEmpty() || "land-direct".equals(kind)) {
+                heldSettled = heldSettled.add(Money.parse(receipt.get("amount").getAsString()));
+            } else if ("shop-direct".equals(kind) && receipt.get("buying").getAsBoolean()) {
+                heldOrdinary = heldOrdinary.add(Money.parse(receipt.get("amount").getAsString()));
+            }
+        }
+        BigDecimal ordinaryAvailable = Money.of(ordinary.subtract(heldOrdinary).max(BigDecimal.ZERO));
+        BigDecimal settledAvailable = Money.of(settled.subtract(heldSettled).max(BigDecimal.ZERO));
+        BigDecimal available = Money.of(ordinary.add(settled).subtract(heldOrdinary).subtract(heldSettled)
+                .max(BigDecimal.ZERO).min(ordinaryAvailable.add(settledAvailable)));
+        return new SystemRecallCapacity(Money.of(treasuryExact(currency)), Money.of(ordinary), Money.of(settled),
+                ordinaryAvailable, settledAvailable, available, Money.of(heldOrdinary.add(heldSettled)));
+    }
+
+    public TxResult recallSystemAccount(UUID operator, boolean administrator, String account, BigDecimal amount,
+                                        SystemRecallCapacity expected) {
+        if (!administrator || operator == null) return TxResult.fail("permission", "仅管理员可拨回");
+        if (!"shop".equals(account) && !"land".equals(account))
+            return TxResult.fail("bad_account", "未知系统账户");
+        if (amount == null || amount.signum() <= 0 || amount.scale() > Money.SCALE)
+            return TxResult.fail("bad_amount", "请输入正数，最多四位小数");
+        SystemRecallCapacity current = systemRecallCapacity(account);
+        if (!current.equals(expected)) return TxResult.fail("stale_quote", "账户余额或待结算款变化，请重新预览");
+        if (current.available().compareTo(amount) < 0)
+            return TxResult.fail("insufficient_system", "可拨回央行券不足，不动用待结算款");
+        BigDecimal fromOrdinary = current.ordinaryAvailable().min(amount);
+        BigDecimal fromSettled = amount.subtract(fromOrdinary);
+        String currency = centralNoteId();
+        if (fromOrdinary.signum() > 0) addOrdinarySystem(account, currency, fromOrdinary.negate());
+        if (fromSettled.signum() > 0)
+            settledAssets.get(account).put(currency, Money.of(current.settled().subtract(fromSettled)));
+        treasury.put(currency, Money.of(current.treasury().add(amount)));
+        recordSystemFunding(operator, account, amount, currency, "recall");
+        return TxResult.ok(Money.units(amount), "已拨回 " + Money.stored(amount) + " " + currency(currency).name() + " 至央行自有储蓄");
+    }
+
+    private void recordSystemFunding(UUID operator, String account, BigDecimal amount, String currency, String direction) {
         JsonObject entry = new JsonObject();
         entry.addProperty("operator", operator.toString());
         entry.addProperty("time", System.currentTimeMillis());
         entry.addProperty("account", account);
+        entry.addProperty("direction", direction);
         entry.addProperty("amount", Money.stored(amount));
         entry.addProperty("treasuryAfter", Money.stored(treasuryExact(currency)));
         entry.addProperty("accountAfter", Money.stored(systemFundingBalance(account)));
+        entry.addProperty("availableAfter", Money.stored(systemAvailableBalance(account, currency)));
         systemFundingLog.add(entry);
         while (systemFundingLog.size() > 200) systemFundingLog.remove(0);
-        return TxResult.ok(Money.units(amount), "系统账户拨款完成");
     }
 
     /** Issued-note sale proceeds: caller has checked and debited the same payer's physical savings.
@@ -3104,6 +3163,7 @@ public final class BankBooks {
         else setPersonalExact(nested, issuer, personalHoldingExact(nested, issuer).add(reserve));
         if ("note".equals(old)) supply("note").addLiability(reserve);
         setBackingExact(note, Money.ZERO);
+        moveModePolicy(note, note.regime(), anchor);
         note.adopt(note.regime(), anchor, null); note.setLocked(BigInteger.ZERO);
         reserveDust.put(note.id(), Money.ZERO); reserveSwitching.add(note.id());
         String changeMessage = settleFractionChange(issuer, change);
@@ -3358,13 +3418,53 @@ public final class BankBooks {
         PersonalNote note = personalNoteById(id);
         return policies.getOrDefault(id, new PersonalPolicy(note == null ? BigDecimal.ONE : new BigDecimal(note.par()), note == null ? BigDecimal.ONE : new BigDecimal(note.par()), note == null ? BigDecimal.ONE : new BigDecimal(note.par())));
     }
+    public boolean personalAutomaticPolicyActive(PersonalNote note) {
+        return note != null && note.regime() != NoteRegime.FLOAT && policies.containsKey(note.id());
+    }
+
     public TxResult setPersonalPolicy(UUID issuer, NoteRegime regime, BigDecimal target, BigDecimal lower, BigDecimal upper) {
         PersonalNote note = personalNote(issuer);
-        if (note == null || note.bankrupt() || noteHasPending(note.id()) || regime == null || target == null || target.signum() <= 0
-                || lower == null || upper == null || lower.signum() <= 0 || lower.compareTo(target) > 0 || target.compareTo(upper) > 0)
-            return TxResult.fail("policy", "Expected positive lower <= target <= upper");
-        policies.put(note.id(), new PersonalPolicy(target, lower, upper)); note.adopt(regime, note.anchor(), null);
-        return TxResult.ok(BigInteger.ZERO, "Policy target saved; actual backing is unchanged");
+        if (note == null || note.bankrupt() || reserveSwitching.contains(note.id()) || noteHasPending(note.id()))
+            return TxResult.fail("policy_locked", "当前不能调整个人币参数（准备金更换、清算待完成或已破产）。");
+        if (regime != note.regime())
+            return TxResult.fail("inactive_regime", "只能修改当前生效制度的参数；请先单独切换制度。");
+        if (target == null || target.signum() <= 0 || lower == null || upper == null || lower.signum() <= 0
+                || lower.compareTo(target) > 0 || target.compareTo(upper) > 0)
+            return TxResult.fail("policy", "须满足 0 < 下限 ≤ 参考比例 ≤ 上限。");
+        policies.put(note.id(), new PersonalPolicy(target, lower, upper));
+        return TxResult.ok(BigInteger.ZERO, "当前制度参数已保存；实际准备金未改动。");
+    }
+
+    public TxResult setPersonalPolicyBand(UUID issuer, BigDecimal lower, BigDecimal upper) {
+        if (lower == null || upper == null || lower.signum() <= 0 || lower.compareTo(upper) > 0
+                || lower.stripTrailingZeros().scale() > Money.SCALE || upper.stripTrailingZeros().scale() > Money.SCALE)
+            return TxResult.fail("policy_band", "须满足 0 < 下限 ≤ 上限，最多四位小数。");
+        BigDecimal midpoint = lower.add(upper).divide(BigDecimal.valueOf(2), Money.SCALE, RoundingMode.HALF_UP);
+        return setPersonalPolicy(issuer, NoteRegime.PEG, midpoint, lower, upper);
+    }
+
+    public TxResult switchPersonalPolicyRegime(UUID issuer, NoteRegime expected, NoteRegime desired) {
+        PersonalNote note = personalNote(issuer);
+        if (note == null || expected == null || desired == null || note.regime() != expected)
+            return TxResult.fail("stale_regime", "当前制度已变化，请刷新后再确认。");
+        if (desired == expected) return TxResult.fail("unchanged_regime", "已经是这一制度。");
+        RegimePreview result = switchPersonalRegime(issuer, desired, note.anchor());
+        return result.applied()
+                ? TxResult.ok(BigInteger.ZERO, "已切换为" + regimeZh(desired) + "；准备金币种、余额与发行量未改动。")
+                : TxResult.fail("regime_requirements", result.reason());
+    }
+
+    private void moveModePolicy(PersonalNote note, NoteRegime regime, String anchor) {
+        if (note.regime() == regime && note.anchor().equals(anchor)) return;
+        PersonalPolicy outgoing = policies.remove(note.id());
+        if (outgoing != null) archivedPolicies.computeIfAbsent(note.id(), ignored -> new LinkedHashMap<>())
+                .put(note.regime().name() + "|" + note.anchor(), outgoing);
+        Map<String, PersonalPolicy> prior = archivedPolicies.get(note.id());
+        if (prior != null) {
+            PersonalPolicy incoming = prior.remove(regime.name() + "|" + anchor);
+            if (incoming != null) policies.put(note.id(), incoming);
+            if (prior.isEmpty()) archivedPolicies.remove(note.id());
+        }
     }
     /** Only recovered non-spendable notes return to issuer. No public holder balance is touched. */
     public TxResult returnRecoveredPersonal(UUID issuer, BigDecimal quantity) {
@@ -3574,6 +3674,7 @@ public final class BankBooks {
         BigDecimal opening = regime == NoteRegime.PEG
                 ? personalDiamondPrice(note)
                 : regime == NoteRegime.FLOAT ? officialOrFace(note) : null;
+        moveModePolicy(note, regime, anchor);
         note.adopt(regime, anchor, opening);
         if (regime == NoteRegime.FLOAT) {
             note.setBuys(BigInteger.ZERO);
@@ -4170,7 +4271,7 @@ public final class BankBooks {
     }
 
     /** Only explicit secondary-holder orders lock funds. Issuer auto offers follow real inventory. */
-    private BigInteger personalLockedOffer(UUID noteId, UUID holder) {
+    BigInteger personalLockedOffer(UUID noteId, UUID holder) {
         PersonalNote note = personalNoteById(noteId);
         if (note != null && note.issuer().equals(holder) && note.autoListing()) return BigInteger.ZERO;
         return personalOffers.getOrDefault(noteId, Map.of()).getOrDefault(holder, BigInteger.ZERO)
@@ -5560,6 +5661,19 @@ public final class BankBooks {
         clearingReceipts.forEach((reference, value) -> receipts.add(reference, value));
         JsonArray switching = new JsonArray(); reserveSwitching.forEach(id -> switching.add(id.toString()));
         clearing.add("reserveDust", clearingDust); clearing.add("recovered", recovered); clearing.add("policies", policyRows); clearing.add("assets", assets); clearing.add("receipts", receipts); clearing.add("switching", switching);
+        if (!archivedPolicies.isEmpty()) {
+            JsonObject archived = new JsonObject();
+            archivedPolicies.forEach((id, values) -> {
+                JsonObject perMode = new JsonObject();
+                values.forEach((key, value) -> {
+                    JsonObject row = new JsonObject();
+                    row.addProperty("target", value.target()); row.addProperty("lower", value.lower()); row.addProperty("upper", value.upper());
+                    perMode.add(key, row);
+                });
+                archived.add(id.toString(), perMode);
+            });
+            clearing.add("archivedPolicies", archived);
+        }
         JsonObject landFractions = new JsonObject(); landGrantFraction.forEach((currency, value) -> landFractions.addProperty(currency, Money.stored(value)));
         clearing.add("landGrantFraction", landFractions);
         root.add("recursiveClearing", clearing);
@@ -5902,6 +6016,15 @@ public final class BankBooks {
             c.getAsJsonObject("recovered").entrySet().forEach(e -> books.recoveredNotes.put(UUID.fromString(e.getKey()), Money.parse(e.getValue().getAsString())));
             c.getAsJsonArray("switching").forEach(e -> books.reserveSwitching.add(UUID.fromString(e.getAsString())));
             c.getAsJsonObject("policies").entrySet().forEach(e -> { JsonObject row = e.getValue().getAsJsonObject(); books.policies.put(UUID.fromString(e.getKey()), new PersonalPolicy(row.get("target").getAsBigDecimal(), row.get("lower").getAsBigDecimal(), row.get("upper").getAsBigDecimal())); });
+            if (c.has("archivedPolicies")) c.getAsJsonObject("archivedPolicies").entrySet().forEach(e -> {
+                Map<String, PersonalPolicy> perMode = new LinkedHashMap<>();
+                e.getValue().getAsJsonObject().entrySet().forEach(entry -> {
+                    JsonObject row = entry.getValue().getAsJsonObject();
+                    perMode.put(entry.getKey(), new PersonalPolicy(row.get("target").getAsBigDecimal(),
+                            row.get("lower").getAsBigDecimal(), row.get("upper").getAsBigDecimal()));
+                });
+                books.archivedPolicies.put(UUID.fromString(e.getKey()), perMode);
+            });
             c.getAsJsonObject("assets").entrySet().forEach(e -> { Map<String, BigDecimal> row = new LinkedHashMap<>(); e.getValue().getAsJsonObject().entrySet().forEach(a -> row.put(a.getKey(), Money.parse(a.getValue().getAsString()))); books.settledAssets.put(e.getKey(), row); });
             c.getAsJsonObject("receipts").entrySet().forEach(e -> books.clearingReceipts.put(e.getKey(), e.getValue().getAsJsonObject().deepCopy()));
         }

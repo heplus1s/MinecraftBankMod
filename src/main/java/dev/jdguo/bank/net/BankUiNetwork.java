@@ -111,6 +111,7 @@ public final class BankUiNetwork {
             payload.addProperty("exchangeReceive", q.receive());
             payload.addProperty("exchangeQuantity", q.quantity().toString());
         }
+        PersonalQuantityUi.addPreview(payload, session);
         CentralPolicyUi.addPreview(payload, session);
         CentralAdjustmentUi.addPreview(payload, session);
         if (session.admin && session.fundingPreview != null) payload.add("fundingPreview", session.fundingPreview);
@@ -213,6 +214,9 @@ public final class BankUiNetwork {
         String centralAdjustmentToken = "";
         dev.jdguo.bank.ledger.CentralIssuePlan centralIssuePlan;
         long centralIssueExpires;
+        dev.jdguo.bank.ledger.PersonalQuantityPlan personalQuantityPlan;
+        String personalQuantityToken = "";
+        long personalQuantityExpires;
         com.google.gson.JsonObject fundingPreview;
         long fundingExpires;
         boolean tollAccountOpen;

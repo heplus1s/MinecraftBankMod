@@ -40,10 +40,12 @@ public final class BankTerminalScreen extends Screen {
     private String openDrawer = "";
     private String switchRegime = "";
     private String switchAnchor = "";
-    private String policyRegime = "";
-    private String policyTarget;
+    private String displayedPolicy;
+    private String pendingPolicyRegime = "";
     private String policyLower;
     private String policyUpper;
+    private String quantityDirection = "increase";
+    private String issuanceQuantity = "";
     private String renameText = "";
     private String createName = "";
     private String createRegime = "float";
@@ -119,6 +121,7 @@ public final class BankTerminalScreen extends Screen {
         }
         addChrome();
         switch (page) {
+            case SAVINGS -> initSavingsList();
             case DEPOSIT -> initMoney(BankSnapshot.currencies(data), true, "确认存入");
             case WITHDRAW -> initMoney(BankSnapshot.currencies(data), true, "确认取出");
             case EXCHANGE -> initExchange();
@@ -348,137 +351,241 @@ public final class BankTerminalScreen extends Screen {
             if (!notice.isBlank()) y = paneText(pane, notice, left, y, textWidth, 0xFFFFCC88);
             for (String rule : List.of(
                     "浮动：实际准备金支持价随储备与有效流通变化，可手动增发。",
-                    "联系：设定目标区间，只以对应储蓄及发行人可用币调节。",
-                    "固定：设定目标比率；实际准备金不足时，实际兑付价仍以真实支持为准。")) {
+                    "联系：只设区间上下限，以对应储蓄及发行人可用币调节。",
+                    "固定：按固定制度管理；准备金不足时，以真实支持为准。")) {
                 y = paneText(pane, rule, left, y, textWidth, 0xFFAAAAAA);
             }
             pane.finish(y);
             pane.setScroll(issuanceScroll);
             return;
         }
-        int topButtonWidth = Math.max(20, (right - left - 8) / 2);
-        ButtonWidget bankruptButton = ButtonWidget.builder(Text.literal("宣告破产"), button -> {
-            send(BankActions.noteBankrupt());
-            page = Page.CONFIRM;
-            client.execute(this::clearAndInit);
-        }).dimensions(left, y, topButtonWidth, 20).build();
-        pane.addControl(bankruptButton, left, y);
-        int switchX = right - topButtonWidth;
-        ButtonWidget switchButton = ButtonWidget.builder(Text.literal("制度设置"), button -> open(Page.ISSUANCE_SWITCH))
-                .dimensions(switchX, y, topButtonWidth, 20).build();
-        pane.addControl(switchButton, switchX, y);
-        y += 28;
-        if (!notice.isBlank()) {
-            y = paneText(pane, notice, left, y, textWidth, 0xFFFFCC88);
-            y += 4;
-        }
-        String regimeName = BankSnapshot.regimeName(data);
-        y = paneText(pane, "当前发行制度：" + (regimeName == null ? BankBook.MISSING : regimeName), left, y, textWidth, 0xFFE6E6E6);
         JsonObject own = BankSnapshot.ownNote(data);
+        String regimeName = BankSnapshot.regimeName(data);
+        String active = BankActions.regimeToken(BankSnapshot.text(own, "regime"));
+        if (!active.equals(displayedPolicy)) {
+            displayedPolicy = active; pendingPolicyRegime = "";
+            policyLower = BankSnapshot.text(own, "pegLower");
+            policyUpper = BankSnapshot.text(own, "pegUpper");
+        }
+        if (!notice.isBlank()) y = paneText(pane, notice, left, y, textWidth, 0xFFFFCC88) + 4;
+        Boolean paused = BankSnapshot.notePaused(data);
+        String modeStatus = Boolean.TRUE.equals(paused) ? "已暂停" : paused == null ? BankBook.MISSING : "正常";
+        String anchor = BankSnapshot.text(own, "anchor");
+        String anchorDisplay = anchor == null ? BankBook.MISSING : anchorName(anchor);
         boolean autoSale = "true".equals(BankSnapshot.text(own, "autoListing"));
-        AutoSaleSwitch saleSwitch = new AutoSaleSwitch(left, y + 4, right - left, autoSale, () -> {
+        boolean settlementPending = "true".equals(BankSnapshot.text(own, "pendingSettlement"));
+        boolean reserveChanging = "true".equals(BankSnapshot.text(own, "reserveChanging"));
+        boolean integrated = "true".equals(BankSnapshot.text(own, "integratedPolicyUi"));
+        if (reserveChanging) modeStatus = "准备金更换中";
+        if (BankSnapshot.bankrupt(data)) modeStatus = "已破产";
+        y = paneRow(pane, "发行制度 / 兑付", safe(regimeName) + " / " + modeStatus, left, right, y, true);
+        y = paneRow(pane, "锚定资产", anchorDisplay, left, right, y, false);
+        y = paneRow(pane, "实际支持价 / 币", safe(BankSnapshot.text(own, "supportRate")) + (anchor == null ? "" : " " + anchorDisplay), left, right, y, false);
+        y = paneRow(pane, "账户项目", "余额 / 数量", left, right, y + 6, true);
+        String issuanceHolding = BankSnapshot.text(own, "holdingExact");
+        if (issuanceHolding == null) issuanceHolding = BankSnapshot.text(own, "holding");
+        String reserveUnit = BankSnapshot.text(own, "reserveCurrency");
+        y = paneRow(pane, "发行人持有", safe(issuanceHolding), left, right, y, false);
+        y = paneRow(pane, "实际准备金", safe(BankSnapshot.text(own, "reserveAmount")) +
+                (reserveUnit == null ? "" : " " + anchorName(reserveUnit)), left, right, y, false);
+        y = paneRow(pane, "可动用准备金", safe(BankSnapshot.text(own, "issuanceFree")), left, right, y, false);
+        y = paneRow(pane, "回收库（不流通）", safe(BankSnapshot.text(own, "recovered")), left, right, y, false);
+        y = paneRow(pane, autoSale ? "自动待售" : "手动挂牌", safe(BankSnapshot.text(own, "offered")), left, right, y, false);
+        for (String metric : List.of("m0", "m1", "m2"))
+            y = paneRow(pane, metric.toUpperCase(java.util.Locale.ROOT), safe(BankSnapshot.text(own, metric)), left, right, y, false);
+        String m2Basis = BankSnapshot.text(own, "m2Basis");
+        if (m2Basis != null) y = paneText(pane, m2Basis, left, y + 4, textWidth, 0xFFAAAAAA);
+        if (settlementPending) y = paneText(pane, "有待交付交易，相关准备金和回收币暂锁。", left, y + 4, textWidth, 0xFFFFCC88);
+        if (BankSnapshot.bankrupt(data)) {
+            pane.finish(y); pane.setScroll(issuanceScroll); return;
+        }
+        y = appendActivePolicy(pane, own, active, anchorDisplay, integrated, settlementPending || reserveChanging, left, right, y + 8);
+        y = appendQuantityAdjustment(pane, active, anchorDisplay, settlementPending || reserveChanging, left, right, y + 8);
+        y = paneText(pane, "准备金与回流操作", left, y + 10, textWidth, 0xFFE8D090);
+        y = addIssuanceAmount(pane, left, right, textWidth, y + 4);
+        String freezeLabel = Boolean.TRUE.equals(paused) ? "恢复兑付" : "暂停兑付";
+        y = paneButtons(pane, left, right, y, List.of(freezeLabel), List.of(
+                () -> send(Boolean.TRUE.equals(paused) ? BankActions.noteUnfreeze() : BankActions.noteFreeze())));
+        y = paneButtons(pane, left, right, y + 4, List.of("存入准备金", "取出准备金"), List.of(
+                () -> sendAmount(BankActions::reserveDeposit), () -> sendAmount(BankActions::reserveWithdraw)));
+        if (clearingEnabled()) {
+            y = paneButtons(pane, left, right, y + 4, List.of("回流所填数量", "更换准备金"), List.of(
+                    () -> sendAmount(value -> "note-recovery-return " + value), () -> open(Page.ISSUANCE_RESERVE)));
+            y = paneText(pane, "float".equals(active) ? "回流不自动补充准备金，会改变实际支持价。"
+                    : "回流按本制度尝试从发行人对应储蓄补准备金，不扣公众余额。", left, y + 4, textWidth, 0xFFAAAAAA);
+        }
+        AutoSaleSwitch saleSwitch = new AutoSaleSwitch(left, y + 6, right - left, autoSale, () -> {
             String id = BankSnapshot.text(own, "id");
             if (id != null) send("note-auto-listing " + id + (autoSale ? " off" : " on"));
         });
-        saleSwitch.active = "true".equals(BankSnapshot.text(own, "autoListingAvailable"))
-                && !"true".equals(BankSnapshot.text(own, "pendingSettlement"));
-        pane.addControl(saleSwitch, left, y + 4);
-        y += 30;
-        y = paneText(pane, "开启则发行者余额全部待售；关闭撤下自己的卖单，不关闭市场条目。",
-                left, y, textWidth, 0xFFAAAAAA);
-        String offered = BankSnapshot.text(own, "offered");
-        y = paneText(pane, (autoSale ? "自动待售数量：" : "手动挂牌数量：") + (offered == null ? BankBook.MISSING : offered),
-                left, y, textWidth, 0xFFE8D090);
+        saleSwitch.active = "true".equals(BankSnapshot.text(own, "autoListingAvailable")) && !settlementPending;
+        pane.addControl(saleSwitch, left, y + 6);
+        y = paneText(pane, "自动待售仅使用发行人可售余额；关闭不删除市场条目。", left, y + 33, textWidth, 0xFFAAAAAA);
         if ("true".equals(BankSnapshot.text(own, "canRename"))) {
-            y = paneButtons(pane, left, right, y + 4, List.of("修改货币名称"), List.of(() -> open(Page.ISSUANCE_RENAME)));
-            y += 6;
+            y = paneButtons(pane, left, right, y + 6, List.of("修改货币名称"), List.of(() -> open(Page.ISSUANCE_RENAME)));
         }
-        for (String metric : List.of("m0", "m1", "m2")) {
-            String value = BankSnapshot.text(own, metric);
-            y = paneText(pane, metric.toUpperCase(java.util.Locale.ROOT) + "：" +
-                    (value == null ? BankBook.MISSING : value), left, y, textWidth, 0xFFE8D090);
-        }
-        if ("true".equals(BankSnapshot.text(own, "pendingSettlement"))) {
-            y = paneText(pane, "有交易等待交付确认，相关准备金和回收币暂时锁定。", left, y, textWidth, 0xFFFFCC88);
-        }
-        String m2Basis = BankSnapshot.text(own, "m2Basis");
-        if (m2Basis != null) {
-            y = paneText(pane, m2Basis, left, y, textWidth, 0xFFAAAAAA);
-        }
-        String reserveAmount = BankSnapshot.text(own, "reserveAmount");
-        String reserveCurrency = BankSnapshot.text(own, "reserveCurrency");
-        y = paneText(pane, "实际准备金：" + (reserveAmount == null ? BankBook.MISSING : reserveAmount)
-                + " " + (reserveCurrency == null ? "" : anchorName(reserveCurrency)), left, y, textWidth, 0xFFE8D090);
-        String anchor = own == null ? BankSnapshot.text(data, "anchor") : BankSnapshot.text(own, "anchor");
-        if (anchor == null) {
-            anchor = BankSnapshot.text(data, "anchor");
-        }
-        y = paneText(pane, "锚：" + (anchor == null ? BankBook.MISSING : anchorName(anchor)), left, y, textWidth, 0xFFE6E6E6);
-        for (String row : BankRegimes.issuanceHoldings(data)) {
-            if (row.startsWith("已锁定")) {
-                continue;
-            }
-            int color = row.contains(BankBook.MISSING) ? 0xFFAAAAAA : 0xFFE8D090;
-            y = paneText(pane, row, left, y, textWidth, color);
-        }
-        if (BankSnapshot.bankrupt(data)) {
-            y += 4;
-            y = paneText(pane, "这张个人币已经破产。", left, y, textWidth, 0xFFFF7777);
-            pane.finish(y);
-            pane.setScroll(issuanceScroll);
-            return;
-        }
-        y += 6;
-        y = addIssuanceAmount(pane, left, right, textWidth, y);
-        Boolean paused = BankSnapshot.notePaused(data);
-        if (paused != null) {
-            y = paneText(pane, paused ? "兑付：已暂停" : "兑付：正常", left, y, textWidth, paused ? 0xFFFF7777 : 0xFF77DD77);
-            y += 2;
-        }
-        String freezeLabel = Boolean.TRUE.equals(paused) ? "恢复兑付" : "暂停兑付";
-        y = paneButtons(pane, left, right, y, List.of("按数量增发", "按数量收回", freezeLabel), List.of(
-                () -> sendAmount(BankActions::issueUnbacked),
-                () -> sendAmount(BankActions::noteRetire),
-                () -> send(Boolean.TRUE.equals(paused) ? BankActions.noteUnfreeze() : BankActions.noteFreeze())));
-        y += 4;
-        y = paneButtons(pane, left, right, y, List.of("存入准备金", "取出准备金", "按准备金发行"), List.of(
-                () -> sendAmount(BankActions::reserveDeposit),
-                () -> sendAmount(BankActions::reserveWithdraw),
-                () -> sendAmount(BankActions::noteIssue)));
-        y += 8;
-        String rule = BankRegimes.FLOAT_RULE;
-        if (regimeName != null && regimeName.contains("联系")) {
-            rule = BankRegimes.PEG_RULE;
-        } else if (regimeName != null && regimeName.contains("固定")) {
-            rule = BankRegimes.HARD_RULE;
-        }
-        if (clearingEnabled()) {
-            rule = "实际支持价以可用准备金／有效流通量为准；目标汇率和市场价不等于可支出的资产。";
-            for (String key : List.of("supportRate", "policyTarget", "baseAssetValue")) {
-                String value = BankSnapshot.text(own, key);
-                if (value != null) {
-                    String label = switch (key) {
-                        case "supportRate" -> "实际准备金支持价：";
-                        case "policyTarget" -> "制度目标／参考：";
-                        default -> "基础资产折合央行券（仅估值）：";
-                    };
-                    y = paneText(pane, label + BankHeader.fixed6(value), left, y, textWidth, 0xFFE8D090);
-                }
-            }
-        }
-        y = paneText(pane, rule, left, y, textWidth, 0xFFAAAAAA);
-        y += 6;
-        if (clearingEnabled()) {
-            String recovered = BankSnapshot.text(own, "recovered");
-            y = paneText(pane, "不可流通回收库：" + safe(recovered), left, y, textWidth, 0xFFE8D090);
-            y = paneText(pane, "浮动：直接回流；联系／固定：仅使用对应储蓄调节准备金，不扣公众余额。", left, y, textWidth, 0xFFAAAAAA);
-            y = paneButtons(pane, left, right, y + 4, List.of("回流所填数量", "更换准备金"), List.of(
-                    () -> sendAmount(value -> "note-recovery-return " + value), () -> open(Page.ISSUANCE_RESERVE)));
-            y += 8;
-        }
+        y = paneButtons(pane, left, right, y + 6, List.of("宣告破产"), List.of(() -> {
+            send(BankActions.noteBankrupt()); page = Page.CONFIRM; client.execute(this::clearAndInit);
+        }));
         y = appendSettlementHistory(pane, own, left, right, y);
         pane.finish(y);
         pane.setScroll(issuanceScroll);
+    }
+
+    private int appendQuantityAdjustment(IssuancePane pane, String active, String anchor, boolean blocked, int left, int right, int y) {
+        int w = right - left;
+        y = paneRow(pane, "货币数量调整", "个人币 · 整数", left, right, y, true);
+        if (!"true".equals(BankSnapshot.text(data, "personalQuantitySupported")))
+            return paneText(pane, "升级服务端后可在这里预览增发和收回。", left, y + 4, w, 0xFFFFCC88);
+        if (blocked)
+            return paneText(pane, "待结算或更换准备金期间暂不能增发或收回。", left, y + 4, w, 0xFFFFCC88);
+        boolean increase = "increase".equals(quantityDirection);
+        y = paneButtons(pane, left, right, y + 5, List.of(increase ? "▶ 增发" : "增发", increase ? "减少发行量" : "▶ 减少发行量"), List.of(
+                () -> changeQuantityDirection(pane, "increase"), () -> changeQuantityDirection(pane, "decrease")));
+        String hint = increase ? ("float".equals(active) ? "增发到发行人账户，不自动追加准备金。"
+                : "按当前制度及现有准备金校验，不够则不发行。")
+                : "注销发行人可用的币，不进回收库；不扣其他玩家，也不动已锁定的挂牌。";
+        y = paneText(pane, hint, left, y + 4, w, 0xFFAAAAAA);
+        JsonObject preview = data.has("personalQuantityPreview") && data.get("personalQuantityPreview").isJsonObject()
+                ? data.getAsJsonObject("personalQuantityPreview") : null;
+        boolean matching = preview != null && active.equals(BankSnapshot.text(preview, "regime"))
+                && quantityDirection.equals(BankSnapshot.text(preview, "direction"))
+                && IssuancePolicyForm.samePositiveWhole(issuanceQuantity, BankSnapshot.text(preview, "amount"));
+        String token = matching ? BankSnapshot.text(preview, "token") : null;
+        int fieldWidth = Math.min(120, Math.max(20, w - 90));
+        TextFieldWidget quantity = new TextFieldWidget(textRenderer, left, y + 5, fieldWidth, 20, Text.literal("个人币数量"));
+        quantity.setMaxLength(24);
+        quantity.setTextPredicate(value -> value.matches("[0-9]{0,24}"));
+        quantity.setText(issuanceQuantity);
+        pane.addControl(quantity, left, y + 5);
+        ButtonWidget prepare = ButtonWidget.builder(Text.literal("预览变动"), button -> {
+            try {
+                String request = IssuancePolicyForm.quantityPreview(quantityDirection, issuanceQuantity);
+                issuanceScroll = pane.scroll(); send(request);
+            } catch (IllegalArgumentException invalid) { showNotice(invalid.getMessage()); }
+        }).dimensions(left + fieldWidth + 5, y + 5, w - fieldWidth - 5, 20).build();
+        prepare.active = IssuancePolicyForm.samePositiveWhole(issuanceQuantity, issuanceQuantity);
+        pane.addControl(prepare, left + fieldWidth + 5, y + 5);
+        y += 29;
+        ButtonWidget confirm = null;
+        if (matching && !"true".equals(BankSnapshot.text(preview, "allowed"))) {
+            y = paneText(pane, safe(BankSnapshot.text(preview, "reason")), left, y + 4, w, 0xFFFFCC88);
+        } else if (matching && token != null && !token.isBlank()) {
+            y = paneRow(pane, "发行人持有", quantityChange(preview, "holding"), left, right, y, false);
+            if (!increase) y = paneRow(pane, "发行人可用", quantityChange(preview, "available"), left, right, y, false);
+            y = paneRow(pane, "发行总量", quantityChange(preview, "issued"), left, right, y, false);
+            y = paneRow(pane, "有效流通量", quantityChange(preview, "active"), left, right, y, false);
+            y = paneRow(pane, "实际准备金", quantityChange(preview, "reserve") + " " + anchor, left, right, y, false);
+            if (!increase || !"float".equals(active))
+                y = paneRow(pane, "锁定准备金", quantityChange(preview, "locked"), left, right, y, false);
+            y = paneText(pane, "预览有效 60 秒；改数量、切换方向或账本变化后要重新预览。", left, y + 4, w, 0xFFAAAAAA);
+            int half = (w - 4) / 2, buttonY = y + 4;
+            var cancel = ButtonWidget.builder(Text.literal("取消预览"), button -> {
+                cancelQuantityPreview(); issuanceScroll = pane.scroll(); clearAndInit();
+            }).dimensions(left, buttonY, half, 18).build();
+            pane.addControl(cancel, left, buttonY);
+            confirm = ButtonWidget.builder(Text.literal(increase ? "确认增发" : "确认减少"), button -> {
+                button.active = false; issuanceScroll = pane.scroll(); send("note-quantity-confirm " + token);
+            }).dimensions(left + half + 4, buttonY, w - half - 4, 18).build();
+            pane.addControl(confirm, left + half + 4, buttonY);
+            y = buttonY + 18;
+        }
+        ButtonWidget confirmation = confirm;
+        quantity.setChangedListener(value -> {
+            issuanceQuantity = value;
+            prepare.active = IssuancePolicyForm.samePositiveWhole(value, value);
+            if (confirmation != null) confirmation.active = false;
+            if (data.has("personalQuantityPreview")) cancelQuantityPreview();
+        });
+        return y;
+    }
+
+    private static String quantityChange(JsonObject preview, String field) {
+        return safe(BankSnapshot.text(preview, field + "Before")) + " → " + safe(BankSnapshot.text(preview, field + "After"));
+    }
+
+    private void changeQuantityDirection(IssuancePane pane, String next) {
+        if (quantityDirection.equals(next)) return;
+        quantityDirection = next; issuanceQuantity = "";
+        cancelQuantityPreview(); issuanceScroll = pane.scroll(); clearAndInit();
+    }
+
+    private void cancelQuantityPreview() {
+        data.remove("personalQuantityPreview");
+        if ("true".equals(BankSnapshot.text(data, "personalQuantitySupported"))) send("note-quantity-cancel");
+    }
+
+    private int paneRow(IssuancePane pane, String label, String value, int left, int right, int y, boolean header) {
+        int split = left + (right - left) * 44 / 100;
+        var keys = BankText.lines(label, Math.max(1, split - left - 8), textRenderer::getWidth);
+        var values = BankText.lines(value, Math.max(1, right - split - 8), textRenderer::getWidth);
+        int h = Math.max(1, Math.max(keys.size(), values.size())) * 11 + 5;
+        pane.addBand(left, y, right, y + h - 1, header ? 0xFF342E23 : 0xB021242B);
+        for (int i = 0; i < keys.size(); i++) pane.addLine(keys.get(i), left + 4, y + 3 + 11 * i, header ? 0xFFE8D090 : 0xFFE6E6E6);
+        for (int i = 0; i < values.size(); i++) {
+            String row = values.get(i);
+            pane.addLine(row, right - 4 - textRenderer.getWidth(row), y + 3 + 11 * i, header ? 0xFFE8D090 : 0xFFB7D4B0);
+        }
+        return y + h;
+    }
+
+    private static String policyName(String mode) {
+        return switch (mode) {
+            case "peg" -> BankRegimes.PEG_NAME;
+            case "hard" -> BankRegimes.HARD_NAME;
+            default -> BankRegimes.FLOAT_NAME;
+        };
+    }
+
+    private int appendActivePolicy(IssuancePane pane, JsonObject own, String active, String anchor, boolean integrated,
+                                   boolean blocked, int left, int right, int y) {
+        int w = right - left;
+        String status = BankSnapshot.text(own, "policyActive");
+        String label = "true".equals(status) ? "已配置自动调节" : "未启用自动调节";
+        y = paneRow(pane, "当前制度规则", "float".equals(active) ? "随实际准备金变动" : label, left, right, y, true);
+        if ("peg".equals(active)) {
+            int mid = left + (w - 6) / 2;
+            String low = safe(BankSnapshot.text(own, "pegLower")), high = safe(BankSnapshot.text(own, "pegUpper"));
+            if (integrated && !blocked) {
+                if (policyLower == null) policyLower = BankSnapshot.text(own, "pegLower");
+                if (policyUpper == null) policyUpper = BankSnapshot.text(own, "pegUpper");
+                int leftEnd = policyField(pane, "区间下限", policyLower, left, mid, y + 4, value -> policyLower = value);
+                int rightEnd = policyField(pane, "区间上限", policyUpper, mid + 6, right, y + 4, value -> policyUpper = value);
+                y = Math.max(leftEnd, rightEnd);
+                y = paneButtons(pane, left, right, y, List.of("保存区间"), List.of(() -> {
+                    try { send(IssuancePolicyForm.bandCommand(active, policyLower, policyUpper)); }
+                    catch (IllegalArgumentException invalid) { showNotice(invalid.getMessage()); }
+                }));
+            } else {
+                int leftEnd = paneRow(pane, "下限", low, left, mid, y + 4, false);
+                y = Math.max(leftEnd, paneRow(pane, "上限", high, mid + 6, right, y + 4, false));
+            }
+            y = paneText(pane, "每 1 个人币对应的 " + anchor + " 数量。低于下限尝试补准备金；高于上限按现行规则调节发行量。", left, y + 4, w, 0xFFAAAAAA);
+        } else if ("hard".equals(active)) {
+            y = paneRow(pane, "固定约定（只读）", safe(BankSnapshot.text(own, "policyTarget")), left, right, y, false);
+            y = paneText(pane, "固定约定不等于可兑付余额。资金不足时，看上方实际支持价及兑付状态。", left, y + 4, w, 0xFFAAAAAA);
+        } else {
+            y = paneText(pane, "只随准备金和有效流通量重新计价，不设上下限、不自动干预。", left, y + 4, w, 0xFFAAAAAA);
+        }
+        if (!integrated || blocked) {
+            return paneText(pane, integrated ? "待结算或更换准备金期间，不能调整制度。" : "更新服务端后可在本页调整制度。", left, y + 4, w, 0xFFFFCC88);
+        }
+        if (pendingPolicyRegime.isEmpty()) {
+            List<String> options = new ArrayList<>();
+            List<Runnable> changes = new ArrayList<>();
+            for (String target : List.of("float", "peg", "hard")) if (!target.equals(active)) {
+                options.add("切换到" + policyName(target).replace("汇率制", ""));
+                changes.add(() -> { pendingPolicyRegime = target; issuanceScroll = pane.scroll(); clearAndInit(); });
+            }
+            y = paneButtons(pane, left, right, y + 5, options, changes);
+        } else {
+            y = paneText(pane, "准备切换为" + policyName(pendingPolicyRegime)
+                    + "；锚定资产不变。是否能切换以服务端账本校验为准。", left, y + 4, w, 0xFFFFCC88);
+            y = paneButtons(pane, left, right, y + 4, List.of("确认切换制度", "取消"), List.of(
+                    () -> { String next = pendingPolicyRegime; pendingPolicyRegime = ""; cancelQuantityPreview(); send("note-policy-switch " + active + " " + next); clearAndInit(); },
+                    () -> { pendingPolicyRegime = ""; issuanceScroll = pane.scroll(); clearAndInit(); }));
+        }
+        return y;
     }
 
     private int addIssuanceAmount(IssuancePane pane, int left, int right, int textWidth, int y) {
@@ -688,51 +795,12 @@ public final class BankTerminalScreen extends Screen {
         TextFieldWidget field = new TextFieldWidget(textRenderer, left, y + 2,
                 Math.max(20, Math.min(180, right - left)), 20, Text.literal(label));
         field.setMaxLength(25);
+        if ("区间下限".equals(label) || "区间上限".equals(label))
+            field.setTextPredicate(input -> input.matches("[0-9]{0,18}(\\.[0-9]{0,4})?"));
         field.setText(value == null ? "" : value);
         field.setChangedListener(update);
         pane.addControl(field, left, y + 2);
         return y + 28;
-    }
-
-    private void selectPolicy(String regime) {
-        policyRegime = regime;
-        issuanceScroll = 0;
-        client.execute(this::clearAndInit);
-    }
-
-    private void initPolicySettings() {
-        BankLayout.Box port = issuancePort();
-        IssuancePane pane = new IssuancePane(port.x(), port.y(), port.width(), port.height(), this::toggleIssuanceDrawer, this::pickIssuanceDrawer);
-        issuancePane = pane;
-        int left = port.x() + 4, right = port.right() - 8, y = port.y() + 4;
-        JsonObject own = BankSnapshot.ownNote(data);
-        if (policyRegime.isBlank()) policyRegime = BankActions.regimeToken(BankSnapshot.text(own, "regime"));
-        if (policyTarget == null) policyTarget = BankSnapshot.text(own, "policyTarget");
-        if (policyLower == null) policyLower = BankSnapshot.text(own, "pegLower");
-        if (policyUpper == null) policyUpper = BankSnapshot.text(own, "pegUpper");
-        y = paneButtons(pane, left, right, y, List.of("返回个人发行"), List.of(() -> open(Page.ISSUANCE)));
-        y = paneButtons(pane, left, right, y + 6, List.of("浮动设置", "联系设置", "固定设置"), List.of(
-                () -> selectPolicy("float"), () -> selectPolicy("peg"), () -> selectPolicy("hard")));
-        y += 8;
-        String description = switch (policyRegime) {
-            case "peg" -> "联系汇率：目标区间与实际支持价分别记账，调节只使用指定准备金和对应储蓄。";
-            case "hard" -> "固定汇率：固定的是目标；储蓄不足时显示实际支持价，不凭空补足准备金。";
-            default -> "浮动汇率：实际支持价随准备金和有效流通量变化。回收库回流无需补足准备金。";
-        };
-        y = paneText(pane, description, left, y, right - left, 0xFFE8D090);
-        y = paneText(pane, "单位：每 1 个人币对应的准备金数量。下方只修改制度参数，不直接增发。", left, y + 4, right - left, 0xFFAAAAAA);
-        if (!notice.isBlank()) y = paneText(pane, notice, left, y + 4, right - left, 0xFFFFCC88);
-        y = policyField(pane, "float".equals(policyRegime) ? "发行参考比例（非强制 1:1）" : "目标汇率", policyTarget, left, right, y + 8, value -> policyTarget = value);
-        if ("peg".equals(policyRegime)) {
-            y = policyField(pane, "区间下限", policyLower, left, right, y, value -> policyLower = value);
-            y = policyField(pane, "区间上限", policyUpper, left, right, y, value -> policyUpper = value);
-        }
-        y = paneButtons(pane, left, right, y + 6, List.of("确认制度及参数"), List.of(() -> {
-            try { send(BankPolicy.command(policyRegime, policyTarget, policyLower, policyUpper)); }
-            catch (IllegalArgumentException invalid) { showNotice(invalid.getMessage()); }
-        }));
-        pane.finish(y);
-        pane.setScroll(issuanceScroll);
     }
 
     private void initReserveSettings() {
@@ -781,10 +849,7 @@ public final class BankTerminalScreen extends Screen {
             page = Page.ISSUANCE;
             return;
         }
-        if (clearingEnabled()) {
-            initPolicySettings();
-            return;
-        }
+        if (clearingEnabled()) { open(Page.ISSUANCE); return; }
         BankLayout.Box port = issuancePort();
         IssuancePane pane = new IssuancePane(port.x(), port.y(), port.width(), port.height(), this::toggleIssuanceDrawer, this::pickIssuanceDrawer);
         issuancePane = pane;
@@ -1055,38 +1120,27 @@ public final class BankTerminalScreen extends Screen {
 
     private void drawSavings(DrawContext context) {
         drawCentered(context, BankChrome.SAVINGS_TITLE, contentTop(), 0xFFD0B060);
-        drawCentered(context, "这是你自己的存款。", contentTop() + 14, 0xFFAAAAAA);
-        int gap = 16;
-        int column = Math.max(70, (mainWidth() - gap) / 2);
-        int start = mainLeft() + Math.max(0, (mainWidth() - column * 2 - gap) / 2);
-        int titleY = contentTop() + 34;
-        context.drawText(textRenderer, "个人存款", start, titleY, 0xFFD0B060, false);
-        context.drawText(textRenderer, "持有的个人币", start + column + gap, titleY, 0xFFD0B060, false);
-        int left = titleY + 16;
-        int right = titleY + 16;
-        List<BankSnapshot.MoneyRow> currencies = BankSnapshot.currencies(data);
-        if (currencies.isEmpty()) {
-            context.drawText(textRenderer, "柜台还没有发来个人存款。", start, left, 0xFFAAAAAA, false);
+    }
+
+    private void initSavingsList() {
+        BankLayout.Box port = issuancePort();
+        IssuancePane pane = new IssuancePane(port.x(), port.y(), port.width(), port.height(), this::toggleIssuanceDrawer, this::pickIssuanceDrawer);
+        issuancePane = pane;
+        int left = port.x() + 4, right = port.right() - 8, y = port.y() + 4;
+        y = paneRow(pane, "个人存款", "余额", left, right, y, true);
+        List<BankSnapshot.MoneyRow> rows = BankSnapshot.currencies(data);
+        if (rows.isEmpty()) y = paneText(pane, "柜台还没有发来个人存款。", left, y + 4, right - left, 0xFFAAAAAA);
+        for (BankSnapshot.MoneyRow row : rows) {
+            String amount = ("diamond".equals(row.id()) || "copper".equals(row.id()))
+                    ? PhysicalSavings.describe(row.amount()) : safe(row.amount());
+            y = paneRow(pane, row.name(), amount, left, right, y, false);
         }
-        for (BankSnapshot.MoneyRow row : currencies) {
-            left = drawWrapped(context, row.name(), start, left, column, 0xFFE6E6E6);
-            left = drawWrapped(context, ("diamond".equals(row.id()) || "copper".equals(row.id()))
-                    ? PhysicalSavings.describe(row.amount()) : BankSnapshot.balancePhrase(row.amount()), start, left, column, 0xFFB7C7B0);
-            left += 4;
-        }
-        List<BankSnapshot.NoteRow> held = BankSnapshot.heldNotes(data);
-        int noteX = start + column + gap;
-        if (held.isEmpty()) {
-            context.drawText(textRenderer, "没有持有个人币。", noteX, right, 0xFFAAAAAA, false);
-            return;
-        }
-        for (BankSnapshot.NoteRow note : held) {
-            right = drawWrapped(context, note.name(), noteX, right, column, 0xFFE6E6E6);
-            right = drawWrapped(context, "账面余额：" + note.balance(), noteX, right, column, 0xFFB7C7B0);
-            right = drawWrapped(context, BankRates.selectedPersonalQuote(data, note),
-                    noteX, right, column, note.price() == null ? 0xFFAAAAAA : 0xFFE8D090);
-            right += 4;
-        }
+        y = paneRow(pane, "持有的个人币", "账面余额", left, right, y + 8, true);
+        List<BankSnapshot.NoteRow> notes = BankSnapshot.heldNotes(data);
+        if (notes.isEmpty()) y = paneText(pane, "没有持有个人币。", left, y + 4, right - left, 0xFFAAAAAA);
+        for (BankSnapshot.NoteRow row : notes) y = paneRow(pane, row.name(), safe(row.balance()), left, right, y, false);
+        if (!notes.isEmpty()) y = paneText(pane, "兑换牌价请在「个人币交易」查看。", left, y + 5, right - left, 0xFFAAAAAA);
+        pane.finish(y); pane.setScroll(issuanceScroll);
     }
 
     private void drawIssuanceTitle(DrawContext context) {
@@ -1400,7 +1454,9 @@ public final class BankTerminalScreen extends Screen {
             issuanceScroll = issuancePane.scroll();
         }
         if (next != page) {
+            if (page == Page.ISSUANCE) cancelQuantityPreview();
             openDrawer = "";
+            pendingPolicyRegime = "";
             bookScroll = 0;
             issuanceScroll = 0;
         }

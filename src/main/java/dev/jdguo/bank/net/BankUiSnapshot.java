@@ -103,18 +103,12 @@ public final class BankUiSnapshot {
             if (copperRate != null) o.addProperty("copperPerDiamondExact", copperRate.stripTrailingZeros().toPlainString());
             BigDecimal noteQuote = centralNote == null ? null : books.unitsPer("diamond", centralNote.id());
             if (noteQuote != null) o.addProperty("diamondsPerNoteExact", noteQuote.stripTrailingZeros().toPlainString());
+            o.addProperty("systemFundingRecallSupported", true);
             o.add("shopSystemFunds", books.systemFundingOverview("shop"));
             o.add("landSystemFunds", books.systemFundingOverview("land"));
-            JsonArray fundingLog = books.systemFundingLog(), recentFunding = new JsonArray();
-            int shopCount = 0, landCount = 0;
-            for (int i = fundingLog.size() - 1; i >= 0; i--) {
-                JsonObject entry = fundingLog.get(i).getAsJsonObject();
-                if ("shop".equals(entry.get("account").getAsString()) ? shopCount++ < 5 : landCount++ < 5)
-                    recentFunding.add(entry);
-            }
-            JsonArray chronologicalFunding = new JsonArray();
-            for (int i = recentFunding.size() - 1; i >= 0; i--) chronologicalFunding.add(recentFunding.get(i));
-            o.add("systemFundingLog", chronologicalFunding);
+            JsonArray fundingLog = books.systemFundingLog();
+            o.add("systemFundingLog", recentFunding(fundingLog, false));
+            o.add("systemFundingMovements", recentFunding(fundingLog, true));
             o.addProperty("m0", Money.stored(books.centralM0Exact()));
             o.addProperty("m1", Money.stored(books.centralM1Exact()));
             o.addProperty("m2", CompactFormat.formatAggregate(books.centralM2()));
@@ -326,6 +320,9 @@ public final class BankUiSnapshot {
         row.addProperty("reserveAmount", Money.stored(books.effectiveBackingExact(note)));
         row.addProperty("reserveCurrency", note.reserveCurrency());
         row.addProperty("clearingEnabled", true);
+        row.addProperty("integratedPolicyUi", true);
+        row.addProperty("holdingExact", Money.stored(books.personalHoldingExact(note.id(), player)));
+        row.addProperty("policyActive", books.personalAutomaticPolicyActive(note));
         row.addProperty("reserveChanging", books.personalReserveSwitching(note.id()));
         row.addProperty("pendingSettlement", books.noteHasPending(note.id()));
         row.addProperty("recovered", Money.stored(books.personalRecovered(note.id())));
@@ -478,5 +475,18 @@ public final class BankUiSnapshot {
         row.addProperty("name", account);
         row.addProperty("detail", currency + "  " + CompactFormat.format(amount));
         return row;
+    }
+    static JsonArray recentFunding(JsonArray log, boolean includeRecalls) {
+        JsonArray recent = new JsonArray();
+        int shopCount = 0, landCount = 0;
+        for (int i = log.size() - 1; i >= 0; i--) {
+            JsonObject entry = log.get(i).getAsJsonObject();
+            if (!includeRecalls && entry.has("direction") && "recall".equals(entry.get("direction").getAsString())) continue;
+            if ("shop".equals(entry.get("account").getAsString()) ? shopCount++ < 5 : landCount++ < 5)
+                recent.add(entry.deepCopy());
+        }
+        JsonArray chronological = new JsonArray();
+        for (int i = recent.size() - 1; i >= 0; i--) chronological.add(recent.get(i));
+        return chronological;
     }
 }
