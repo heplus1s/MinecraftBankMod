@@ -47,7 +47,7 @@ import java.util.UUID;
  * {@link ScreenHandlerType#GENERIC_9X6}. Button items never leave the server inventory.
  */
 public final class BankScreenHandler extends GenericContainerScreenHandler {
-    public enum Page { SAVINGS, DEPOSIT, WITHDRAW, EXCHANGE, CHECKS, MARKET, ISSUANCE, MANAGEMENT }
+    public enum Page { SAVINGS, DEPOSIT, WITHDRAW, EXCHANGE, CHECKS, MARKET, ISSUANCE, MANAGEMENT, WELCOME_ADMIN }
 
     private final SimpleInventory inventory;
     private final ServerPlayerEntity owner;
@@ -71,6 +71,12 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
     private boolean payeeSelf;
     private static final int REDEEM_SLOT = 22;
     private int paintTick = -100;
+    private long welcomeRevision;
+    private boolean welcomeEnabled;
+    private String welcomeCurrency = "note";
+    private BigDecimal welcomeAmount = new BigDecimal("100");
+    private int welcomeStepPower;
+
 
     public BankScreenHandler(int syncId, PlayerInventory playerInventory, SimpleInventory inventory,
                              String outletName, boolean remoteAdmin) {
@@ -113,7 +119,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
     }
 
     public boolean managementPage() {
-        return page == Page.MANAGEMENT;
+        return page == Page.MANAGEMENT || page == Page.WELCOME_ADMIN;
     }
 
     public void tick() {
@@ -130,7 +136,7 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         if (remoteAdmin) {
             return player.hasPermissionLevel(2);
         }
-        if (page == Page.MANAGEMENT && !player.hasPermissionLevel(2)) {
+        if (managementPage() && !player.hasPermissionLevel(2)) {
             return false;
         }
         var outlet = BankRuntime.books().outlet(outletName);
@@ -347,6 +353,12 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
         if (action.startsWith("nav:")) {
             switch (action.substring(4)) {
                 case "savings" -> changePage(player, Page.SAVINGS);
+                case "welcome-admin" -> {
+                    if (player.hasPermissionLevel(2)) {
+                        loadWelcomeDraft();
+                        changePage(player, Page.WELCOME_ADMIN);
+                    }
+                }
                 case "management" -> {
                     if (player.hasPermissionLevel(2)) {
                         changePage(player, Page.MANAGEMENT);
@@ -364,6 +376,10 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                 default -> {
                 }
             }
+            return;
+        }
+        if (action.startsWith("welcome:")) {
+            welcomeAction(player, action);
             return;
         }
         if (action.startsWith("pn:")) {
@@ -510,6 +526,10 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
             case CHECKS -> paintChecks();
             case MARKET -> paintMarket();
             case ISSUANCE -> paintIssuance();
+            case WELCOME_ADMIN -> {
+                if (owner.hasPermissionLevel(2)) paintWelcomeAdmin();
+                else { page = Page.SAVINGS; paintSavings(); }
+            }
             case MANAGEMENT -> {
                 if (owner.hasPermissionLevel(2)) {
                     paintManagement();
@@ -997,6 +1017,13 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                 accountLore(books, "这是储蓄账户，不是中央银行的库存"),
                 "noop", 1));
         paintAccountRow(books);
+        var gift = books.welcomeGift(owner.getUuid(), false);
+        boolean claimed = gift.get("claimed").getAsBoolean(), enabled = gift.get("enabled").getAsBoolean();
+        inventory.setStack(40, marker(claimed ? Items.GRAY_DYE : Items.CHEST,
+                Text.literal(claimed ? "礼包已领取" : enabled ? "领取一次性礼包" : "礼包未启用").formatted(Formatting.GOLD),
+                List.of(Text.literal(gift.get("amount").getAsString() + " " + gift.get("currencyName").getAsString()),
+                        Text.literal("存入银行储蓄；新老玩家每人仅一次"), Text.literal("发放失败不会消耗领取资格")),
+                !claimed && enabled ? "welcome:claim:" + gift.get("revision").getAsLong() : "noop", 1));
         int slot = 10;
         var uuid = owner.getUuid();
         for (CurrencyDef def : books.currencies()) {
@@ -1036,6 +1063,8 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
 
     private void paintManagement() {
         BankBooks books = BankRuntime.books();
+        inventory.setStack(27, marker(Items.CHEST, Text.literal("一次性礼包设置").formatted(Formatting.GOLD),
+                List.of(Text.literal("配置币种、每人数量及启用状态"), Text.literal("央行自有储蓄出资；不重置领取记录")), "nav:welcome-admin", 1));
         inventory.setStack(0, marker(Items.PAPER,
                 Text.literal("M0  " + CompactFormat.formatAggregate(books.centralM0Exact())).formatted(Formatting.WHITE),
                 List.of(Text.literal("已登记有效央行券纸币，不含央行自有储蓄").formatted(Formatting.DARK_GRAY)),
@@ -1121,6 +1150,80 @@ public final class BankScreenHandler extends GenericContainerScreenHandler {
                         Text.literal("利息从手续费留存里付，不动发行准备金").formatted(Formatting.DARK_GRAY)),
                 "noop", 1));
         paintCentralIssuance(books);
+    }
+
+    private void loadWelcomeDraft() {
+        var gift = BankRuntime.books().welcomeGift(owner.getUuid(), true);
+        welcomeRevision = gift.get("revision").getAsLong();
+        welcomeEnabled = gift.get("enabled").getAsBoolean();
+        welcomeCurrency = gift.get("currency").getAsString();
+        welcomeAmount = new BigDecimal(gift.get("amount").getAsString());
+        welcomeStepPower = 0;
+    }
+
+    private void welcomeAction(ServerPlayerEntity player, String action) {
+        if (action.startsWith("welcome:claim:")) {
+            if (page != Page.SAVINGS) return;
+            try {
+                long revision = Long.parseLong(action.substring("welcome:claim:".length()));
+                TxResult result = BankRuntime.transact(book -> book.claimWelcomeGift(player.getUuid(), revision));
+                player.sendMessage(Text.literal(result.message()), false);
+            } catch (IllegalArgumentException invalid) { /* Server-generated action only. */ }
+            return;
+        }
+        if (page != Page.WELCOME_ADMIN || !player.hasPermissionLevel(2)) return;
+        switch (action) {
+            case "welcome:reload" -> loadWelcomeDraft();
+            case "welcome:enabled" -> welcomeEnabled = !welcomeEnabled;
+            case "welcome:step-down" -> welcomeStepPower = Math.max(-4, welcomeStepPower - 1);
+            case "welcome:step-up" -> welcomeStepPower = Math.min(20, welcomeStepPower + 1);
+            case "welcome:minus" -> welcomeAmount = welcomeAmount.subtract(BigDecimal.ONE.scaleByPowerOfTen(welcomeStepPower)).max(new BigDecimal("0.0001"));
+            case "welcome:plus" -> {
+                BigDecimal next = welcomeAmount.add(BigDecimal.ONE.scaleByPowerOfTen(welcomeStepPower));
+                if (next.compareTo(new BigDecimal("999999999999999999999999.9999")) <= 0) welcomeAmount = next;
+            }
+            case "welcome:currency" -> {
+                var choices = BankRuntime.books().welcomeGift(player.getUuid(), true).getAsJsonArray("currencies");
+                int selected = -1;
+                for (int i = 0; i < choices.size(); i++) if (choices.get(i).getAsJsonObject().get("id").getAsString().equals(welcomeCurrency)) selected = i;
+                if (!choices.isEmpty()) welcomeCurrency = choices.get((selected + 1) % choices.size()).getAsJsonObject().get("id").getAsString();
+            }
+            case "welcome:save" -> {
+                TxResult result = BankRuntime.transact(book -> book.configureWelcomeGift(player.hasPermissionLevel(2), welcomeRevision,
+                        welcomeEnabled, welcomeCurrency, welcomeAmount));
+                player.sendMessage(Text.literal(result.message()), false);
+                if (result.success()) loadWelcomeDraft();
+            }
+            default -> { }
+        }
+    }
+
+    private void paintWelcomeAdmin() {
+        var current = BankRuntime.books().welcomeGift(owner.getUuid(), true);
+        String currencyName = welcomeCurrency;
+        for (var row : current.getAsJsonArray("currencies")) {
+            var choice = row.getAsJsonObject();
+            if (welcomeCurrency.equals(choice.get("id").getAsString())) currencyName = choice.get("name").getAsString();
+        }
+        inventory.setStack(4, marker(Items.CHEST, Text.literal("一次性礼包管理").formatted(Formatting.GOLD),
+                List.of(Text.literal("修改不会重置任何玩家的领取记录"), Text.literal("来源：央行自有储蓄，失败不标记领取"),
+                        Text.literal("当前生效：" + (current.get("enabled").getAsBoolean() ? "已启用" : "未启用")),
+                        Text.literal(current.get("amount").getAsString() + " " + current.get("currencyName").getAsString())), "noop", 1));
+        inventory.setStack(10, marker(Items.PAPER, Text.literal("币种：" + currencyName),
+                List.of(Text.literal("点击切换；个人币从发行者挂牌库存购买"), Text.literal(welcomeCurrency)), "welcome:currency", 1));
+        inventory.setStack(13, marker(Items.GOLD_INGOT, Text.literal("每人数量"),
+                List.of(Text.literal(welcomeAmount.stripTrailingZeros().toPlainString()), Text.literal("铜锭、钻石须为整数；其余最多四位小数")), "noop", 1));
+        inventory.setStack(16, marker(welcomeEnabled ? Items.LIME_DYE : Items.GRAY_DYE,
+                Text.literal(welcomeEnabled ? "草稿：启用" : "草稿：停用"), List.of(Text.literal("点击切换，保存后生效")), "welcome:enabled", 1));
+        String step = BigDecimal.ONE.scaleByPowerOfTen(welcomeStepPower).toPlainString();
+        inventory.setStack(19, marker(Items.RED_DYE, Text.literal("数量 −" + step), List.of(), "welcome:minus", 1));
+        inventory.setStack(25, marker(Items.LIME_DYE, Text.literal("数量 +" + step), List.of(), "welcome:plus", 1));
+        inventory.setStack(21, marker(Items.ARROW, Text.literal("调整步长 ÷10"), List.of(Text.literal("当前步长：" + step)), "welcome:step-down", 1));
+        inventory.setStack(23, marker(Items.ARROW, Text.literal("调整步长 ×10"), List.of(Text.literal("当前步长：" + step)), "welcome:step-up", 1));
+        inventory.setStack(31, marker(Items.EMERALD, Text.literal("确认保存设置").formatted(Formatting.GREEN),
+                List.of(Text.literal("只更改后续未领取玩家的奖励"), Text.literal("设置已被其他管理员更改时会拒绝保存")), "welcome:save", 1));
+        inventory.setStack(29, marker(Items.CLOCK, Text.literal("放弃草稿并刷新"), List.of(), "welcome:reload", 1));
+        inventory.setStack(33, marker(Items.BOOK, Text.literal("返回央行管理"), List.of(), "nav:management", 1));
     }
 
     /** Exact display only. In particular a very small real quote must never be displayed as 1. */

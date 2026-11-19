@@ -73,6 +73,7 @@ public final class BankUiService {
             case "admin-players-close" -> session.playerListOpen = false;
             case "page" -> page(player, session, parts);
             case "close" -> BankUiNetwork.forget(player);
+            case "welcome-claim", "admin-welcome-set" -> welcomeGift(player, session, parts);
             case "withdraw" -> withdraw(player, books, parts);
             case "exchange" -> exchange(player, books, parts);
             case "hard-exchange-quote" -> quoteHardExchange(player, books, session, parts);
@@ -216,6 +217,19 @@ public final class BankUiService {
                     ? "设置已保存。" : "未执行：" + result.code()), false);
         } catch (IllegalArgumentException invalid) {
             player.sendMessage(net.minecraft.text.Text.literal("参数无效，请使用正数（最多四位小数），区间下限 ≤ 目标 ≤ 上限。"), false);
+        }
+    }
+
+    private static void welcomeGift(ServerPlayerEntity player, BankUiNetwork.Session session, String[] parts) {
+        try {
+            WelcomeGiftAction request = WelcomeGiftAction.parse(parts);
+            TxResult result = BankRuntime.transact(book -> request.claim()
+                    ? book.claimWelcomeGift(player.getUuid(), request.revision())
+                    : book.configureWelcomeGift(session.admin && player.hasPermissionLevel(2), request.revision(),
+                            request.enabled(), request.currency(), request.amount()));
+            player.sendMessage(net.minecraft.text.Text.literal(result.message()), false);
+        } catch (IllegalArgumentException invalid) {
+            player.sendMessage(net.minecraft.text.Text.literal("礼包参数无效，请刷新界面后重试。"), false);
         }
     }
 

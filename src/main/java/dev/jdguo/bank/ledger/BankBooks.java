@@ -86,6 +86,84 @@ public final class BankBooks {
     private long tollStateRevision;
     private String tollStatePayload;
     private long checkpoint;
+    private boolean welcomeEnabled;
+    private String welcomeCurrency = "note";
+    private BigDecimal welcomeAmount = new BigDecimal("100");
+    private long welcomeRevision;
+    private static final String WELCOME_RECEIPT = "__bank_welcome_once_v1__:";
+
+    /** Read-only, one lifetime claim per UUID, independent of later configuration changes. */
+    public JsonObject welcomeGift(UUID player, boolean administrator) {
+        JsonObject result = new JsonObject();
+        result.addProperty("enabled", welcomeEnabled);
+        result.addProperty("currency", welcomeCurrency);
+        result.addProperty("currencyName", welcomeCurrencyName(welcomeCurrency));
+        result.addProperty("amount", welcomeAmount.toPlainString());
+        result.addProperty("revision", welcomeRevision);
+        result.addProperty("claimed", player != null && marketReceipts.containsKey(WELCOME_RECEIPT + player));
+        if (administrator) {
+            JsonArray choices = new JsonArray();
+            for (CurrencyDef c : currencies.values()) {
+                JsonObject row = new JsonObject(); row.addProperty("id", c.id()); row.addProperty("name", c.name()); choices.add(row);
+            }
+            for (PersonalNote n : personalNotes.values()) {
+                JsonObject row = new JsonObject(); row.addProperty("id", "personal:" + n.id()); row.addProperty("name", n.name()); choices.add(row);
+            }
+            result.add("currencies", choices);
+        }
+        return result;
+    }
+
+    private UUID welcomePersonalId(String currency) {
+        if (currency == null || !currency.startsWith("personal:")) return null;
+        try { return UUID.fromString(currency.substring(9)); } catch (IllegalArgumentException invalid) { return null; }
+    }
+    private String welcomeCurrencyName(String currency) {
+        CurrencyDef def = currencies.get(currency);
+        if (def != null) return def.name();
+        UUID id = welcomePersonalId(currency);
+        PersonalNote note = id == null ? null : personalNoteById(id);
+        return note == null ? "币种已不可用" : note.name();
+    }
+
+    /** Must be called inside BankRuntime.transact; never resets prior claim receipts. */
+    public TxResult configureWelcomeGift(boolean administrator, long expectedRevision, boolean enabled,
+                                         String currency, BigDecimal amount) {
+        if (!administrator) return TxResult.fail("permission", "仅管理员可设置首次礼包");
+        if (expectedRevision != welcomeRevision || welcomeRevision == Long.MAX_VALUE)
+            return TxResult.fail("stale_config", "礼包设置已变化，请刷新后重试");
+        CurrencyDef def = currencies.get(currency);
+        UUID coin = welcomePersonalId(currency);
+        if (def == null && (coin == null || personalNoteById(coin) == null))
+            return TxResult.fail("unknown_currency", "请选择有效币种");
+        if (amount == null || amount.signum() <= 0 || amount.scale() > Money.SCALE || amount.precision() > 28)
+            return TxResult.fail("bad_amount", "礼包金额须为正数，最多四位小数及28位有效数字");
+        if (def != null && def.kind() == CurrencyKind.COMMODITY && amount.stripTrailingZeros().scale() > 0)
+            return TxResult.fail("whole_units_required", "实物货币礼包必须为整数");
+        welcomeCurrency = def == null ? "personal:" + coin : def.id();
+        welcomeAmount = amount.stripTrailingZeros(); welcomeEnabled = enabled; welcomeRevision++;
+        return TxResult.ok(BigInteger.ZERO, "首次礼包设置已保存；既有领取记录不会重置");
+    }
+
+    /** Money and permanent claim receipt are published in the SAME durable bank transaction. */
+    public TxResult claimWelcomeGift(UUID player, long expectedRevision) {
+        if (player == null) return TxResult.fail("no_player", "没有有效玩家");
+        String key = WELCOME_RECEIPT + player;
+        if (marketReceipts.containsKey(key)) return TxResult.fail("already_claimed", "你已领取过首次礼包");
+        if (!welcomeEnabled) return TxResult.fail("disabled", "首次礼包尚未启用");
+        if (expectedRevision != welcomeRevision) return TxResult.fail("stale_config", "礼包内容已变化，请刷新后确认");
+        UUID coin = welcomePersonalId(welcomeCurrency);
+        TxResult result = coin == null ? rewardTreasury(List.of(player), welcomeCurrency, welcomeAmount)
+                : rewardPersonalFromTreasury(List.of(player), coin, welcomeAmount);
+        if (!result.success()) return result;
+        JsonObject receipt = new JsonObject();
+        receipt.addProperty("currency", welcomeCurrency); receipt.addProperty("amount", welcomeAmount.toPlainString());
+        receipt.addProperty("revision", welcomeRevision); receipt.addProperty("time", System.currentTimeMillis());
+        // Older writers retain marketReceipts; loss of the new configuration therefore cannot erase claims.
+        marketReceipts.put(key, receipt.toString());
+        return TxResult.ok(result.amount(), "首次礼包已存入银行储蓄：" + welcomeAmount.toPlainString() + " " + welcomeCurrencyName(welcomeCurrency));
+    }
+
 
     public long checkpoint() {
         return checkpoint;
@@ -1005,6 +1083,11 @@ public final class BankBooks {
         CurrencyDef def = need(currency);
         if (def == null) {
             return TxResult.fail("unknown_currency", "Unknown currency");
+        }
+        // Physical custody is a customer claim, not an issuable note. Enforce this
+        // here so commands, UI requests and direct callers share the same boundary.
+        if (def.kind() != CurrencyKind.VIRTUAL || !def.issuable()) {
+            return TxResult.fail("not_issuable", "实物货币不能回收发行额，请使用存取或储蓄划转。");
         }
         if (amount == null || amount.signum() <= 0) {
             return TxResult.fail("bad_amount", "Invalid amount");
@@ -5185,6 +5268,10 @@ public final class BankBooks {
         marketReceipts.forEach(marketReceiptsJson::addProperty);
         root.add("marketReceipts", marketReceiptsJson);
         root.add("tollState", tollState());
+        JsonObject welcome = new JsonObject();
+        welcome.addProperty("enabled", welcomeEnabled); welcome.addProperty("currency", welcomeCurrency);
+        welcome.addProperty("amount", welcomeAmount.toPlainString()); welcome.addProperty("revision", welcomeRevision);
+        root.add("welcomeGift", welcome);
         root.addProperty("numeraire", numeraire);
         root.addProperty("fee", feeFraction.toPlainString());
         if (liveCopperPerDiamond != null) {
@@ -5462,6 +5549,16 @@ public final class BankBooks {
             defs.put("note", legacyNote.withName("央行券"));
         }
         BankBooks books = new BankBooks(defs);
+        if (root.has("welcomeGift")) {
+            JsonObject saved = root.getAsJsonObject("welcomeGift");
+            books.welcomeEnabled = saved.get("enabled").getAsBoolean();
+            books.welcomeCurrency = saved.get("currency").getAsString();
+            books.welcomeAmount = new BigDecimal(saved.get("amount").getAsString());
+            books.welcomeRevision = saved.get("revision").getAsLong();
+            if (books.welcomeRevision < 0 || books.welcomeAmount.signum() <= 0 || books.welcomeAmount.scale() > Money.SCALE
+                    || books.welcomeAmount.precision() > 28 || books.welcomeCurrency.length() > 100)
+                throw new IllegalStateException("Invalid welcome gift configuration");
+        }
         if (root.has("tollState")) {
             JsonObject saved = root.getAsJsonObject("tollState");
             books.tollStateRevision = saved.get("revision").getAsLong();

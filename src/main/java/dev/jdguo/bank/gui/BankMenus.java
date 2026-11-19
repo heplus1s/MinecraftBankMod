@@ -33,7 +33,7 @@ public final class BankMenus {
 
     /** Vanilla 9×6 chest. Clients that asked for the optional UI never receive it. */
     public static void openChest(ServerPlayerEntity player, String titleName, boolean remoteAdmin, BankScreenHandler.Page page) {
-        if ((remoteAdmin || page == BankScreenHandler.Page.MANAGEMENT) && !player.hasPermissionLevel(2)) return;
+        if ((remoteAdmin || (page == BankScreenHandler.Page.MANAGEMENT || page == BankScreenHandler.Page.WELCOME_ADMIN)) && !player.hasPermissionLevel(2)) return;
         if (BankUiNetwork.wantsUi(player)) {
             BankUiNetwork.open(player, titleName, remoteAdmin);
             return;

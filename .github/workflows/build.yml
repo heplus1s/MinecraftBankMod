@@ -20,7 +20,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: integrated-mod-jars
-          path: build/libs/bankmod-1.0.17.jar
+          path: build/libs/bankmod-1.0.18.jar
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[no-release]')
     needs: build
@@ -38,8 +38,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if gh release view v1.0.17 >/dev/null 2>&1; then
-            echo "Release v1.0.17 already exists; refusing to replace it."
+          if gh release view v1.0.18 >/dev/null 2>&1; then
+            echo "Release v1.0.18 already exists; refusing to replace it."
             exit 1
           fi
-          gh release create v1.0.17 release-jars/bankmod-1.0.17.jar --target "$GITHUB_SHA" --title "v1.0.17 总览与收费结算接口" --notes-file RELEASE_NOTES_1.0.17.md
+          gh release create v1.0.18 release-jars/bankmod-1.0.18.jar --target "$GITHUB_SHA" --title "v1.0.18 一次性礼包与实物账本保护" --notes-file RELEASE_NOTES_1.0.18.md

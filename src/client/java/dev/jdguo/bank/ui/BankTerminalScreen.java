@@ -136,7 +136,8 @@ public final class BankTerminalScreen extends Screen {
 
     private void addChrome() {
         addTopButtons();
-        addRow(BankChrome.ROW_ONE, BankLayout.row1Y(this.height));
+        addRow(page == Page.SAVINGS && data.has("welcomeGift")
+                ? List.of("储蓄", "存入", "取出", "新人礼包") : BankChrome.ROW_ONE, BankLayout.row1Y(this.height));
         addRow(BankChrome.ROW_TWO, BankLayout.row2Y(this.height));
         addClose();
     }
@@ -157,7 +158,7 @@ public final class BankTerminalScreen extends Screen {
         int maximumWidth = Math.max(20, (right - x - BankLayout.GAP * (labels.size() - 1)) / labels.size());
         for (String label : labels) {
             int width = Math.min(buttonWidth(label), maximumWidth);
-            addDrawableChild(ButtonWidget.builder(Text.literal(label), button -> open(pageFor(label)))
+            addDrawableChild(ButtonWidget.builder(Text.literal(label), button -> { if ("新人礼包".equals(label)) client.setScreen(new WelcomeGiftScreen(data, this)); else open(pageFor(label)); })
                     .dimensions(x, y, width, BankLayout.BUTTON_HEIGHT).build());
             x += width + BankLayout.GAP;
         }
