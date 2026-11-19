@@ -79,8 +79,11 @@ public final class BankAdminScreen extends Screen {
         if (page == 0) {
             // All currencies and aggregates share one measured dashboard; no long text scroller.
             textTop = 60;
-            button("商店储蓄管理", x, height - 30, (w - 4) / 2, () -> switchPage(8));
-            button("地产储蓄管理", x + (w + 4) / 2, height - 30, (w - 4) / 2, () -> switchPage(9));
+            int fundingWidth = data.has("welcomeGift") ? (w - 8) / 3 : (w - 4) / 2;
+            button("商店储蓄管理", x, height - 30, fundingWidth, () -> switchPage(8));
+            button("地产储蓄管理", x + fundingWidth + 4, height - 30, fundingWidth, () -> switchPage(9));
+            if (data.has("welcomeGift")) button("礼包设置", x + 2 * (fundingWidth + 4), height - 30, fundingWidth,
+                    () -> client.setScreen(new WelcomeGiftScreen(data, this)));
         } else if (page == 1) {
             adjustmentPage(x, w);
         } else if (page == 2) {

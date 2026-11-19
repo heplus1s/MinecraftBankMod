@@ -29,6 +29,7 @@ public final class BankUiSnapshot {
         JsonObject o = new JsonObject();
         o.addProperty("page", page == null ? "savings" : page);
         o.addProperty("admin", admin);
+        o.add("welcomeGift", books.welcomeGift(player, admin));
         o.addProperty("confirm", confirm);
         o.addProperty("externalPersonalMarket", externalPersonalMarket);
         o.addProperty("status", books.statusLabel());
