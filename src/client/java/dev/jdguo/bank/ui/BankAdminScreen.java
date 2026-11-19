@@ -50,11 +50,17 @@ public final class BankAdminScreen extends Screen {
         if (label.startsWith("确认")) confirmation = button;
     }
     private void switchPage(int next) {
+        int previous = page;
         remember(); page = next; scroll = 0; pending = null;
         data.remove("centralAdjustmentPreview");
         BankUiClient.send("admin-policy-cancel");
         BankUiClient.send("admin-adjust-cancel");
         BankUiClient.send("admin-funding-cancel");
+        if (next == 10) BankUiClient.send("admin-toll-open");
+        else if (previous == 10) {
+            data.remove("tollBalance"); data.remove("tollPayments"); data.remove("tollSweepExpected");
+            BankUiClient.send("admin-toll-close");
+        }
         clearAndInit();
     }
     @Override protected void init() {
@@ -79,10 +85,13 @@ public final class BankAdminScreen extends Screen {
         if (page == 0) {
             // All currencies and aggregates share one measured dashboard; no long text scroller.
             textTop = 60;
-            int fundingWidth = data.has("welcomeGift") ? (w - 8) / 3 : (w - 4) / 2;
+            boolean toll = data.has("tollAccountSupported"), welcome = data.has("welcomeGift");
+            int count = 2 + (toll ? 1 : 0) + (welcome ? 1 : 0);
+            int fundingWidth = (w - 4 * (count - 1)) / count;
             button("商店储蓄管理", x, height - 30, fundingWidth, () -> switchPage(8));
             button("地产储蓄管理", x + fundingWidth + 4, height - 30, fundingWidth, () -> switchPage(9));
-            if (data.has("welcomeGift")) button("礼包设置", x + 2 * (fundingWidth + 4), height - 30, fundingWidth,
+            if (toll) button("收费专户", x + 2 * (fundingWidth + 4), height - 30, fundingWidth, () -> switchPage(10));
+            if (welcome) button("礼包设置", x + (toll ? 3 : 2) * (fundingWidth + 4), height - 30, fundingWidth,
                     () -> client.setScreen(new WelcomeGiftScreen(data, this)));
         } else if (page == 1) {
             adjustmentPage(x, w);
@@ -159,6 +168,8 @@ public final class BankAdminScreen extends Screen {
                 }
                 if (shown == 0) lines.add("暂无拨款记录");
             }
+        } else if (page == 10) {
+            tollAccountPage(x, w);
         } else if (page == 6 || page == 7) {
             input("数量（" + name() + ("note".equals(selected) ? "）" : "，整数）"), x, w);
             button("预览划转", x + w - 112, 86, 112, () -> {
@@ -186,6 +197,32 @@ public final class BankAdminScreen extends Screen {
             button("保存名称", x, height - 30, w, () -> BankUiClient.send("admin-rename " + field.getText().trim()));
         }
     }
+    private void tollAccountPage(int x, int w) {
+        if (!data.has("tollBalance")) {
+            lines.add("正在读取收费专户；若未返回数据，请确认服务端已更新。");
+            return;
+        }
+        lines.add("收费专户余额：" + value(data, "tollBalance") + " " + centralName());
+        boolean preview = data.has("tollSweepExpected");
+        if (preview) {
+            lines.add("确认全额划归：" + value(data, "tollSweepExpected") + " " + centralName());
+            int half = (w - 4) / 2;
+            button("取消", x, height - 30, half, () -> BankUiClient.send("admin-toll-cancel"));
+            button("确认全额划归", x + half + 4, height - 30, half, () -> BankUiClient.send("admin-toll-confirm"));
+        } else {
+            var balance = BankRates.parse(value(data, "tollBalance"));
+            if (balance != null && balance.signum() > 0)
+                button("全部划归央行", x, height - 30, w, () -> BankUiClient.send("admin-toll-preview"));
+        }
+        lines.add("最近 30 笔成功付款（最新在前）");
+        var rows = data.getAsJsonArray("tollPayments");
+        if (rows == null || rows.isEmpty()) lines.add("暂无付款记录");
+        else for (var element : rows) {
+            var row = element.getAsJsonObject();
+            lines.add(value(row, "name") + "  ·  " + value(row, "tenderAmount") + " " + value(row, "tenderName"));
+        }
+    }
+
     private void changeAdjustment(String mode, String direction, String currency) {
         remember();
         adjustmentMode = mode; adjustmentDirection = direction; reserveCurrency = currency;

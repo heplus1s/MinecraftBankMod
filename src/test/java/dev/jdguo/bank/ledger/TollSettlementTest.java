@@ -23,6 +23,23 @@ class TollSettlementTest {
   String before=b.toJson();assertFalse(b.tollPayment(a,c,"diamond",d("0.5"),"x",false).success());assertEquals(before,b.toJson());
   ok(b.tollPayment(a,c,"diamond",d("2"),"x",false));eq(d("8"),b.balanceExact(a,"diamond"));eq(d("2"),b.balanceExact(c,"diamond"));
  }
+ @Test void latestThirtySystemPaymentsPersistAndSweepPreservesHistory() {
+  var b=books();var payer=UUID.randomUUID();var other=UUID.randomUUID();
+  b.creditUnbacked(payer,"note",BigInteger.valueOf(100));ok(b.rewardTreasury(List.of(payer),"note",d("100")));
+  for(int i=1;i<=32;i++) ok(b.tollPayment(payer,null,"note",d("1"),"history-"+i,true,"payer_"+i));
+  ok(b.tollPayment(payer,other,"note",d("1"),"private",false));
+  ok(b.tollPayment(payer,null,"note",d("1"),"history-32",true,"replay"));
+  b=BankBooks.fromJson(b.toJson(),BankConfig.defaults());
+  var rows=b.recentSystemTollPayments();assertEquals(30,rows.size());
+  assertEquals("payer_32",rows.get(0).getAsJsonObject().get("payerName").getAsString());
+  assertEquals("payer_3",rows.get(29).getAsJsonObject().get("payerName").getAsString());
+  eq(d("32"),b.tollAccountBalance());eq(BigDecimal.ZERO,b.treasuryExact("note"));
+  String before=b.toJson();assertEquals("permission",b.sweepTollAccount(false,d("32")).code());
+  assertEquals("stale_quote",b.sweepTollAccount(true,d("31")).code());assertEquals(before,b.toJson());
+  ok(b.sweepTollAccount(true,d("32")));eq(BigDecimal.ZERO,b.tollAccountBalance());eq(d("32"),b.treasuryExact("note"));
+  assertEquals("empty",b.sweepTollAccount(true,d("32")).code());assertEquals(rows,b.recentSystemTollPayments());
+  b=BankBooks.fromJson(b.toJson(),BankConfig.defaults());assertEquals(rows,b.recentSystemTollPayments());b.checkInvariants();
+ }
  @Test void directSystemNotesIndependentNoTreasuryUse(){
   var b=books();var a=UUID.randomUUID();b.creditUnbacked(a,"note",BigInteger.TEN);ok(b.rewardTreasury(List.of(a),"note",d("3")));
   var treasury=b.treasuryExact("note");var liability=b.supply("note").liabilityExact();ok(b.tollPayment(a,null,"note",d("0.1234"),"x",true));

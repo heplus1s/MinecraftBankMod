@@ -37,7 +37,11 @@ public final class TollSettlement {
         return BankRuntime.transact(b -> b.tollPayment(from, to, currency, amount, reference, false));
     }
     public static TxResult collectSystem(UUID payer, String currency, BigDecimal amount, String reference) {
-        return BankRuntime.transact(b -> b.tollPayment(payer, null, currency, amount, reference, true));
+        return BankRuntime.transact(b -> {
+            var player = BankRuntime.server.getPlayerManager().getPlayer(payer);
+            return b.tollPayment(payer, null, currency, amount, reference, true,
+                    player == null ? null : player.getGameProfile().getName());
+        });
     }
     public static TxResult previewSystem(String currency, BigDecimal amount) {
         if (BankRuntime.state == null || BankRuntime.server == null || !BankRuntime.server.isOnThread()) return TxResult.fail("bank_not_ready", "");

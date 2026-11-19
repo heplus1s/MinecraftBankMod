@@ -228,6 +228,10 @@ public final class BankBooks {
 
     /** Toll-only ledger boundary. API callers MUST use BankRuntime.transact for durable publication. */
     public TxResult tollPayment(UUID payer, UUID recipient, String currency, BigDecimal amount, String reference, boolean system) {
+        return tollPayment(payer, recipient, currency, amount, reference, system, null);
+    }
+
+    public TxResult tollPayment(UUID payer, UUID recipient, String currency, BigDecimal amount, String reference, boolean system, String payerName) {
         if (reference == null || reference.isBlank() || reference.length() > 120)
             return TxResult.fail("bad_reference", "Invalid toll event reference");
         if (payer == null || (!system && (recipient == null || payer.equals(recipient))))
@@ -237,7 +241,7 @@ public final class BankBooks {
         BigDecimal exact = Money.of(amount);
         String key = "toll:" + reference;
         String fingerprint = "toll-v1|" + payer + "|" + (system ? "system:toll" : recipient) + "|" + currency + "|" + Money.stored(exact);
-        return postMarketMovement(key, fingerprint, Money.units(exact), () -> executeToll(payer, recipient, currency, exact, key, system));
+        return postMarketMovement(key, fingerprint, Money.units(exact), () -> executeToll(payer, recipient, currency, exact, key, system, payerName));
     }
 
     private static boolean validTollAmount(BigDecimal amount) {
@@ -274,7 +278,7 @@ public final class BankBooks {
         return marketReceipt("toll:" + reference) ? TxResult.ok(BigInteger.ZERO, "committed") : TxResult.fail("unrecorded", "");
     }
 
-    private TxResult executeToll(UUID payer, UUID recipient, String currency, BigDecimal amount, String key, boolean system) {
+    private TxResult executeToll(UUID payer, UUID recipient, String currency, BigDecimal amount, String key, boolean system, String payerName) {
         UUID personal = nestedId(currency);
         CurrencyDef def = currency == null ? null : currency(currency);
         if (personal == null && def == null) return TxResult.fail("unknown_currency", "Unknown toll currency");
@@ -333,7 +337,9 @@ public final class BankBooks {
         settledAssets.computeIfAbsent("toll", unused -> new LinkedHashMap<>()).merge(central, proceeds, BigDecimal::add);
         JsonObject receipt = new JsonObject();
         receipt.addProperty("kind", "toll-final"); receipt.addProperty("reference", key); receipt.addProperty("account", "toll");
-        receipt.addProperty("payer", payer.toString()); receipt.addProperty("tender", currency); receipt.addProperty("tenderAmount", Money.stored(amount));
+        receipt.addProperty("payer", payer.toString());
+        if (payerName != null && payerName.matches("[A-Za-z0-9_]{1,16}")) receipt.addProperty("payerName", payerName);
+        receipt.addProperty("tender", currency); receipt.addProperty("tenderAmount", Money.stored(amount));
         receipt.addProperty("terminalCurrency", terminal); receipt.addProperty("terminalAmount", Money.stored(asset)); receipt.addProperty("rate", price.toPlainString());
         receipt.addProperty("currency", central); receipt.addProperty("amount", Money.stored(proceeds)); receipt.addProperty("status", "settled");
         receipt.addProperty("pendingDelivery", false); receipt.addProperty("timestamp", System.currentTimeMillis()); receipt.add("legs", legs);
@@ -1977,6 +1983,45 @@ public final class BankBooks {
         return row;
     }
     public JsonArray systemFundingLog() { return systemFundingLog.deepCopy(); }
+
+    public BigDecimal tollAccountBalance() {
+        String currency = centralNoteId();
+        return currency == null ? Money.ZERO : systemSettlementBalance("toll", currency);
+    }
+
+    /** Returns detached, minimal rows in reverse commit order, without changing the durable receipts. */
+    public JsonArray recentSystemTollPayments() {
+        java.util.ArrayDeque<JsonObject> recent = new java.util.ArrayDeque<>(30);
+        for (JsonObject row : clearingReceipts.values()) {
+            if (!row.has("kind") || !"toll-final".equals(row.get("kind").getAsString())
+                    || !row.has("status") || !"settled".equals(row.get("status").getAsString())) continue;
+            if (recent.size() == 30) recent.removeFirst();
+            recent.addLast(row);
+        }
+        JsonArray result = new JsonArray();
+        for (var it = recent.descendingIterator(); it.hasNext();) {
+            JsonObject receipt = it.next(), row = new JsonObject();
+            for (String key : new String[]{"payer", "payerName", "tender", "tenderAmount", "currency", "amount"}) {
+                if (receipt.has(key)) row.add(key, receipt.get(key).deepCopy());
+            }
+            result.add(row);
+        }
+        return result;
+    }
+
+    /** One-way transfer only; caller must also gate a live administrator session. */
+    public TxResult sweepTollAccount(boolean administrator, BigDecimal expected) {
+        if (!administrator) return TxResult.fail("permission", "仅管理员可划归收费专户余额");
+        String currency = centralNoteId();
+        BigDecimal amount = tollAccountBalance();
+        if (currency == null || amount.signum() <= 0) return TxResult.fail("empty", "收费专户没有可划归余额");
+        if (expected == null || amount.compareTo(expected) != 0)
+            return TxResult.fail("stale_quote", "收费专户余额已变化，请重新确认");
+        BigDecimal after = Money.of(treasuryExact(currency).add(amount));
+        settledAssets.get("toll").remove(currency);
+        treasury.put(currency, after);
+        return TxResult.ok(Money.units(amount), "已将 " + Money.stored(amount) + " " + currency(currency).name() + " 全额划归央行自有储蓄");
+    }
 
     /** Existing central-owned notes only; caller also gates the admin session. */
     public TxResult fundSystemAccount(UUID operator, boolean administrator, String account,

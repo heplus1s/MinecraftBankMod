@@ -114,6 +114,35 @@ public final class BankUiNetwork {
         CentralPolicyUi.addPreview(payload, session);
         CentralAdjustmentUi.addPreview(payload, session);
         if (session.admin && session.fundingPreview != null) payload.add("fundingPreview", session.fundingPreview);
+        if (session.admin && player.hasPermissionLevel(2)) payload.addProperty("tollAccountSupported", true);
+        if (session.admin && player.hasPermissionLevel(2) && session.tollAccountOpen) {
+            payload.addProperty("tollBalance", dev.jdguo.bank.ledger.Money.stored(books.tollAccountBalance()));
+            if (session.tollSweepExpected != null && System.currentTimeMillis() <= session.tollSweepExpires)
+                payload.addProperty("tollSweepExpected", dev.jdguo.bank.ledger.Money.stored(session.tollSweepExpected));
+            var rows = books.recentSystemTollPayments();
+            var server = player.getServer();
+            for (var element : rows) {
+                var row = element.getAsJsonObject();
+                try {
+                    UUID id = UUID.fromString(row.get("payer").getAsString());
+                    var online = server.getPlayerManager().getPlayer(id);
+                    String name = online == null ? null : online.getGameProfile().getName();
+                    if (name == null && row.has("payerName")) name = row.get("payerName").getAsString();
+                    if (name == null && server.getUserCache() != null)
+                        name = server.getUserCache().getByUuid(id).map(profile -> profile.getName()).orElse(null);
+                    row.addProperty("name", name != null && !name.isBlank() ? name : "未知玩家 (" + id.toString().substring(0, 8) + ")");
+                    String token = row.get("tender").getAsString();
+                    var currency = books.currency(token);
+                    var personal = token.startsWith("personal:") ? books.personalNoteById(UUID.fromString(token.substring(9))) : null;
+                    row.addProperty("tenderName", currency != null ? currency.name() : personal != null ? personal.name() : token);
+                } catch (IllegalArgumentException | NullPointerException invalid) {
+                    row.addProperty("name", "未知玩家");
+                }
+                row.remove("payer");
+                row.remove("payerName");
+            }
+            payload.add("tollPayments", rows);
+        }
         if (session.admin && session.playerListOpen && player.hasPermissionLevel(2))
             payload.add("adminPlayers", AdminPlayerDirectory.page(player, books, session.playerListQuery, session.playerListPage, session.playerRoster));
         String encoded = payload.toString();
@@ -186,6 +215,9 @@ public final class BankUiNetwork {
         long centralIssueExpires;
         com.google.gson.JsonObject fundingPreview;
         long fundingExpires;
+        boolean tollAccountOpen;
+        java.math.BigDecimal tollSweepExpected;
+        long tollSweepExpires;
         String treasuryCommand;
         long treasuryExpires;
         dev.jdguo.bank.ledger.HardExchangeQuote exchangeQuote;

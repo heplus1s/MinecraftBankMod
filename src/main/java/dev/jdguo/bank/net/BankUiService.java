@@ -117,6 +117,8 @@ public final class BankUiService {
             case "admin-adjust-preview", "admin-adjust-confirm", "admin-adjust-cancel" -> CentralAdjustmentUi.handle(player, session, parts);
             case "admin-policy-preview", "admin-policy-confirm", "admin-policy-cancel" -> CentralPolicyUi.handle(player, session, parts);
             case "admin-funding-preview", "admin-funding-confirm", "admin-funding-cancel" -> SystemFundingUi.handle(player, session, parts);
+            case "admin-toll-open", "admin-toll-close", "admin-toll-preview", "admin-toll-confirm", "admin-toll-cancel" ->
+                    tollAccount(player, session, parts);
             case "admin-treasury-prepare" -> {
                 session.treasuryCommand = null;
                 if (session.admin && player.hasPermissionLevel(2) && parts.length == 4
@@ -163,6 +165,28 @@ public final class BankUiService {
         }
         if (BankUiNetwork.session(player) != null) {
             BankUiNetwork.sync(player);
+        }
+    }
+
+    private static void tollAccount(ServerPlayerEntity player, BankUiNetwork.Session session, String[] parts) {
+        if (parts.length != 1 || !session.admin || !player.hasPermissionLevel(2)) return;
+        var expected = session.tollSweepExpected;
+        session.tollSweepExpected = null;
+        if ("admin-toll-open".equals(parts[0])) {
+            session.tollAccountOpen = true;
+        } else if ("admin-toll-close".equals(parts[0])) {
+            session.tollAccountOpen = false;
+        } else if (session.tollAccountOpen && "admin-toll-preview".equals(parts[0])) {
+            var amount = BankRuntime.books().tollAccountBalance();
+            if (amount.signum() > 0) {
+                session.tollSweepExpected = amount;
+                session.tollSweepExpires = System.currentTimeMillis() + 60_000L;
+            }
+        } else if (session.tollAccountOpen && "admin-toll-confirm".equals(parts[0])) {
+            String message = expected == null || System.currentTimeMillis() > session.tollSweepExpires
+                    ? "确认已失效，请重新预览"
+                    : BankRuntime.transact(book -> book.sweepTollAccount(player.hasPermissionLevel(2), expected)).message();
+            player.sendMessage(net.minecraft.text.Text.literal(message), false);
         }
     }
 
