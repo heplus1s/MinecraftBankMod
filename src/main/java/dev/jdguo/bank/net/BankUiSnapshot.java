@@ -88,7 +88,12 @@ public final class BankUiSnapshot {
             book.addProperty("custody", Money.stored(books.custodyExact(def.id())));
             book.addProperty("reserve", Money.stored(supply.reserveExact()));
             book.addProperty("kind", def.kind().name());
-            if (def.kind() != CurrencyKind.COMMODITY) book.addProperty("liability", Money.stored(supply.liabilityExact()));
+            if (def.kind() != CurrencyKind.COMMODITY)
+                book.addProperty("liability", Money.stored(officialNote ? books.centralIssuedExact() : supply.liabilityExact()));
+            if (officialNote && admin) {
+                book.addProperty("pledgedNotes", Money.stored(books.centralPledgedNotesExact()));
+                book.addProperty("publicM1", Money.stored(books.centralM1Exact()));
+            }
             book.addProperty("locked", Money.stored(supply.lockedExact()));
             if (def.kind() != CurrencyKind.COMMODITY) book.addProperty("backedRoom", books.backedRoom(def).toString());
             if (def.kind() == CurrencyKind.COMMODITY) {

@@ -23,7 +23,7 @@ public record CentralAdjustment(boolean allowed, String reason, String mode, Str
         String note = sim.primaryVirtual() == null ? null : sim.primaryVirtual().id();
         if (note == null) return denied("未配置央行券");
         BigDecimal beforeRate = sim.unitsPer("diamond", note);
-        BigDecimal liability = sim.supply(note).liabilityExact();
+        BigDecimal liability = sim.centralIssuedExact();
         BigInteger amount; String currency, direction; BigDecimal target = null;
         try {
             if ("quantity".equals(mode)) {
@@ -54,7 +54,7 @@ public record CentralAdjustment(boolean allowed, String reason, String mode, Str
         return new CentralAdjustment(true, "reserve".equals(mode) ? "整件实物划转，目标误差上限为 1%（最低一个报价精度）；实际汇率以预览为准，发行量不变" :
                 "increase".equals(direction) ? "增发央行券进入央行自有储蓄，可用于系统拨款；不增加准备金或玩家余额" : "仅从央行自有储蓄回收央行券，不扣玩家或系统账户余额", mode, direction, currency, amount, target,
                 beforeRate, rate, reserveBefore, sim.supply(currency).reserveExact(), treasuryBefore, sim.treasuryExact(currency),
-                liability, sim.supply(note).liabilityExact(), fingerprint(books));
+                liability, sim.centralIssuedExact(), fingerprint(books));
     }
 
     /** Searches real quote results, including copper/diamond quote feedback; never assumes fixed metal prices. */

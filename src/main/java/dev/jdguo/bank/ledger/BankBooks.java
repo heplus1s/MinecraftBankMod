@@ -1046,7 +1046,7 @@ public final class BankBooks {
         }
         // target = ((1 + alpha) * reserves - alpha * liabilities) / liabilities.
         BigDecimal desired = reserve.multiply(BigDecimal.ONE.add(alpha)).divide(denominator, 8, RoundingMode.DOWN);
-        BigInteger amount = desired.subtract(supply(note.id()).liabilityExact()).setScale(0, RoundingMode.DOWN).toBigInteger();
+        BigInteger amount = desired.subtract(centralIssuedExact()).setScale(0, RoundingMode.DOWN).toBigInteger();
         if (amount.signum() <= 0) return rejectedCentralIssue(target, "该目标不能通过增发达到；请调整目标或使用回收");
         if (amount.compareTo(backedRoom(note)) > 0) {
             return rejectedCentralIssue(target, "现有可用准备金不足以安全发行该数量；不会动用玩家保管款");
@@ -1057,7 +1057,7 @@ public final class BankBooks {
         BigDecimal result = simulation.unitsPer("diamond", note.id());
         if (result == null) return rejectedCentralIssue(target, "发行后无有效汇率，拒绝操作");
         return new CentralIssuePlan(true, "整张发行取整，实际汇率以预览为准", target, amount, result,
-                reserve, simulation.supply(note.id()).liabilityExact(), centralPolicyFingerprint());
+                reserve, simulation.centralIssuedExact(), centralPolicyFingerprint());
     }
 
     private CentralIssuePlan rejectedCentralIssue(BigDecimal target, String reason) {
@@ -1109,7 +1109,7 @@ public final class BankBooks {
         if (backedOutstanding.signum() < 0) {
             backedOutstanding = BigInteger.ZERO;
         }
-        BigInteger unbacked = self.liability().subtract(backedOutstanding);
+        BigInteger unbacked = Money.units(issuedLiabilityExact(def)).subtract(backedOutstanding);
         if (unbacked.signum() < 0) {
             unbacked = BigInteger.ZERO;
         }
@@ -1166,7 +1166,7 @@ public final class BankBooks {
         if (backed.signum() < 0) {
             backed = BigInteger.ZERO;
         }
-        BigInteger unbacked = self.liability().subtract(backed);
+        BigInteger unbacked = Money.units(issuedLiabilityExact(def)).subtract(backed);
         return unbacked.signum() < 0 ? BigInteger.ZERO : unbacked;
     }
 
@@ -1372,7 +1372,7 @@ public final class BankBooks {
             liveNotesPerDiamond = null;
             return;
         }
-        BigDecimal liabilities = supply(note.id()).liabilityExact();
+        BigDecimal liabilities = centralIssuedExact();
         if (liabilities.signum() <= 0) {
             officialDiamondsPerNote = null;
             liveNotesPerDiamond = null;
@@ -1419,7 +1419,8 @@ public final class BankBooks {
         }
         // Public M1 sits in liability. The opening seed in anchor/reserve keeps the peg at par
         // before anyone holds a note, without counting that seed as money in circulation.
-        BigDecimal scale = FxMath.virtualScale(self.reserve(), self.liability().add(self.anchor()), alpha);
+        BigInteger outstanding = Money.units(issuedLiabilityExact(def));
+        BigDecimal scale = FxMath.virtualScale(self.reserve(), outstanding.add(self.anchor()), alpha);
         if (scale == null || def.backing() == null) {
             return null;
         }
@@ -1432,14 +1433,14 @@ public final class BankBooks {
         // Vault pressure uses the same alpha weight. Alpha 0 keeps the par peg even if the
         // cupboard is bare (convertibility still fails on withdraw); alpha 1000 lets an
         // empty diamond vault or a bloated note issue blow the quote out.
-        if (self.liability().signum() > 0 && alphaFraction.signum() > 0) {
+        if (outstanding.signum() > 0 && alphaFraction.signum() > 0) {
             BigDecimal vault = new BigDecimal(supply(def.backing()).reserve())
                     .multiply(def.haircut(), FxMath.MC)
                     .multiply(def.parPerBacking(), FxMath.MC);
             if (vault.compareTo(BigDecimal.ZERO) <= 0) {
                 return null;
             }
-            BigDecimal coverScale = new BigDecimal(self.liability()).divide(vault, FxMath.MC);
+            BigDecimal coverScale = new BigDecimal(outstanding).divide(vault, FxMath.MC);
             BigDecimal pressure = BigDecimal.ONE.subtract(alphaFraction, FxMath.MC)
                     .add(alphaFraction.multiply(coverScale, FxMath.MC), FxMath.MC);
             if (pressure.compareTo(worse) > 0) {
@@ -1457,11 +1458,12 @@ public final class BankBooks {
         if (self == null) {
             return null;
         }
-        BigInteger denom = self.liability().add(self.anchor());
+        CurrencyDef def = need(id);
+        BigDecimal denom = (def != null && centralNote(def) ? centralIssuedExact() : new BigDecimal(self.liability())).add(new BigDecimal(self.anchor()));
         if (denom.signum() <= 0) {
             return null;
         }
-        return new BigDecimal(self.reserve()).divide(new BigDecimal(denom), FxMath.MC);
+        return new BigDecimal(self.reserve()).divide(denom, FxMath.MC);
     }
 
     /** Par value of the backing vault divided by virtual liabilities. Null when there is no backing. */
@@ -1471,13 +1473,14 @@ public final class BankBooks {
             return null;
         }
         Supply self = supply(id);
-        if (self.liability().signum() <= 0) {
+        BigDecimal outstanding = centralNote(def) ? centralIssuedExact() : new BigDecimal(self.liability());
+        if (outstanding.signum() <= 0) {
             return null;
         }
         BigDecimal vault = new BigDecimal(supply(def.backing()).reserve())
                 .multiply(def.haircut(), FxMath.MC)
                 .multiply(def.parPerBacking(), FxMath.MC);
-        return vault.divide(new BigDecimal(self.liability()), FxMath.MC);
+        return vault.divide(outstanding, FxMath.MC);
     }
 
     public BigDecimal tightness(String id) {
@@ -5200,6 +5203,32 @@ public final class BankBooks {
         }
     }
 
+    /**
+     * Existing escrow assets, not newly issued money. Legacy snapshots already keep the
+     * whole notes here and the fractional tail in reserveDust; never rewrite balances.
+     */
+    public BigDecimal centralPledgedNotesExact() {
+        if (!"note".equals(centralNoteId()) || supply("note") == null) return Money.ZERO;
+        BigDecimal total = Money.ZERO;
+        for (BigInteger whole : centralReserveAccounts.values()) total = total.add(new BigDecimal(whole));
+        for (PersonalNote note : personalNotes.values()) {
+            if ("note".equals(note.anchor())) total = total.add(reserveDust.getOrDefault(note.id(), Money.ZERO));
+        }
+        return Money.of(total);
+    }
+
+    /** Gross issued stock includes treasury, outstanding claims and notes pledged as collateral. */
+    public BigDecimal centralIssuedExact() {
+        CurrencyDef note = primaryVirtual();
+        if (note == null || supply(note.id()) == null) return Money.ZERO;
+        return issuedLiabilityExact(note);
+    }
+
+    private BigDecimal issuedLiabilityExact(CurrencyDef def) {
+        BigDecimal booked = supply(def.id()).liabilityExact();
+        return centralNote(def) ? Money.of(booked.add(centralPledgedNotesExact())) : booked;
+    }
+
     /** Exact, native-unit monetary aggregates. M1 contains M0; never add them together.
      * These cover registered book entries and issued paper, not unobserved inventory/world items.
      * Treasury is separately reported, not public M1. No current FX quote feeds these totals.
@@ -5462,6 +5491,13 @@ public final class BankBooks {
         Map<String, BigInteger> claims = claimMap();
         for (CurrencyDef def : currencies.values()) {
             Supply supply = supplies.get(def.id());
+            if (centralNote(def)) {
+                BigDecimal expected = publicM1Exact(def.id()).add(treasuryExact(def.id())).add(centralPledgedNotesExact());
+                sb.append(def.id()).append(" issued=").append(Money.stored(centralIssuedExact()))
+                        .append(" accounted=").append(Money.stored(expected))
+                        .append(" ok=").append(expected.compareTo(centralIssuedExact()) == 0).append('\n');
+                continue;
+            }
             BigInteger expected = supply.anchor().add(claims.getOrDefault(def.id(), BigInteger.ZERO));
             sb.append(def.id())
                     .append(" R=").append(supply.reserve())
@@ -5474,6 +5510,15 @@ public final class BankBooks {
         }
         CurrencyDef note = primaryVirtual();
         String noteId = note == null ? "note" : note.id();
+        if (note != null) {
+            sb.append("centralIssued=").append(Money.stored(centralIssuedExact()))
+                    .append(" pledged=").append(Money.stored(centralPledgedNotesExact()))
+                    .append(" m1=").append(Money.stored(centralM1Exact()))
+                    .append(" treasury=").append(Money.stored(treasuryExact(noteId)))
+                    .append(" diamondReserve=").append(supply("diamond") == null ? "n/a" : Money.stored(supply("diamond").reserveExact()))
+                    .append(" copperReserve=").append(supply("copper") == null ? "n/a" : Money.stored(supply("copper").reserveExact()))
+                    .append('\n');
+        }
         sb.append("shopOperating ").append(noteId).append('=').append(shopOperating(noteId)).append('\n');
         sb.append("landGrant ").append(noteId).append('=').append(landGrant(noteId)).append('\n');
         return sb.toString();
@@ -6084,7 +6129,6 @@ public final class BankBooks {
         if (books.migrateVaults) {
             books.migrateMixedVaults();
         }
-        books.fillMissingQuotes();
         if (root.has("recursiveClearing")) {
             JsonObject c = root.getAsJsonObject("recursiveClearing");
             if (c.has("landGrantFraction")) c.getAsJsonObject("landGrantFraction").entrySet().forEach(e -> books.landGrantFraction.put(e.getKey(), Money.parse(e.getValue().getAsString())));
@@ -6128,6 +6172,9 @@ public final class BankBooks {
                     books.supply(def.id()).addLiability(amount);
             }
         }
+        // The official quote includes pledged whole and fractional notes. Recompute only
+        // after every reserve account and all compatibility adjustments have loaded.
+        books.fillMissingQuotes();
         return books;
     }
 

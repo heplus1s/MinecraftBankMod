@@ -27,7 +27,9 @@ public final class BankSnapshot {
             String backedRoom,
             String bookSavings,
             String physicalSavings,
-            String treasury) {
+            String treasury,
+            String pledgedNotes,
+            String publicM1) {
     }
 
     public record InstitutionRow(String name, String detail) {
@@ -201,7 +203,9 @@ public final class BankSnapshot {
                     text(row, "backedRoom"),
                     first(row, "bookSavings", "bookTotal"),
                     first(row, "physicalSavings", "actualSavings"),
-                    text(row, "treasury")));
+                    text(row, "treasury"),
+                    text(row, "pledgedNotes"),
+                    text(row, "publicM1")));
         }
         return rows;
     }

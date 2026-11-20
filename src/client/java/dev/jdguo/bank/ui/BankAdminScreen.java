@@ -320,7 +320,8 @@ public final class BankAdminScreen extends Screen {
         lines.add(BankRates.bankNoteQuote(data));
         for (var row : BankSnapshot.central(data)) {
             if ("note".equals(row.id())) {
-                lines.add("当前发行总额：" + row.liability());
+                lines.add("发行总额（含抵押）：" + row.liability());
+                if (row.pledgedNotes() != null) lines.add("抵押锁定：" + row.pledgedNotes() + "；流通 M1：" + row.publicM1());
                 lines.add("央行自有央行券（可拨款/回收）：" + row.treasury());
             }
             if ("diamond".equals(row.id()) || "copper".equals(row.id()))
