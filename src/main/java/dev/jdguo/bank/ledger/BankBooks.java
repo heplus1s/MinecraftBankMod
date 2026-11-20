@@ -56,6 +56,9 @@ public final class BankBooks {
     /** Central-owned savings. Never migrated from customer custody; old saves start at zero. */
     private final Map<String, BigDecimal> treasury = new LinkedHashMap<>();
     private final JsonArray systemFundingLog = new JsonArray();
+    private final Map<String,BigDecimal> externalTotals=new LinkedHashMap<>();
+    private final JsonObject externalSpending=new JsonObject();
+    private final JsonObject externalInstruments=new JsonObject();
     private final Map<String, Supply> supplies = new LinkedHashMap<>();
     private final Map<UUID, Map<String, BigDecimal>> accounts = new LinkedHashMap<>();
     /** Per-player reserves for a later personal mint. Not savings, and not the central vault. */
@@ -1879,6 +1882,195 @@ public final class BankBooks {
      * A commodity contribution moves its matching asset out of custody, never another player's claim.
      * This transfers existing units; it never mints money or changes total note liability.
      */
+    private record ExternalQuote(String input, String label, BigDecimal debit, String terminal, BigDecimal asset, BigDecimal noteValue,
+                               String fingerprint, UUID coin) {}
+    private ExternalQuote planExternalPurchase(UUID player, String input, BigDecimal requested) {
+        if (player == null || input == null || requested == null || requested.signum() <= 0
+                || requested.scale() > Money.SCALE || requested.precision() > 15)
+            throw new IllegalArgumentException("输入正金额，最多四位小数");
+        String note = centralNoteId(), terminal = input, label, legs = "";
+        BigDecimal debit = Money.of(requested), asset = debit;
+        UUID coin = null;
+        if (input.startsWith("personal:")) {
+            coin = UUID.fromString(input.substring(9));
+            var currency = personalNoteById(coin);
+            if (!personalTradingAllowed(currency) || currency.redemptionPaused())
+                throw new IllegalArgumentException("该个人币暂不可结算");
+            if (personalHoldingExact(coin, player).subtract(new BigDecimal(personalLockedOffer(coin, player))).compareTo(debit) < 0)
+                throw new IllegalArgumentException("可用个人币不足，已挂牌份额不可支出");
+            var backing = quotePersonalClearing(coin, debit);
+            if (!backing.success()) throw new IllegalArgumentException("个人币无可用抵押牌价或抵押不足");
+            terminal = backing.currency(); asset = backing.amount(); legs = backing.legs().toString(); label = currency.name();
+        } else {
+            if (!input.equals(note) && !"diamond".equals(input) && !"copper".equals(input))
+                throw new IllegalArgumentException("不支持该币种");
+            if (!input.equals(note) && debit.stripTrailingZeros().scale() > 0)
+                throw new IllegalArgumentException("实物货币储蓄只扣整数");
+            var def = currency(input);
+            if (def == null) throw new IllegalArgumentException("币种不可用");
+            label = def.name();
+            if (balanceExact(player,input).compareTo(debit) < 0) throw new IllegalArgumentException("银行储蓄余额不足");
+        }
+        BigDecimal fx = terminal.equals(note) ? BigDecimal.ONE : unitsPer(note,terminal);
+        if (fx == null || fx.signum() <= 0) throw new IllegalArgumentException("暂无可用中央牌价");
+        BigDecimal exact = asset.multiply(fx);
+        BigInteger chipUnits = exact.setScale(0,RoundingMode.DOWN).toBigIntegerExact();
+        if(chipUnits.compareTo(BigInteger.valueOf(1000000000000L))>0)
+            throw new IllegalArgumentException("交易价值超过单笔上限");
+        String key = String.join("|",player.toString(),input,Money.stored(debit),terminal,Money.stored(asset),fx.toPlainString(),legs);
+        return new ExternalQuote(input,label,debit,terminal,asset,exact.setScale(Money.SCALE,RoundingMode.DOWN),key,coin);
+    }
+
+    public JsonObject quoteExternalPurchase(UUID player,String currency,BigDecimal requested) {
+        JsonObject row = new JsonObject();
+        try {
+            var q = planExternalPurchase(player,currency,requested);
+            row.addProperty("ok",true); row.addProperty("input",q.input()); row.addProperty("label",q.label());
+            row.addProperty("debit",Money.stored(q.debit())); row.addProperty("terminal",q.terminal());
+            row.addProperty("settled",Money.stored(q.asset())); row.addProperty("noteValue",Money.stored(q.noteValue()));
+            row.addProperty("fingerprint",q.fingerprint());
+        } catch (IllegalArgumentException invalid) { row.addProperty("ok",false); row.addProperty("message",invalid.getMessage()); }
+        return row;
+    }
+
+    public TxResult payExternalPurchase(String partner,UUID player,String currency,BigDecimal requested,String expected,String reference) {
+        String sig = "outside-pay-v1|" + partner+"|"+expected;
+        if (!validExternalReference(partner,reference) || player==null || currency==null || requested==null || expected == null)
+            return TxResult.fail("arcade_invalid","无效交易编号");
+        String prior = marketReceipts.get(reference);
+        if (prior != null) return prior.equals(sig) && expected.startsWith(player+"|"+currency+"|"+Money.stored(requested)+"|")
+                ? TxResult.ok(BigInteger.ZERO,"该兑换已记账") : TxResult.fail("reference_conflict","交易编号冲突");
+        final ExternalQuote q;
+        try { q = planExternalPurchase(player,currency,requested); }
+        catch (IllegalArgumentException invalid){return TxResult.fail("arcade_invalid",invalid.getMessage());}
+        if (!q.fingerprint().equals(expected)) return TxResult.fail("stale_quote","余额、牌价或抵押已变化，请重新预览");
+        if (q.coin() != null) {
+            var paid = settlePersonalToSystem(player,q.coin(),q.debit(),"_external_transit",reference+"_collateral");
+            if (!paid.success()) return paid;
+            var done=completeSystemPayment(reference+"_collateral"); if (!done.success()) return done;
+            settledAssets.get("_external_transit").merge(q.terminal(),q.asset().negate(),BigDecimal::add);
+            if(settledAssets.get("_external_transit").get(q.terminal()).signum()==0) settledAssets.get("_external_transit").remove(q.terminal());
+            if(settledAssets.get("_external_transit").isEmpty()) settledAssets.remove("_external_transit");
+        } else {
+            debitBalance(player,q.input(),q.debit());
+        }
+        addExternal(partner,q.terminal(),q.asset());
+        recordExternalSpending(player,partner,q.input(),q.debit(),reference);
+        marketReceipts.put(reference,sig);
+        return TxResult.ok(Money.units(q.debit()),"外部消费已结算");
+    }
+
+    private boolean validExternalReference(String partner,String ref){
+        return partner!=null && partner.matches("[a-z][a-z0-9_-]{1,31}") && ref!=null &&
+            ref.startsWith(partner+"_") && ref.substring(partner.length()+1).matches("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
+    }
+    private BigDecimal outsideTotal(String partner,String currency){
+        return externalTotals.getOrDefault(partner+"|"+currency,Money.ZERO);
+    }
+    private void addExternal(String partner,String currency,BigDecimal delta){
+        String key=partner+"|"+currency;
+        var next=Money.of(outsideTotal(partner,currency).add(delta));
+        if(next.signum()<0) throw new IllegalStateException("外部流通对账不平");
+        if(next.signum()==0) externalTotals.remove(key); else externalTotals.put(key,next);
+    }
+    public BigDecimal externalTreasuryQuote(){return treasuryExact(centralNoteId());}
+    public boolean externalTransferRecorded(String partner,String reference){
+        return validExternalReference(partner,reference)&&marketReceipts.containsKey(reference);
+    }
+
+    public TxResult moveExternalFunds(String partner,UUID operator,boolean fund,BigDecimal amount,BigDecimal treasuryBefore,String reference) {
+        if (operator==null || !validExternalReference(partner,reference) || amount==null || amount.signum()<=0
+                || amount.scale()>Money.SCALE || amount.precision()>15 || treasuryBefore==null)
+            return TxResult.fail("invalid","划拨参数无效");
+        String sig="outside-funds-v1|"+partner+"|"+operator+"|"+fund+"|"+Money.stored(amount);
+        String prior=marketReceipts.get(reference);
+        if(prior!=null) return sig.equals(prior)?TxResult.ok(BigInteger.ZERO,"已划拨"):TxResult.fail("reference_conflict","交易编号冲突");
+        String cur=centralNoteId();
+        BigDecimal outside=outsideTotal(partner,cur), central=treasuryExact(cur);
+        if(central.compareTo(treasuryBefore)!=0)
+            return TxResult.fail("stale_quote","余额已变，请重新预览");
+        if((fund?central:outside).compareTo(amount)<0) return TxResult.fail("insufficient_funds","来源账户余额不足");
+        BigDecimal delta=fund?amount:amount.negate();
+        addExternal(partner,cur,delta);
+        treasury.put(cur,Money.of(central.subtract(delta)));
+        marketReceipts.put(reference,sig);
+        return TxResult.ok(Money.units(amount),fund?"央行已对外划出":"已拨回央行自有储蓄");
+    }
+
+    public TxResult creditFromExternal(String partner,UUID player,BigDecimal amount,String ref){
+        if(player==null || !validExternalReference(partner,ref) || amount==null || amount.signum()<=0
+                || amount.scale()>Money.SCALE || amount.precision()>15) return TxResult.fail("invalid","无效兑回");
+        String sig="outside-credit-v1|"+partner+"|"+player+"|"+Money.stored(amount);
+        String prev=marketReceipts.get(ref);
+        if(prev!=null)return sig.equals(prev)?TxResult.ok(Money.units(amount),"已到账"):TxResult.fail("reference_conflict","流水冲突");
+        String currency=centralNoteId();
+        if(outsideTotal(partner,currency).compareTo(amount)<0)return TxResult.fail("insufficient_funds","资金不足");
+        addExternal(partner,currency,amount.negate());
+        creditBalance(player,currency,amount);
+        marketReceipts.put(ref,sig);
+        return TxResult.ok(Money.units(amount),"已存入玩家储蓄");
+    }
+    /** Turns the partner's circulating cash into an equally valued paper note or named bill. */
+    public TxResult prepareExternalInstrument(String partner,UUID player,BigInteger amount,String mode,String ref){
+        if(player==null||amount==null||amount.signum()<=0||amount.compareTo(BigInteger.valueOf(100000))>0
+            ||!validExternalReference(partner,ref)||!java.util.Set.of("cash","bill").contains(mode))
+            return TxResult.fail("invalid","无效柜台票据");
+        String sig="outside-instrument-v1|"+partner+"|"+player+"|"+amount+"|"+mode;
+        String prior=marketReceipts.get(ref);
+        if(prior!=null)return prior.equals(sig)&&externalInstruments.has(ref)?TxResult.ok(amount,"该凭证已登记"):TxResult.fail("reference_conflict","流水冲突");
+        int waiting=0;
+        for(var e:externalInstruments.entrySet()){
+            var row=e.getValue().getAsJsonObject();
+            if(partner.equals(row.get("partner").getAsString())&&player.toString().equals(row.get("player").getAsString())
+                  &&!row.get("delivered").getAsBoolean())waiting++;
+        }
+        if(waiting>=5)return TxResult.fail("invalid","请先领取已有票据");
+        String currency=centralNoteId();
+        BigDecimal debit=new BigDecimal(amount);
+        if(outsideTotal(partner,currency).compareTo(debit)<0)return TxResult.fail("insufficient_funds","外部资金不足");
+        var row=new JsonObject();row.addProperty("mode",mode);row.addProperty("partner",partner);row.addProperty("player",player.toString());
+        row.addProperty("currency",currency);row.addProperty("amount",amount.toString());row.addProperty("delivered",false);
+        if(mode.equals("bill")){
+            var ticket=checks.create(currency,amount,player,"游艺厅",player,System.currentTimeMillis());
+            row.addProperty("instrument",ticket.id().toString());
+        }else{
+            addPaper(NoteSeries.key(currency,null,amount),BigInteger.ONE);
+        }
+        addExternal(partner,currency,debit.negate());
+        externalInstruments.add(ref,row);marketReceipts.put(ref,sig);
+        return TxResult.ok(amount,"票据已登记待领");
+    }
+    public JsonObject nextExternalInstrument(String partner,UUID player){
+        for(var e:externalInstruments.entrySet()){
+            var row=e.getValue().getAsJsonObject();
+            if(partner.equals(row.get("partner").getAsString())&&player.toString().equals(row.get("player").getAsString())
+                  &&!row.get("delivered").getAsBoolean()){
+                var result=row.deepCopy();result.addProperty("ref",e.getKey());return result;
+            }
+        }
+        return null;
+    }
+    public TxResult finishExternalInstrument(String partner,UUID player,String ref){
+        var row=externalInstruments.getAsJsonObject(ref);
+        if(row==null||!partner.equals(row.get("partner").getAsString())||!player.toString().equals(row.get("player").getAsString()))
+            return TxResult.fail("permission","不是该玩家的柜台票据");
+        row.addProperty("delivered",true);
+        return TxResult.ok(BigInteger.ZERO,"该票据已交付");
+    }
+    private void recordExternalSpending(UUID player,String partner,String currency,BigDecimal amount,String reference){
+        var row=new JsonObject();row.addProperty("partner",partner);row.addProperty("currency",currency);
+        if(currency.startsWith("personal:")){
+            var coin=personalNoteById(UUID.fromString(currency.substring(9)));
+            row.addProperty("label",coin==null?currency:coin.name());
+        } else row.addProperty("label",currency(currency)==null?currency:currency(currency).name());
+        row.addProperty("amount",Money.stored(amount));row.addProperty("reference",reference);row.addProperty("time",System.currentTimeMillis());
+        var list=externalSpending.has(player.toString())?externalSpending.getAsJsonArray(player.toString()):new JsonArray();
+        list.add(row);while(list.size()>30)list.remove(0);externalSpending.add(player.toString(),list);
+    }
+    public JsonArray externalSpending(UUID player){
+        var list=externalSpending.getAsJsonArray(player.toString());return list==null?new JsonArray():list.deepCopy();
+    }
+
     public TxResult transferTreasury(UUID player, String currency, BigDecimal amount, boolean intoTreasury) {
         CurrencyDef def = need(currency);
         if (player == null || def == null) return TxResult.fail("unknown_currency", "Unknown currency or operator");
@@ -5568,6 +5760,8 @@ public final class BankBooks {
         treasury.forEach((id, amount) -> owned.addProperty(id, Money.stored(amount)));
         root.add("centralTreasury", owned);
         root.add("systemFundingLog", systemFundingLog.deepCopy());
+        JsonObject arcadeOutside=new JsonObject(); externalTotals.forEach((id,n)->arcadeOutside.addProperty(id,Money.stored(n)));
+        root.add("externalCirculation",arcadeOutside); root.add("externalSpending",externalSpending.deepCopy()); root.add("externalInstruments",externalInstruments.deepCopy());
         JsonObject dust = new JsonObject();
         interestDust.forEach((id, amount) -> dust.addProperty(id.toString(), amount.toPlainString()));
         root.add("interestDust", dust);
@@ -5880,6 +6074,13 @@ public final class BankBooks {
         }
         books.lastInterestDay = root.has("lastInterestDay") ? root.get("lastInterestDay").getAsLong() : -1L;
         // Missing field intentionally means zero. Customer deposits must never be reclassified as equity.
+        if(root.has("externalInstruments"))root.getAsJsonObject("externalInstruments").entrySet().forEach(e->books.externalInstruments.add(e.getKey(),e.getValue().deepCopy()));
+        if(root.has("externalSpending"))root.getAsJsonObject("externalSpending").entrySet().forEach(e->books.externalSpending.add(e.getKey(),e.getValue().deepCopy()));
+        if(root.has("externalCirculation"))root.getAsJsonObject("externalCirculation").entrySet().forEach(e->{
+            BigDecimal n=Money.parse(e.getValue().getAsString());
+            if(n.signum()<0)throw new IllegalStateException("Invalid Arcade external total");
+            books.externalTotals.put(e.getKey(),n);
+        });
         if (root.has("systemFundingLog")) {
             for (JsonElement entry : root.getAsJsonArray("systemFundingLog")) books.systemFundingLog.add(entry.deepCopy());
             while (books.systemFundingLog.size() > 200) books.systemFundingLog.remove(0);
@@ -6258,6 +6459,7 @@ public final class BankBooks {
 
     private BigDecimal bookSavingsExact(String currency) {
         return Money.of(claimsExact(currency)
+                .add(externalTotals.entrySet().stream().filter(e->e.getKey().endsWith("|"+currency)).map(Map.Entry::getValue).reduce(Money.ZERO,BigDecimal::add))
                 .add(settledAssets.values().stream().map(row -> row.getOrDefault(currency, Money.ZERO)).reduce(Money.ZERO, BigDecimal::add))
                 .add(shopExact(currency))
                 .add(landGrantExact(currency))

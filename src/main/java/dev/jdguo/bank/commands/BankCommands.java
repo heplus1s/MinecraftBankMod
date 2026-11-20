@@ -249,6 +249,19 @@ public final class BankCommands {
                                                                 StringArgumentType.getString(ctx, "amount")))))))
                                 .then(literal("coverage").requires(BankCommands::op).then(argument("ratio", StringArgumentType.word()).executes(ctx -> noteCoverage(ctx.getSource(), StringArgumentType.getString(ctx, "ratio"))))))
                         .then(literal("supply").requires(BankCommands::op).executes(ctx -> supply(ctx.getSource())))
+                        .then(literal("spending").executes(ctx -> {
+                            var player=ctx.getSource().getPlayerOrThrow();
+                            var entries=books().externalSpending(player.getUuid());
+                            if(entries.isEmpty()) { player.sendMessage(Text.literal("暂无外部消费记录。"),false); return 1; }
+                            for(int i=entries.size()-1;i>=0&&i>=entries.size()-8;i--){
+                                var row=entries.get(i).getAsJsonObject();
+                                var partner=row.get("partner").getAsString();
+                                var when=java.time.Instant.ofEpochMilli(row.get("time").getAsLong()).toString();
+                                player.sendMessage(Text.literal(when+" · "+("arcadehall".equals(partner)?"游艺厅":partner)+" · "+row.get("amount").getAsString()+" "
+                                        +row.get("label").getAsString()+" · "+row.get("reference").getAsString()),false);
+                            }
+                            return 1;
+                        }))
                         .then(literal("audit").requires(BankCommands::op).executes(ctx -> {
                             ctx.getSource().sendMessage(Text.literal(books().audit()).formatted(Formatting.GRAY));
                             return 1;
