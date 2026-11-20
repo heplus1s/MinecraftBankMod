@@ -80,3 +80,5 @@ Market/Land must enforce administrator authorization and journal a distinct gove
 No central issuance, treasury balance, physical vault, unrelated account, or public player savings is used to cover short funds. Pending escrow remains included in savings-book conservation and visible as pending outgoing in the existing system-account overview.
 
 Buyback callers MUST use `completeLandBuyback`, not legacy `completePayment`: unknown, non-buyback and reversed Bank receipts fail closed. Generic payment completion retains its compatibility behavior.
+
+System resale reuses `quoteLandPurchase` / `creditLandGrantQuoted` / `refundLandGrant`, and must finalize using strict `completeLandPurchase(reference)` after durable ownership delivery. Same-currency central-note pricing charges exactly the quoted total with zero top-up. Missing, unrelated or reversed receipts fail finalization.

@@ -53,6 +53,10 @@ public final class MarketSettlement {
     public static String quoteLandPurchase(String denomination, BigInteger total, String tender) {
         return BankRuntime.state == null ? "{\"success\":false}" : BankRuntime.books().quoteLandPurchase(denomination, total, tender).toString();
     }
+    /** Strict quoted-land finalization for system resale recovery. */
+    public static TxResult completeLandPurchase(String reference) {
+        return BankRuntime.transact(books -> books.completeLandPurchase(reference));
+    }
     public static TxResult creditLandGrantQuoted(UUID payer, String denomination, BigInteger total, String tender, String fingerprint, String reference) {
         return postReferenced(reference, "land-quoted|" + payer + "|" + denomination + "|" + total + "|" + tender + "|" + fingerprint, total,
                 books -> books.payLandPurchase(payer, denomination, total, tender, fingerprint, reference));

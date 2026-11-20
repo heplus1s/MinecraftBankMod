@@ -2270,6 +2270,16 @@ public final class BankBooks {
         clearingReceipts.put(reference, row); return TxResult.ok(Money.units(amount), "");
     }
     public boolean hasLandPurchase(String reference) { JsonObject r = clearingReceipts.get(reference); return r != null && r.has("kind") && "land-purchase".equals(r.get("kind").getAsString()); }
+    /** Fail closed for quoted system resale; unlike legacy completion, absence is not success. */
+    public TxResult completeLandPurchase(String reference) {
+        if (reference == null || !reference.startsWith("market-pay:") || reference.length() <= 11 || reference.length() > 128)
+            return TxResult.fail("bad_reference", "Invalid market payment reference");
+        JsonObject receipt = clearingReceipts.get(reference);
+        if (receipt == null) return TxResult.fail("missing", "No land purchase receipt");
+        if (!hasLandPurchase(reference)) return TxResult.fail("kind", "Not a quoted land purchase");
+        return completeSystemPayment(reference);
+    }
+
     public TxResult reverseLandPurchase(UUID payer, String denomination, BigInteger total, String reference) {
         JsonObject row = clearingReceipts.get(reference);
         if (!hasLandPurchase(reference) || !(payer + "|" + denomination + "|" + total).equals(row.get("original").getAsString())) return TxResult.fail("reference_conflict", "");
