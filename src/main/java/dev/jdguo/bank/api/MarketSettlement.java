@@ -28,6 +28,28 @@ public final class MarketSettlement {
                 : books.transferSavings(from, to, currency, amount));
     }
 
+    /** Read-only availability check. Caller must enforce server administrator authorization. */
+    public static TxResult quoteLandBuyback(UUID seller, String currency, BigInteger amount) {
+        return read(books -> books.quoteLandBuyback(seller, currency, amount));
+    }
+    /** Escrow only: seller is credited by completePayment after durable land delivery. */
+    public static TxResult prepareLandBuyback(UUID seller, String currency, BigInteger amount, String paymentRef) {
+        if (!validReference(paymentRef)) return TxResult.fail("bad_reference", "");
+        return BankRuntime.transact(books -> "reversed".equals(books.settlementStatus(paymentRef))
+                ? TxResult.fail("reversed", "Buyback was refunded; create a new sale")
+                : books.postMarketMovement(paymentRef, "land-buyback|" + seller + "|" + currency + "|" + amount, amount,
+                    () -> books.prepareLandBuyback(seller, currency, amount, paymentRef)));
+    }
+    /** Use for buyback recovery: missing/legacy/reversed receipts fail closed. */
+    public static TxResult completeLandBuyback(String paymentRef) {
+        return BankRuntime.transact(books -> books.completeLandBuyback(paymentRef));
+    }
+    /** Restore escrow, never debit spendable seller proceeds. */
+    public static TxResult refundLandBuyback(UUID seller, String currency, BigInteger amount, String paymentRef, String refundRef) {
+        return postReferenced(refundRef, "refund-land-buyback|" + seller + "|" + currency + "|" + amount + "|" + paymentRef, amount,
+                books -> books.refundLandBuyback(seller, currency, amount, paymentRef, refundRef));
+    }
+
     public static String quoteLandPurchase(String denomination, BigInteger total, String tender) {
         return BankRuntime.state == null ? "{\"success\":false}" : BankRuntime.books().quoteLandPurchase(denomination, total, tender).toString();
     }

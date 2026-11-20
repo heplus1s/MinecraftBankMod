@@ -66,3 +66,17 @@ Both accounts are sub-ledgers of the savings pool. Note balances earn the same d
 The market's `BankSettlement.install` and `LandGrantAccount.install` live in the market mod. This bank does not call them. The market uses `MarketSettlement` when those installers were not called.
 
 `/bank admin accounts` prints both balances. Command words are English. The reply uses the existing `[银行]` prefix. The optional bank UI shows 商店经营账户 and 土地出让账户 on the admin page.
+
+### Administrator land buyback (central notes only)
+
+Market/Land must enforce administrator authorization and journal a distinct government-buyback transaction; do not create a fake player buyer. Existing land operating/settled buckets remain the funding source (internal account `land`, not a new `land_grant` account).
+
+- `MarketSettlement.quoteLandBuyback(UUID seller, String currency, BigInteger amount)` checks exact positive whole central-note units and available funds without mutation. Probe API availability before opening preview; unsupported Bank versions must fail closed.
+- `prepareLandBuyback(seller, currency, amount, paymentRef)` atomically journals `market-pay:<sale suffix>` and escrows the amount. Seller balance is not credited yet; incoming unsettled assets and treasury recall cannot spend this escrow.
+- Persist the land delivery receipt before strict `completeLandBuyback(paymentRef)`. Completion credits seller once. Retry completion after crash, never refund completed seller funds.
+- Definitively failed delivery: `refundLandBuyback(seller, currency, amount, paymentRef, refundRef)` with matching `refund:<sale suffix>` returns still-pending escrow to its original ordinary/settled buckets, independent of seller balance. Refund and payment receipts are idempotent and mismatches fail. Refunded sale references cannot be prepared again.
+- Ambiguous delivery: leave escrow pending until Land receipt resolves it. Never complete on unknown ownership, and never roll back delivered land after releasing seller proceeds. `marketReceipt(ref)` alone is a historical journal-existence check, not proof of current escrow status; recovery must also respect its durable sale state and refund reference.
+
+No central issuance, treasury balance, physical vault, unrelated account, or public player savings is used to cover short funds. Pending escrow remains included in savings-book conservation and visible as pending outgoing in the existing system-account overview.
+
+Buyback callers MUST use `completeLandBuyback`, not legacy `completePayment`: unknown, non-buyback and reversed Bank receipts fail closed. Generic payment completion retains its compatibility behavior.

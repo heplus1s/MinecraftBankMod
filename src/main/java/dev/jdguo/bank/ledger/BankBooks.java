@@ -2815,6 +2815,70 @@ public final class BankBooks {
         if (price.signum() <= 0) return Money.ZERO;
         return systemAvailableBalance(account, "note").divide(price, Money.SCALE, RoundingMode.DOWN).min(available);
     }
+    /** Admin authorization and durable land delivery belong to the market; this API never impersonates a player. */
+    public TxResult quoteLandBuyback(UUID seller, String currency, BigInteger amount) {
+        if (seller == null || amount == null || amount.signum() <= 0)
+            return TxResult.fail("bad_amount", "Invalid land buyback");
+        if (!centralNoteId().equals(currency)) return TxResult.fail("unsupported_currency", "Land buyback requires central notes");
+        if (systemRecallCapacity("land").available().compareTo(new BigDecimal(amount)) < 0)
+            return TxResult.fail("insufficient_system", "Land account has insufficient available central notes");
+        return TxResult.ok(amount, "Land buyback funds available");
+    }
+
+    public TxResult prepareLandBuyback(UUID seller, String currency, BigInteger amount, String reference) {
+        if (reference == null || !reference.startsWith("market-pay:") || reference.length() <= 11 || reference.length() > 128)
+            return TxResult.fail("bad_reference", "Invalid market payment reference");
+        String signature = "land-buyback|" + seller + "|" + currency + "|" + amount;
+        JsonObject prior = clearingReceipts.get(reference);
+        if (prior != null) return signature.equals(prior.get("signature").getAsString()) && "settled".equals(prior.get("status").getAsString())
+                ? TxResult.ok(amount, "Already prepared") : TxResult.fail("reference_conflict", "Payment reference conflict");
+        TxResult eligible = quoteLandBuyback(seller, currency, amount);
+        if (!eligible.success()) return eligible;
+        SystemRecallCapacity capacity = systemRecallCapacity("land");
+        BigDecimal total = new BigDecimal(amount), ordinary = capacity.ordinaryAvailable().min(total), settled = total.subtract(ordinary);
+        if (ordinary.signum() > 0) addOrdinarySystem("land", currency, ordinary.negate());
+        if (settled.signum() > 0) settledAssets.get("land").put(currency, Money.of(capacity.settled().subtract(settled)));
+        JsonObject receipt = new JsonObject();
+        receipt.addProperty("kind", "land-buyback"); receipt.addProperty("account", "land");
+        receipt.addProperty("reference", reference); receipt.addProperty("signature", signature);
+        receipt.addProperty("payer", seller.toString()); receipt.addProperty("currency", currency);
+        receipt.addProperty("amount", Money.stored(total)); receipt.addProperty("centralBudget", Money.stored(total));
+        receipt.addProperty("fromOrdinary", Money.stored(ordinary)); receipt.addProperty("fromSettled", Money.stored(settled));
+        receipt.addProperty("status", "settled"); receipt.addProperty("pendingDelivery", true);
+        receipt.addProperty("timestamp", System.currentTimeMillis()); receipt.add("legs", new JsonArray());
+        clearingReceipts.put(reference, receipt);
+        return TxResult.ok(amount, "Land buyback funds escrowed pending durable delivery");
+    }
+
+    /** Strict completion: never treats absent/legacy receipts as proof of payment. */
+    public TxResult completeLandBuyback(String paymentRef) {
+        if (paymentRef == null || !paymentRef.startsWith("market-pay:") || paymentRef.length() <= 11 || paymentRef.length() > 128)
+            return TxResult.fail("bad_reference", "Invalid market payment reference");
+        JsonObject receipt = clearingReceipts.get(paymentRef);
+        if (receipt == null) return TxResult.fail("missing", "No buyback payment receipt");
+        if (!receipt.has("kind") || !"land-buyback".equals(receipt.get("kind").getAsString()))
+            return TxResult.fail("kind", "Not a land buyback payment");
+        return completeSystemPayment(paymentRef);
+    }
+
+    public TxResult refundLandBuyback(UUID seller, String currency, BigInteger amount, String paymentRef, String refundRef) {
+        if (paymentRef == null || !paymentRef.startsWith("market-pay:") || paymentRef.length() <= 11 || paymentRef.length() > 128
+                || !(("refund:" + paymentRef.substring(11)).equals(refundRef)))
+            return TxResult.fail("bad_reference", "Refund must identify original market payment");
+        JsonObject receipt = clearingReceipts.get(paymentRef);
+        String signature = "land-buyback|" + seller + "|" + currency + "|" + amount;
+        if (receipt == null || !signature.equals(receipt.get("signature").getAsString()))
+            return TxResult.fail("reference_conflict", "Refund does not match buyback");
+        if ("reversed".equals(receipt.get("status").getAsString())) return TxResult.ok(amount, "Already refunded");
+        if (!deliveryPending(receipt)) return TxResult.fail("delivery_completed", "Delivered buyback cannot confiscate seller funds");
+        BigDecimal ordinary = Money.parse(receipt.get("fromOrdinary").getAsString()), settled = Money.parse(receipt.get("fromSettled").getAsString());
+        if (ordinary.signum() > 0) addOrdinarySystem("land", currency, ordinary);
+        if (settled.signum() > 0) settledAssets.computeIfAbsent("land", unused -> new LinkedHashMap<>()).put(currency, Money.of(systemSettlementBalance("land", currency).add(settled)));
+        receipt.addProperty("status", "reversed"); receipt.addProperty("pendingDelivery", false);
+        receipt.addProperty("refundReference", refundRef); receipt.addProperty("reversedAt", System.currentTimeMillis());
+        return TxResult.ok(amount, "Uncompleted buyback escrow returned to original land buckets");
+    }
+
     public JsonObject quoteSystemPayout(UUID coin, BigDecimal budget) { return quoteIssuerPayout("shop", coin, budget); }
     public JsonObject quoteSystemPayout(String account, UUID coin, BigDecimal budget) { return quoteIssuerPayout(account, coin, budget); }
     public TxResult executeSystemPayout(UUID player, UUID coin, BigDecimal budget, String fingerprint, String reference) {
@@ -2931,7 +2995,7 @@ public final class BankBooks {
     }
     private BigDecimal pendingIssuerNotes() {
         BigDecimal amount = Money.ZERO;
-        for (JsonObject receipt : clearingReceipts.values()) if (deliveryPending(receipt) && receipt.has("kind") && "issuer-offer-payout".equals(receipt.get("kind").getAsString()))
+        for (JsonObject receipt : clearingReceipts.values()) if (deliveryPending(receipt) && receipt.has("kind") && ("issuer-offer-payout".equals(receipt.get("kind").getAsString()) || "land-buyback".equals(receipt.get("kind").getAsString())))
             amount = amount.add(Money.parse(receipt.get("centralBudget").getAsString()));
         return Money.of(amount);
     }
@@ -2983,6 +3047,8 @@ public final class BankBooks {
             }
         }
         if (receipt.has("kind") && "issuer-offer-payout".equals(receipt.get("kind").getAsString())) return completeIssuerPayout(receipt);
+        if (receipt.has("kind") && "land-buyback".equals(receipt.get("kind").getAsString()))
+            creditBalance(UUID.fromString(receipt.get("payer").getAsString()), receipt.get("currency").getAsString(), Money.parse(receipt.get("amount").getAsString()));
         receipt.addProperty("pendingDelivery", false); receipt.addProperty("completedAt", System.currentTimeMillis());
         return TxResult.ok(BigInteger.ZERO, "Delivery completed");
     }
