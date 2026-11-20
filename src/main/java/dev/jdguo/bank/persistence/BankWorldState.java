@@ -67,49 +67,34 @@ public final class BankWorldState extends PersistentState {
     }
 
     public static BankWorldState get(MinecraftServer server) {
+        Path data = server.getSavePath(WorldSavePath.ROOT).resolve("data");
+        java.util.concurrent.atomic.AtomicBoolean decodeFailed = new java.util.concurrent.atomic.AtomicBoolean();
         return server.getOverworld().getPersistentStateManager().getOrCreate(
-                BankWorldState::fromNbt,
-                () -> fromNbt(new NbtCompound()),
-                ID);
+                nbt -> {
+                    try { return fromNbt(nbt); }
+                    catch (RuntimeException error) { decodeFailed.set(true); throw error; }
+                },
+                () -> {
+                    // PersistentStateManager can swallow an NBT read/decode failure and invoke its supplier.
+                    // A present/unreadable existing file must never be mistaken for a brand-new bank.
+                    boolean newWorld = !decodeFailed.get() && Files.notExists(data.resolve(ID + ".dat"))
+                            && Files.notExists(data.resolve(ID + ".dat_old"));
+                    BankConfig config = BankRuntime.config == null ? BankConfig.defaults() : BankRuntime.config;
+                    return new BankWorldState(LedgerRecovery.recover(null, backupPath(server), newWorld, config));
+                }, ID);
     }
 
     public static BankWorldState fromNbt(NbtCompound nbt) {
         BankConfig config = BankRuntime.config == null ? BankConfig.defaults() : BankRuntime.config;
-        String json = nbt.contains("json") ? nbt.getString("json") : "";
-        BankBooks main = null;
-        if (!json.isBlank()) {
-            try {
-                main = BankBooks.fromJson(json, config);
-            } catch (RuntimeException error) {
-                BankRuntime.LOGGER.error("银行存档损坏，尝试读取旁路 JSON", error);
-            }
-        }
-        Path backup = backupPath(BankRuntime.server);
-        if (backup != null && Files.exists(backup)) {
-            try {
-                BankBooks recovered = BankBooks.fromJson(Files.readString(backup), config);
-                if (main == null || recovered.checkpoint() > main.checkpoint()) {
-                    main = recovered;
-                }
-            } catch (IOException | RuntimeException error) {
-                if (main == null) {
-                    throw new IllegalStateException("银行存档和旁路 JSON 都无法读取: " + backup, error);
-                }
-                BankRuntime.LOGGER.warn("银行旁路存档无法读取，使用世界存档", error);
-            }
-        }
-        if (main != null) {
-            return new BankWorldState(main);
-        }
-        if (!json.isBlank()) {
-            throw new IllegalStateException("银行存档无法读取，且没有旁路 JSON");
-        }
-        return new BankWorldState(BankBooks.create(config));
+        String json = null;
+        try { json = LedgerNbtCodec.read(nbt); }
+        catch (RuntimeException error) { BankRuntime.LOGGER.error("银行 NBT 存档损坏，尝试旁路 JSON", error); }
+        return new BankWorldState(LedgerRecovery.recover(json, backupPath(BankRuntime.server), false, config));
     }
 
     @Override
     public NbtCompound writeNbt(NbtCompound nbt) {
-        nbt.putString("json", books.toJson());
+        LedgerNbtCodec.write(nbt, books.toJson());
         nbt.putInt("version", BankBooks.SNAPSHOT_VERSION);
         writeBackup();
         return nbt;
