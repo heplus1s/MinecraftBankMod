@@ -64,7 +64,7 @@ class ExternalClearingTest {
         assertFalse(b.payExternalPurchase("other",customer,"note",d("10"),q.get("fingerprint").getAsString(),ref()).success());
         eq("15",b.balanceExact(customer,"note"));assertTrue(b.externalSpending(customer).isEmpty());
     }
-    @Test void paperAndNamedBillUseOneReceiptAndNeverCreditSavings(){
+    @Test void paperAndBearerBillUseOneReceiptAndNeverCreditSavingsAtIssuance(){
         var b=bank();
         ok(b.moveExternalFunds(MOD,owner,true,d("100"),b.externalTreasuryQuote(),ref()));
         var cash=ref();var bill=ref();
@@ -79,7 +79,7 @@ class ExternalClearingTest {
         assertFalse(b.finishExternalInstrument(MOD,owner,cash).success());ok(b.finishExternalInstrument(MOD,customer,cash));
         var q=b.nextExternalInstrument(MOD,customer);assertEquals("bill",q.get("mode").getAsString());
         UUID number=UUID.fromString(q.get("instrument").getAsString());
-        assertEquals(customer,b.check(number).payee());assertEquals(BigInteger.valueOf(30),b.check(number).amount());
+        assertNull(b.check(number).payee());assertEquals(BigInteger.valueOf(30),b.check(number).amount());
         b=BankBooks.fromJson(b.toJson(),BankConfig.defaults());assertEquals(number.toString(),b.nextExternalInstrument(MOD,customer).get("instrument").getAsString());
         ok(b.finishExternalInstrument(MOD,customer,bill));assertNull(b.nextExternalInstrument(MOD,customer));b.checkInvariants();
     }
