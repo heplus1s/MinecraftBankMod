@@ -60,7 +60,7 @@ public final class BankOverview {
         int unitHeight = unit.size() * 12 + 4;
         cells.add(new Cell(0, y, w, unitHeight, unit, Integer.MAX_VALUE, true, SCOPE));
         y += unitHeight + 2;
-        String[] titles = {"M0 · 流通纸币", "M1 · 狭义货币", "M2 · 折算广义货币"};
+        String[] titles = {"M0 · 银行外流通", "M1 · 狭义货币", "M2 · 折算广义货币"};
         String[] keys = {"m0", "m1", "m2"};
         int cardW = (w - 8) / 3, cardH = 0;
         List<List<String>> cards = new ArrayList<>();
@@ -96,6 +96,14 @@ public final class BankOverview {
             y += rowH;
         }
         y += 6;
+        if (data.has("outstandingBillTotal")) {
+            String outstanding = "待兑汇票 " + exact(BankSnapshot.text(data,"outstandingBillTotal")) + " " + note
+                    + "（" + BankSnapshot.text(data,"outstandingBillCount") + " 张）；其中已确认系统签发 "
+                    + exact(BankSnapshot.text(data,"systemBillTotal")) + "（" + BankSnapshot.text(data,"systemBillCount") + " 张）";
+            var lines = wrap(outstanding, w - 12, measure); int h = lines.size() * 12 + 6;
+            cells.add(new Cell(0,y,w,h,lines,Integer.MAX_VALUE,false,
+                    "已计入 M1，不计入 M0；缺少签发来源的旧票只计入待兑总额。")); y += h;
+        }
         String[] quotes = {"1 钻石 = " + quote(data,"copperPerDiamondExact","copperPerDiamond") + " 铜锭",
                 "1 " + note + " = " + quote(data,"diamondsPerNoteExact","diamondsPerNote") + " 钻石"};
         for (String value : quotes) {

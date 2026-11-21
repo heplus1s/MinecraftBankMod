@@ -146,6 +146,8 @@ public final class BankUiNetwork {
         }
         if (session.admin && session.playerListOpen && player.hasPermissionLevel(2))
             payload.add("adminPlayers", AdminPlayerDirectory.page(player, books, session.playerListQuery, session.playerListPage, session.playerRoster));
+        if (session.admin && session.activityOpen && player.hasPermissionLevel(2))
+            payload.add("adminActivity", AdminActivity.page(player, books, session.activityPage));
         String encoded = payload.toString();
         if (encoded.length() > 32767) {
             if (encoded.length() > UiSnapshotChunks.MAX_CHARS || !ServerPlayNetworking.canSend(player, SYNC_CHUNK)) {
@@ -231,6 +233,8 @@ public final class BankUiNetwork {
         long lastCheckpoint = -1;
         int snapshotTransfer;
         final AdminPlayerDirectory.CachedRoster playerRoster = new AdminPlayerDirectory.CachedRoster();
+        boolean activityOpen;
+        int activityPage;
         boolean playerListOpen;
         int playerListPage;
         String playerListQuery = "";

@@ -79,6 +79,49 @@ public final class BankBooks {
     private final Map<UUID, Map<UUID, BigInteger>> personalOffers = new LinkedHashMap<>();
     private final Map<UUID, Map<UUID, BigInteger>> personalHoldings = new LinkedHashMap<>();
     private final CheckBook checks = new CheckBook();
+    private final java.util.Set<UUID> directSystemBills = new java.util.HashSet<>();
+    private final java.util.Deque<BankActivity> cashActivity = new java.util.ArrayDeque<>();
+    private static final int MAX_CASH_ACTIVITY = 2000;
+
+    public record BankActivity(long time, UUID player, String name, String action,
+                               String currency, BigInteger amount, UUID bill) {}
+
+    private void recordCash(UUID player, String action, String currency, BigInteger amount) {
+        if (player == null) return;
+        cashActivity.addLast(new BankActivity(System.currentTimeMillis(), player, "", action, currency, amount, null));
+        if (cashActivity.size() > MAX_CASH_ACTIVITY) cashActivity.removeFirst();
+    }
+
+    /** Administrative projection. Older bill activity is available from the original check records. */
+    public List<BankActivity> adminActivity() {
+        List<BankActivity> rows = new ArrayList<>(cashActivity);
+        for (CheckRecord c : checks.all()) {
+            rows.add(new BankActivity(c.issuedAtEpochMs(), c.issuer(), directSystemBills.contains(c.id()) ? "中央银行" : c.issuerName(), "billIssue", c.currency(), c.amount(), c.id()));
+            if (c.redeemedBy() != null && c.redeemedAtEpochMs() > 0)
+                rows.add(new BankActivity(c.redeemedAtEpochMs(), c.redeemedBy(), "", "billRedeem", c.currency(), c.amount(), c.id()));
+        }
+        rows.sort(java.util.Comparator.comparingLong(BankActivity::time).reversed());
+        return rows;
+    }
+
+    public record OutstandingBills(BigInteger total, int count, BigInteger system, int systemCount) {}
+    public OutstandingBills outstandingCentralBills() {
+        CurrencyDef central = primaryVirtual();
+        var systemIds = new java.util.HashSet<>(directSystemBills);
+        for (var entry : externalInstruments.entrySet()) {
+            var row = entry.getValue().getAsJsonObject();
+            if (row.has("instrument") && marketReceipts.getOrDefault(entry.getKey(), "").startsWith("outside-instrument-v1|"))
+                systemIds.add(UUID.fromString(row.get("instrument").getAsString()));
+        }
+        BigInteger total = BigInteger.ZERO, system = BigInteger.ZERO;
+        int count = 0, systemCount = 0;
+        for (CheckRecord c : checks.all()) {
+            if (central == null || !central.id().equals(c.currency()) || c.status() != CheckStatus.OUTSTANDING) continue;
+            total = total.add(c.amount()); count++;
+            if (systemIds.contains(c.id())) { system = system.add(c.amount()); systemCount++; }
+        }
+        return new OutstandingBills(total, count, system, systemCount);
+    }
     /** Sheets of stackable paper still out. Keyed by series, not by individual item. */
     private final Map<String, BigInteger> notePaper = new LinkedHashMap<>();
     private final List<OutletPoint> outlets = new ArrayList<>();
@@ -463,6 +506,7 @@ public final class BankBooks {
         creditBalance(player, currency, amount);
         addSavings(currency, amount);
         recomputeOfficialNoteQuote();
+        recordCash(player, "deposit", currency, amount);
         return TxResult.ok(amount, "Deposited " + label(def) + " " + CompactFormat.format(amount));
     }
 
@@ -488,6 +532,7 @@ public final class BankBooks {
         debitBalance(player, currency, give);
         addSavings(currency, give.negate());
         recomputeOfficialNoteQuote();
+        recordCash(player, "withdraw", currency, give);
         return TxResult.ok(give, "Withdrew " + label(def) + " " + CompactFormat.format(give));
     }
 
@@ -526,6 +571,7 @@ public final class BankBooks {
         debitBalance(player, "diamond", diamonds);
         addSavings("diamond", diamonds.negate());
         recomputeOfficialNoteQuote();
+        recordCash(player, "withdraw", "diamond", diamonds);
         return TxResult.ok(diamonds, "Withdrew diamonds " + CompactFormat.format(diamonds));
     }
 
@@ -547,6 +593,7 @@ public final class BankBooks {
         NoteSeries.PaperSlip slip = NoteSeries.plan(amount);
         debitBalance(player, note.id(), slip.value());
         addPaper(NoteSeries.key(note.id(), null, slip.face()), slip.sheets());
+        recordCash(player, "withdraw", note.id(), slip.value());
         return PaperTake.ok(slip.value(), slip.face(), slip.sheets(), "Withdrew bank-note paper");
     }
 
@@ -568,6 +615,7 @@ public final class BankBooks {
         NoteSeries.PaperSlip slip = NoteSeries.plan(amount);
         addHolding(noteId, player, slip.value().negate());
         addPaper(NoteSeries.key(null, noteId, slip.face()), slip.sheets());
+        recordCash(player, "withdraw", "personal:" + noteId, slip.value());
         return PaperTake.ok(slip.value(), slip.face(), slip.sheets(), "Withdrew personal-note paper");
     }
 
@@ -603,6 +651,7 @@ public final class BankBooks {
         } else {
             addHolding(presented.personalNote(), player, value);
         }
+        recordCash(player, "deposit", presented.central() ? presented.currency() : "personal:" + presented.personalNote(), value);
         boolean trimmed = accept.compareTo(sheets) < 0;
         return new TxResult(true, trimmed ? "trimmed" : "ok", "Deposited bank-note paper", value, null, BigInteger.ZERO);
     }
@@ -901,6 +950,7 @@ public final class BankBooks {
             supply(currency).addLiability(amount);
         }
         CheckRecord record = checks.create(currency, amount, player, issuerName, payee, System.currentTimeMillis());
+        if (!fromBalance) directSystemBills.add(record.id());
         return TxResult.okInstrument(amount, "Issued a " + label(def) + " bill for " + CompactFormat.format(amount), record.id());
     }
 
@@ -5492,12 +5542,12 @@ public final class BankBooks {
      */
     public BigDecimal centralM0Exact() {
         CurrencyDef note = primaryVirtual();
-        return note == null ? Money.ZERO : Money.of(paperValue(note.id()));
+        return note == null ? Money.ZERO : Money.of(new BigDecimal(paperValue(note.id())).add(externalCashExact(note.id())));
     }
 
     public BigDecimal centralDepositsExact() {
         CurrencyDef note = primaryVirtual();
-        return note == null ? Money.ZERO : bookSavingsExact(note.id());
+        return note == null ? Money.ZERO : Money.of(bookSavingsExact(note.id()).subtract(externalCashExact(note.id())));
     }
 
     public BigDecimal centralM1Exact() {
@@ -5527,17 +5577,15 @@ public final class BankBooks {
     }
 
     public BigInteger centralM0() {
-        CurrencyDef note = primaryVirtual();
-        return note == null ? BigInteger.ZERO : paperValue(note.id());
+        return Money.units(centralM0Exact());
     }
 
     public BigInteger centralDeposits() {
-        CurrencyDef note = primaryVirtual();
-        return note == null ? BigInteger.ZERO : bookSavings(note.id());
+        return Money.units(centralDepositsExact());
     }
 
     public BigInteger centralM1() {
-        return centralM0().add(centralDeposits());
+        return Money.units(centralM1Exact());
     }
 
     /** M1 plus personal notes and commodity savings, valued in central notes at the live rate. */
@@ -5976,6 +6024,16 @@ public final class BankBooks {
         });
         root.add("personalOffers", offerJson);
 
+        if (!cashActivity.isEmpty()) {
+            JsonArray activity = new JsonArray();
+            for (var entry : cashActivity) {
+                JsonObject row = new JsonObject();
+                row.addProperty("time", entry.time()); row.addProperty("player", entry.player().toString());
+                row.addProperty("action", entry.action()); row.addProperty("currency", entry.currency());
+                row.addProperty("amount", entry.amount().toString()); activity.add(row);
+            }
+            root.add("cashActivity", activity);
+        }
         JsonArray checkJson = new JsonArray();
         for (CheckRecord record : checks.all()) {
             JsonObject o = new JsonObject();
@@ -5987,6 +6045,7 @@ public final class BankBooks {
             o.add("payee", record.payee() == null ? JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(record.payee().toString()));
             o.addProperty("issuedAt", record.issuedAtEpochMs());
             o.addProperty("status", record.status().name());
+            if (directSystemBills.contains(record.id())) o.addProperty("systemIssued", true);
             o.add("redeemedBy", record.redeemedBy() == null ? JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(record.redeemedBy().toString()));
             o.addProperty("redeemedAt", record.redeemedAtEpochMs());
             checkJson.add(o);
@@ -6349,9 +6408,20 @@ public final class BankBooks {
                 }
             }
         }
+        if (root.has("cashActivity")) {
+            JsonArray activity = root.getAsJsonArray("cashActivity");
+            for (int i = Math.max(0, activity.size() - MAX_CASH_ACTIVITY); i < activity.size(); i++) {
+                var row = activity.get(i).getAsJsonObject();
+                books.cashActivity.add(new BankActivity(row.get("time").getAsLong(),
+                        UUID.fromString(row.get("player").getAsString()), "", row.get("action").getAsString(),
+                        row.get("currency").getAsString(), new BigInteger(row.get("amount").getAsString()), null));
+            }
+        }
         if (root.has("checks")) {
             for (JsonElement element : root.getAsJsonArray("checks")) {
                 JsonObject o = element.getAsJsonObject();
+                if (o.has("systemIssued") && o.get("systemIssued").getAsBoolean())
+                    books.directSystemBills.add(UUID.fromString(o.get("id").getAsString()));
                 books.checks.restore(new CheckRecord(
                         UUID.fromString(o.get("id").getAsString()),
                         o.get("currency").getAsString(),
@@ -6527,9 +6597,14 @@ public final class BankBooks {
         return Money.units(bookSavingsExact(currency));
     }
 
+    private BigDecimal externalCashExact(String currency) {
+        return externalTotals.entrySet().stream().filter(e -> e.getKey().endsWith("|"+currency))
+                .map(Map.Entry::getValue).reduce(Money.ZERO, BigDecimal::add);
+    }
+
     private BigDecimal bookSavingsExact(String currency) {
         return Money.of(claimsExact(currency)
-                .add(externalTotals.entrySet().stream().filter(e->e.getKey().endsWith("|"+currency)).map(Map.Entry::getValue).reduce(Money.ZERO,BigDecimal::add))
+                .add(externalCashExact(currency))
                 .add(settledAssets.values().stream().map(row -> row.getOrDefault(currency, Money.ZERO)).reduce(Money.ZERO, BigDecimal::add))
                 .add(shopExact(currency))
                 .add(landGrantExact(currency))

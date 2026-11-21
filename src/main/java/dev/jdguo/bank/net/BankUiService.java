@@ -71,6 +71,14 @@ public final class BankUiService {
                 }
             }
             case "admin-players-close" -> session.playerListOpen = false;
+            case "admin-activity" -> {
+                if (parts.length != 2) return;
+                try {
+                    session.activityPage = Math.max(0, Integer.parseInt(parts[1]));
+                    session.activityOpen = true;
+                } catch (NumberFormatException badPage) { return; }
+            }
+            case "admin-activity-close" -> session.activityOpen = false;
             case "page" -> page(player, session, parts);
             case "close" -> BankUiNetwork.forget(player);
             case "welcome-claim", "admin-welcome-set" -> welcomeGift(player, session, parts);

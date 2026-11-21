@@ -45,7 +45,7 @@ public final class BankAdminScreen extends Screen {
     }
     private String name() { return "note".equals(selected) ? centralName() : "copper".equals(selected) ? "铜锭" : "钻石"; }
     private int left() { return Math.max(10, (width - bodyWidth()) / 2); }
-    private int bodyWidth() { return Math.min(page == 0 ? 720 : 420, width - 20); }
+    private int bodyWidth() { return Math.min(page == 0 || page == 11 ? 720 : 420, width - 20); }
     private void button(String label, int x, int y, int w, Runnable action) {
         ButtonWidget button = addDrawableChild(ButtonWidget.builder(Text.literal(textRenderer.trimToWidth(label, Math.max(1, w - 8))), b -> action.run()).dimensions(x, y, w, 20).build());
         if (label.startsWith("确认")) confirmation = button;
@@ -58,6 +58,11 @@ public final class BankAdminScreen extends Screen {
         BankUiClient.send("admin-policy-cancel");
         BankUiClient.send("admin-adjust-cancel");
         BankUiClient.send("admin-funding-cancel");
+        if (previous == 11 && next != 11) {
+            data.remove("adminActivity");
+            BankUiClient.send("admin-activity-close");
+        }
+        if (next == 11) BankUiClient.send("admin-activity 0");
         if (next == 10) BankUiClient.send("admin-toll-open");
         else if (previous == 10) {
             data.remove("tollBalance"); data.remove("tollPayments"); data.remove("tollSweepExpected");
@@ -77,11 +82,13 @@ public final class BankAdminScreen extends Screen {
         button("更名设置", x, 6, 76, () -> switchPage(5));
         button("玩家存款", x + 80, 6, 76, () -> BankUiClient.send("admin-players 0"));
         button("关闭", x + w - 50, 6, 50, this::close);
-        String[] tabs = {"总览", "发行管理", "准备金", "回收", "兑付"};
-        int tabW = (w - 16) / 5;
+        String[] tabs = data.has("adminActivitySupported")
+                ? new String[]{"总览", "发行管理", "准备金", "回收", "兑付", "账目明细"}
+                : new String[]{"总览", "发行管理", "准备金", "回收", "兑付"};
+        int tabW = (w - 4 * (tabs.length - 1)) / tabs.length;
         for (int i = 0; i < tabs.length; i++) {
-            final int tab = i;
-            button((page == i ? "• " : "") + tabs[i], x + i * (tabW + 4), 32, tabW, () -> switchPage(tab));
+            final int tab = i == 5 ? 11 : i;
+            button((page == tab ? "• " : "") + tabs[i], x + i * (tabW + 4), 32, tabW, () -> switchPage(tab));
         }
         textTop = 64;
         if (page == 0) {
@@ -95,6 +102,14 @@ public final class BankAdminScreen extends Screen {
             if (toll) button("收费专户", x + 2 * (fundingWidth + 4), height - 30, fundingWidth, () -> switchPage(10));
             if (welcome) button("礼包设置", x + (toll ? 3 : 2) * (fundingWidth + 4), height - 30, fundingWidth,
                     () -> client.setScreen(new WelcomeGiftScreen(data, this)));
+        } else if (page == 11) {
+            var activity = data.getAsJsonObject("adminActivity");
+            int index = activity == null ? 0 : activity.get("page").getAsInt();
+            int pages = activity == null ? 1 : activity.get("pages").getAsInt();
+            int chunk = (w - 8) / 3;
+            if (index > 0) button("上一页", x, height - 30, chunk, () -> requestActivity(index - 1));
+            button("刷新 " + (index + 1) + "/" + pages, x + chunk + 4, height - 30, chunk, () -> requestActivity(index));
+            if (index + 1 < pages) button("下一页", x + 2 * (chunk + 4), height - 30, chunk, () -> requestActivity(index + 1));
         } else if (page == 1) {
             adjustmentPage(x, w);
         } else if (page == 2) {
@@ -408,6 +423,11 @@ public final class BankAdminScreen extends Screen {
             super.render(context, mx, my, delta);
             return;
         }
+        if (page == 11 && width >= 250 && height >= 230) {
+            renderActivity(context, x, w, mx, my);
+            super.render(context, mx, my, delta);
+            return;
+        }
         int contentHeight = 0;
         for (String line : lines) contentHeight += Math.max(1, textRenderer.wrapLines(Text.literal(line == null ? "" : line), w).size()) * 12 + 4;
         scroll = Math.min(scroll, Math.max(0, contentHeight - (height - 46 - textTop)));
@@ -422,6 +442,49 @@ public final class BankAdminScreen extends Screen {
         context.disableScissor();
         if (contentHeight > height - 46 - textTop) context.drawText(textRenderer, "滚轮查看详情", x, height - 42, 0xFFAAAAAA, false);
         super.render(context, mx, my, delta);
+    }
+    private void requestActivity(int index) {
+        scroll = 0;
+        BankUiClient.send("admin-activity " + index);
+    }
+    private void renderActivity(DrawContext context, int x, int w, int mx, int my) {
+        var activity = data.getAsJsonObject("adminActivity");
+        String hint = "存取最近 2000 笔（从新版起）；开票、兑票显示票面金额，含可追溯旧票。";
+        context.drawText(textRenderer, textRenderer.trimToWidth(hint, w), x, 58, 0xFFE8D090, false);
+        if (activity == null) { context.drawText(textRenderer, "正在读取账目…", x, 79, 0xFFE6E6E6, false); return; }
+        var rows = activity.getAsJsonArray("rows");
+        int[] columns = {0, w * 24 / 100, w * 43 / 100, w * 58 / 100, w * 77 / 100, w};
+        String[] headers = {"时间", "玩家", "操作", "币种", "金额"};
+        for (int i = 0; i < headers.length; i++)
+            context.drawText(textRenderer, headers[i], x + columns[i] + 3, 74, 0xFFE8D090, false);
+        int top = 88, bottom = height - 40;
+        scroll = Math.min(scroll, Math.max(0, rows.size() * 18 - (bottom - top)));
+        context.enableScissor(x, top, x + w, bottom);
+        int y = top - scroll, rowIndex = 0;
+        String tooltip = null;
+        for (var value : rows) {
+            var row = value.getAsJsonObject();
+            String action = switch (row.get("action").getAsString()) {
+                case "deposit" -> "存入"; case "withdraw" -> "取出";
+                case "billIssue" -> "开票"; case "billRedeem" -> "兑票"; default -> "其他";
+            };
+            var time = java.time.Instant.ofEpochMilli(row.get("time").getAsLong())
+                    .atZone(java.time.ZoneId.systemDefault());
+            String[] cells = {time.format(java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm:ss")),
+                    row.get("name").getAsString(), action, row.get("currency").getAsString(), row.get("amount").getAsString()};
+            context.fill(x, y, x + w, y + 17, rowIndex++ % 2 == 0 ? 0xD91A2531 : 0xD925303C);
+            for (int i = 0; i < cells.length; i++)
+                context.drawText(textRenderer, textRenderer.trimToWidth(cells[i], columns[i+1] - columns[i] - 7),
+                        x + columns[i] + 3, y + 4, 0xFFE6E6E6, false);
+            if (mx >= x && mx < x + w && my >= top && my < bottom && my >= y && my < y + 17)
+                tooltip = time.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z"))
+                        + " | " + cells[1] + " | " + action + " " + cells[4] + " " + cells[3]
+                        + (row.has("bill") ? " | 票号 " + row.get("bill").getAsString() : "");
+            y += 18;
+        }
+        if (rows.size() == 0) context.drawText(textRenderer, "暂无记录", x + 3, top + 5, 0xFFE6E6E6, false);
+        context.disableScissor();
+        if (tooltip != null) context.drawTooltip(textRenderer, BankOverview.wrap(tooltip, Math.min(360, width - 24), textRenderer::getWidth).stream().<Text>map(Text::literal).toList(), mx, my);
     }
     private void renderOverview(DrawContext context, int mouseX, int mouseY) {
         int x = left(), available = height - 100;

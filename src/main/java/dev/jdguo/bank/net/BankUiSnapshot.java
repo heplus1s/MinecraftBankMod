@@ -115,6 +115,12 @@ public final class BankUiSnapshot {
             o.add("systemFundingLog", recentFunding(fundingLog, false));
             o.add("systemFundingMovements", recentFunding(fundingLog, true));
             o.addProperty("m0", Money.stored(books.centralM0Exact()));
+            var bills = books.outstandingCentralBills();
+            o.addProperty("outstandingBillTotal", bills.total().toString());
+            o.addProperty("outstandingBillCount", bills.count());
+            o.addProperty("systemBillTotal", bills.system().toString());
+            o.addProperty("systemBillCount", bills.systemCount());
+            o.addProperty("adminActivitySupported", true);
             o.addProperty("m1", Money.stored(books.centralM1Exact()));
             o.addProperty("m2", CompactFormat.formatAggregate(books.centralM2()));
             o.addProperty("frozen", books.frozen());

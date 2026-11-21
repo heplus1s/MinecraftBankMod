@@ -1,10 +1,10 @@
 import json,zipfile,pathlib
 root=pathlib.Path(__file__).resolve().parents[1]
 meta=json.loads((root/'src/main/resources/fabric.mod.json').read_text())
-jar=root/('build/libs/'+meta['id']+'-1.0.28.jar')
+jar=root/('build/libs/'+meta['id']+'-1.0.29.jar')
 with zipfile.ZipFile(jar) as z:
  m=json.loads(z.read('fabric.mod.json'))
- assert m['version']=='1.0.28'
+ assert m['version']=='1.0.29'
  assert m['environment']=='*'
  assert 'dev/jdguo/bank/market/ExternalClearing.class' in z.namelist()
  assert 'dev/jdguo/bank/market/ArcadeClearing.class' in z.namelist()

@@ -1,0 +1,4 @@
+- M0 now includes outstanding physical central notes and central-note balances held by services through the external clearing interface. M1/M2 totals and existing balances are unchanged.
+- The administrator dashboard now shows outstanding central-note bills and the confirmed system-issued subtotal. Older tickets without provenance remain in the overall total.
+- Administrator-only activity list for deposits, withdrawals, bill issuance and redemption. Historical bill entries come from existing check records; new cash activity retains the latest 2,000 entries.
+- Minecraft 1.20.1 / Java 17 / Fabric Loader 0.15.10+ / Fabric API. Use the integrated JAR on both server and client to see the new dashboard. No ledger conversion or replay is needed.

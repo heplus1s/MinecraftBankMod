@@ -299,8 +299,8 @@ public final class BankPhrases {
                     ? "  发行准备金 " + CompactFormat.format(supply.reserve())
                             + "  储蓄保管 " + CompactFormat.format(supply.depositVault())
                             + "  储蓄总池 " + CompactFormat.format(books.savingsPool(def.id()))
-                    : "  M0 " + CompactFormat.formatAggregate(books.centralM0())
-                            + "  M1 " + CompactFormat.formatAggregate(books.centralM1())
+                    : "  M0 " + CompactFormat.formatAggregate(books.centralM0Exact())
+                            + "  M1 " + CompactFormat.formatAggregate(books.centralM1Exact())
                             + "  M2 " + CompactFormat.formatAggregate(books.centralM2())
                             + "  储蓄总池 " + CompactFormat.format(books.savingsPool(def.id()))
                             + "  尚可发行 " + CompactFormat.format(books.backedRoom(def));
@@ -308,8 +308,8 @@ public final class BankPhrases {
                     ? "  issuance " + CompactFormat.format(supply.reserve())
                             + "  vault " + CompactFormat.format(supply.depositVault())
                             + "  savings pool " + CompactFormat.format(books.savingsPool(def.id()))
-                    : "  M0 " + CompactFormat.formatAggregate(books.centralM0())
-                            + "  M1 " + CompactFormat.formatAggregate(books.centralM1())
+                    : "  M0 " + CompactFormat.formatAggregate(books.centralM0Exact())
+                            + "  M1 " + CompactFormat.formatAggregate(books.centralM1Exact())
                             + "  M2 " + CompactFormat.formatAggregate(books.centralM2())
                             + "  savings pool " + CompactFormat.format(books.savingsPool(def.id()))
                             + "  issuable " + CompactFormat.format(books.backedRoom(def));
