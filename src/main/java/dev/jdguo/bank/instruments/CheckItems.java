@@ -31,12 +31,12 @@ public final class CheckItems {
         nbt.putString("author", "中央银行");
         nbt.putInt("generation", 3);
         nbt.putBoolean("resolved", true);
-        String payee = record.payee() == null ? "持票人" : record.payee().toString();
+        String payee = record.payee() == null ? "持票人兑付" : "指定收款人兑付";
         Text page = Text.literal("中央银行汇票\n\n币种: " + name
                 + "\n金额: " + record.amount().toString()
-                + "\n显示: " + amount
-                + "\n出票: " + record.issuerName()
                 + "\n抬头: " + payee
+                + (record.payee() == null ? "" : "\n收款人: " + record.payee())
+                + "\n出票: " + record.issuerName()
                 + "\n编号: " + record.id()
                 + "\n\n凭此票向网点兑付一次。复制件无效。");
         NbtList pages = new NbtList();

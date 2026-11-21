@@ -59,6 +59,7 @@ public final class BankBooks {
     private final Map<String,BigDecimal> externalTotals=new LinkedHashMap<>();
     private final JsonObject externalSpending=new JsonObject();
     private final JsonObject externalInstruments=new JsonObject();
+    private final java.util.Set<String> externalBillSerials=new java.util.HashSet<>();
     private final Map<String, Supply> supplies = new LinkedHashMap<>();
     private final Map<UUID, Map<String, BigDecimal>> accounts = new LinkedHashMap<>();
     /** Per-player reserves for a later personal mint. Not savings, and not the central vault. */
@@ -911,7 +912,7 @@ public final class BankBooks {
             case ALREADY -> TxResult.fail("already_redeemed", "This bill was already redeemed");
             case WRONG_PAYEE -> TxResult.fail("wrong_payee", "This bill isn't made out to you");
             case OK -> {
-                if ("note".equals(presented.currency())) {
+                if (!externalBillSerials.contains(presented.id().toString()) && "note".equals(presented.currency())) {
                     TxResult payout = cashNotes(player, presented.amount());
                     if (payout.success()) checks.redeem(player, presented, System.currentTimeMillis());
                     yield payout;
@@ -2053,7 +2054,7 @@ public final class BankBooks {
         marketReceipts.put(ref,sig);
         return TxResult.ok(Money.units(amount),"已存入玩家储蓄");
     }
-    /** Turns the partner's circulating cash into an equally valued paper note or named bill. */
+    /** Turns the partner's circulating cash into an equally valued paper note or bearer bill. */
     public TxResult prepareExternalInstrument(String partner,UUID player,BigInteger amount,String mode,String ref){
         if(player==null||amount==null||amount.signum()<=0||amount.compareTo(BigInteger.valueOf(100000))>0
             ||!validExternalReference(partner,ref)||!("cash".equals(mode)||"bill".equals(mode)))
@@ -2066,7 +2067,7 @@ public final class BankBooks {
         BigDecimal debit=new BigDecimal(amount);
         if(outsideTotal(partner,currency).compareTo(debit)<0)return TxResult.fail("insufficient_funds","外部资金不足");
         addExternal(partner,currency,debit.negate());
-        queueExternalInstrument(partner,player,player,amount,mode,ref,sig,currency);
+        queueExternalInstrument(partner,player,player,null,amount,mode,ref,sig,currency);
         return TxResult.ok(amount,"票据已登记待领");
     }
     /** Caller must be the authenticated owner's explicitly confirmed server-side operation. */
@@ -2082,7 +2083,7 @@ public final class BankBooks {
         if(balanceExact(owner,currency).compareTo(new BigDecimal(amount))<0)
             return TxResult.fail("insufficient_funds","央行券储蓄余额不足");
         debitBalance(owner,currency,amount);
-        queueExternalInstrument(partner,owner,payee,amount,"bill",ref,sig,currency);
+        queueExternalInstrument(partner,owner,payee,payee,amount,"bill",ref,sig,currency);
         return TxResult.ok(amount,"汇票已登记待领");
     }
     private boolean hasExternalDeliverySpace(String partner,UUID recipient){
@@ -2094,12 +2095,13 @@ public final class BankBooks {
         }
         return true;
     }
-    private void queueExternalInstrument(String partner,UUID issuer,UUID recipient,BigInteger amount,String mode,String ref,String sig,String currency){
+    private void queueExternalInstrument(String partner,UUID issuer,UUID recipient,UUID payee,BigInteger amount,String mode,String ref,String sig,String currency){
         var row=new JsonObject();row.addProperty("mode",mode);row.addProperty("partner",partner);row.addProperty("player",recipient.toString());
         row.addProperty("currency",currency);row.addProperty("amount",amount.toString());row.addProperty("delivered",false);
         if(mode.equals("bill")){
-            var ticket=checks.create(currency,amount,issuer,"中央银行",recipient,System.currentTimeMillis());
+            var ticket=checks.create(currency,amount,issuer,"中央银行",payee,System.currentTimeMillis());
             row.addProperty("instrument",ticket.id().toString());
+            externalBillSerials.add(ticket.id().toString());
         }else addPaper(NoteSeries.key(currency,null,amount),BigInteger.ONE);
         externalInstruments.add(ref,row);marketReceipts.put(ref,sig);
     }
@@ -6137,7 +6139,12 @@ public final class BankBooks {
         }
         books.lastInterestDay = root.has("lastInterestDay") ? root.get("lastInterestDay").getAsLong() : -1L;
         // Missing field intentionally means zero. Customer deposits must never be reclassified as equity.
-        if(root.has("externalInstruments"))root.getAsJsonObject("externalInstruments").entrySet().forEach(e->books.externalInstruments.add(e.getKey(),e.getValue().deepCopy()));
+        if(root.has("externalInstruments"))root.getAsJsonObject("externalInstruments").entrySet().forEach(e->{
+            var row=e.getValue().getAsJsonObject().deepCopy();
+            books.externalInstruments.add(e.getKey(),row);
+            if(row.has("instrument") && row.get("instrument").isJsonPrimitive())
+                books.externalBillSerials.add(row.get("instrument").getAsString());
+        });
         if(root.has("externalSpending"))root.getAsJsonObject("externalSpending").entrySet().forEach(e->books.externalSpending.add(e.getKey(),e.getValue().deepCopy()));
         if(root.has("externalCirculation"))root.getAsJsonObject("externalCirculation").entrySet().forEach(e->{
             BigDecimal n=Money.parse(e.getValue().getAsString());

@@ -52,7 +52,7 @@ public final class ExternalClearing {
         return saved;
     }
 
-    /** Reserve an authorized payout from the caller's balance as paper or a registered named bill. */
+    /** Reserve an authorized payout from the caller's balance as paper or a registered bearer bill. */
     public static TxResult issueInstrument(String mod,ServerPlayerEntity player,String mode,BigInteger amount,String reference){
         return partner(mod)&&live(player)
                 ?BankRuntime.transact(b->b.prepareExternalInstrument(mod,player.getUuid(),amount,mode,reference))
