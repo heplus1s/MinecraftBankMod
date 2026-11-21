@@ -1960,6 +1960,49 @@ public final class BankBooks {
         return TxResult.ok(Money.units(q.debit()),"外部消费已结算");
     }
 
+    public JsonObject quoteExternalBill(UUID buyer,PresentedCheck presented){
+        var out=new JsonObject();
+        var primary=primaryVirtual();
+        var status=checks.validate(buyer,presented);
+        if(buyer==null||presented==null||primary==null||!primary.id().equals(presented.currency())){
+            out.addProperty("ok",false);out.addProperty("message","请主手持有中央银行签发的央行券汇票");return out;
+        }
+        if(status!=CheckBook.RedeemCode.OK){
+            out.addProperty("ok",false);
+            out.addProperty("message",switch(status){
+                case WRONG_PAYEE -> "此汇票不是付给你的";
+                case ALREADY -> "此汇票已兑付";
+                default -> "无法核验此汇票";
+            });return out;
+        }
+        out.addProperty("ok",true);out.addProperty("id",presented.id().toString());
+        out.addProperty("face",presented.amount().toString());out.addProperty("currency",primary.id());
+        return out;
+    }
+
+    /** One bank checkpoint moves the instrument into venue funds and player savings. */
+    public TxResult payExternalBill(String partner,UUID buyer,PresentedCheck bill,BigDecimal cost,String reference){
+        if(!validExternalReference(partner,reference)||buyer==null||bill==null||cost==null
+                ||cost.signum()<=0||cost.scale()>Money.SCALE||cost.precision()>15)
+            return TxResult.fail("invalid","汇票付款参数无效");
+        String signature="outside-bill-v1|"+partner+"|"+buyer+"|"+bill.id()+"|"+bill.currency()+"|"+bill.amount()
+                +"|"+bill.issuer()+"|"+bill.payee()+"|"+Money.stored(cost);
+        String prior=marketReceipts.get(reference);
+        if(prior!=null)return prior.equals(signature)?TxResult.ok(Money.units(cost),"该汇票付款已入账")
+                :TxResult.fail("reference_conflict","流水与汇票不匹配");
+        var quote=quoteExternalBill(buyer,bill);
+        if(!quote.get("ok").getAsBoolean())return TxResult.fail("arcade_invalid",quote.get("message").getAsString());
+        BigDecimal change=new BigDecimal(bill.amount()).subtract(cost);
+        if(change.signum()<0)return TxResult.fail("invalid","票面金额不足");
+        if(checks.redeem(buyer,bill,System.currentTimeMillis())!=CheckBook.RedeemCode.OK)
+            return TxResult.fail("arcade_invalid","无法核销汇票");
+        addExternal(partner,bill.currency(),cost);
+        if(change.signum()>0)creditBalance(buyer,bill.currency(),change);
+        recordExternalSpending(buyer,partner,bill.currency(),cost,reference);
+        marketReceipts.put(reference,signature);
+        return TxResult.ok(Money.units(cost),"汇票已核销，找零已入储蓄");
+    }
+
     private boolean validExternalReference(String partner,String ref){
         return partner!=null && partner.matches("[a-z][a-z0-9_-]{1,31}") && ref!=null &&
             ref.startsWith(partner+"_") && ref.substring(partner.length()+1).matches("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
