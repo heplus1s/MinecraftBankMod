@@ -38,7 +38,7 @@ public final class ArcadeClearing {
     /** Invert the existing executable, rounded collateral quote; never debit during search. */
     public static String quoteForNoteValue(UUID who,String coin,String targetText) {
         try {
-            if(player(who)==null||coin==null||!coin.startsWith("personal:"))return reject("该币种不能按游戏点数量报价");
+            if(player(who)==null||coin==null||!coin.startsWith("personal:"))return reject("该币种不支持按指定金额报价");
             var target=new BigDecimal(targetText);
             if(target.signum()<=0||target.scale()>4||target.precision()>15)return reject("兑换金额超出范围");
             var books=BankRuntime.books();
@@ -61,7 +61,7 @@ public final class ArcadeClearing {
                 if(fx==null||fx.signum()<=0)throw new IllegalArgumentException("暂无可用中央牌价，未扣款");
                 return backing.amount().multiply(fx).setScale(4,RoundingMode.DOWN);
             });
-            if(debit==null)return reject("该个人币目前无法精确兑换所选游戏点；请调整数量或改用央行券。未扣款");
+            if(debit==null)return reject("按当前汇率和结算精度，该币种无法精确结算指定金额。请调整金额或改用其他币种，未扣款");
             String quoted=ExternalClearing.quote(MOD,player(who),coin,debit);
             var response=JsonParser.parseString(quoted).getAsJsonObject();
             if(response.has("message")&&response.get("message").getAsString().contains("可用个人币不足"))

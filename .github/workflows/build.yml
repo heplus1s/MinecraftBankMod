@@ -20,7 +20,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: integrated-mod-jars
-          path: build/libs/bankmod-1.0.25.jar
+          path: build/libs/bankmod-1.0.26.jar
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[no-release]')
     needs: build
@@ -34,14 +34,14 @@ jobs:
           name: integrated-mod-jars
           path: release-jars
       - name: Record checksum
-        run: (cd release-jars && sha256sum bankmod-1.0.25.jar > SHA256SUMS.txt)
+        run: (cd release-jars && sha256sum bankmod-1.0.26.jar > SHA256SUMS.txt)
       - name: Publish versioned release without replacing existing tag
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if gh release view v1.0.25 >/dev/null 2>&1; then
-            echo "Release v1.0.25 already exists; refusing to replace it."
+          if gh release view v1.0.26 >/dev/null 2>&1; then
+            echo "Release v1.0.26 already exists; refusing to replace it."
             exit 1
           fi
-          gh release create v1.0.25 release-jars/bankmod-1.0.25.jar release-jars/SHA256SUMS.txt --target "$GITHUB_SHA" --title "v1.0.25 账房汇票结算" --notes-file RELEASE_NOTES_1.0.25.md
+          gh release create v1.0.26 release-jars/bankmod-1.0.26.jar release-jars/SHA256SUMS.txt --target "$GITHUB_SHA" --title "v1.0.26 银行收付提示更新" --notes-file RELEASE_NOTES_1.0.26.md
