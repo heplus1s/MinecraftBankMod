@@ -2,7 +2,6 @@ package dev.jdguo.bank.market;
 
 import com.google.gson.JsonArray;
 import dev.jdguo.bank.ledger.TxResult;
-import dev.jdguo.bank.instruments.CheckItems;
 import com.google.gson.JsonObject;
 import dev.jdguo.bank.persistence.BankRuntime;
 import java.math.BigDecimal;
@@ -86,23 +85,16 @@ public final class ArcadeClearing {
     private static String reject(String message){
         var o=new JsonObject();o.addProperty("ok",false);o.addProperty("message",message);return o.toString();
     }
-    public static String billQuote(UUID who){
-        var p=player(who);
-        return p==null?reject("银行账本未就绪"):BankRuntime.books()
-                .quoteExternalBill(who,CheckItems.read(p.getMainHandStack())).toString();
-    }
-    public static String exchangeBill(UUID who,String serial,String cost,String reference){
-        var p=player(who);
-        if(p==null)return "permission";
-        var hand=p.getMainHandStack();
-        var bill=CheckItems.read(hand);
-        if(bill==null||!bill.id().toString().equals(serial))return "stale_quote";
-        var saved=BankRuntime.transact(b->b.payExternalBill(MOD,who,bill,new BigDecimal(cost),reference));
-        // The durable redemption registry, rather than item deletion, prevents replay after a crash.
-        if(saved.success()){
-            hand.decrement(1);p.getInventory().markDirty();
-        }
-        return result(saved);
+    /** @deprecated Use the partner-scoped bank API. */
+    @Deprecated
+    public static String billQuote(UUID who){return ExternalClearing.quoteBill(MOD,player(who));}
+    /** @deprecated Use the partner-scoped bank API with the full face value. */
+    @Deprecated
+    public static String exchangeBill(UUID who,String serial,String face,String reference){
+        try{
+            return result(ExternalClearing.receiveBill(MOD,player(who),UUID.fromString(serial),
+                    new BigDecimal(face).toBigIntegerExact(),reference));
+        }catch(IllegalArgumentException|ArithmeticException invalid){return "invalid";}
     }
     public static String exchange(UUID who,String coin,String amount,String fingerprint,String ref) {
         return result(ExternalClearing.pay(MOD,player(who),coin,new BigDecimal(amount),fingerprint,ref));
@@ -117,16 +109,14 @@ public final class ArcadeClearing {
     public static String redeem(UUID actor,String amount,String ref) {
         return result(ExternalClearing.credit(MOD,player(actor),new BigDecimal(amount),ref));
     }
+    /** @deprecated Use the partner-scoped bank API. */
+    @Deprecated
     public static String instrument(UUID who,String mode,String amount,String ref){
-        var target=player(who);
-        if(!ExternalClearing.live(target))return "permission";
-        return result(BankRuntime.transact(b->b.prepareExternalInstrument(MOD,who,new BigDecimal(amount).toBigIntegerExact(),mode,ref)));
+        return result(ExternalClearing.issueInstrument(MOD,player(who),mode,new BigDecimal(amount).toBigIntegerExact(),ref));
     }
-    public static String claim(UUID who){
-        var p=player(who);
-        if(!ExternalClearing.live(p))return "银行尚未就绪";
-        return ExternalInstrumentDelivery.claim(MOD,p);
-    }
+    /** @deprecated Use the partner-scoped bank API. */
+    @Deprecated
+    public static String claim(UUID who){return ExternalClearing.claimInstrument(MOD,player(who));}
     public static String tax(String amount,String ref) {
         return result(ExternalClearing.arcadeTax(new BigDecimal(amount),ref));
     }

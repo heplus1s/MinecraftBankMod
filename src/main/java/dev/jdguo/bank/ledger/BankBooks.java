@@ -2056,32 +2056,52 @@ public final class BankBooks {
     /** Turns the partner's circulating cash into an equally valued paper note or named bill. */
     public TxResult prepareExternalInstrument(String partner,UUID player,BigInteger amount,String mode,String ref){
         if(player==null||amount==null||amount.signum()<=0||amount.compareTo(BigInteger.valueOf(100000))>0
-            ||!validExternalReference(partner,ref)||!java.util.Set.of("cash","bill").contains(mode))
+            ||!validExternalReference(partner,ref)||!("cash".equals(mode)||"bill".equals(mode)))
             return TxResult.fail("invalid","无效柜台票据");
         String sig="outside-instrument-v1|"+partner+"|"+player+"|"+amount+"|"+mode;
         String prior=marketReceipts.get(ref);
         if(prior!=null)return prior.equals(sig)&&externalInstruments.has(ref)?TxResult.ok(amount,"该凭证已登记"):TxResult.fail("reference_conflict","流水冲突");
-        int waiting=0;
-        for(var e:externalInstruments.entrySet()){
-            var row=e.getValue().getAsJsonObject();
-            if(partner.equals(row.get("partner").getAsString())&&player.toString().equals(row.get("player").getAsString())
-                  &&!row.get("delivered").getAsBoolean())waiting++;
-        }
-        if(waiting>=5)return TxResult.fail("invalid","请先领取已有票据");
+        if(!hasExternalDeliverySpace(partner,player))return TxResult.fail("invalid","请先领取已有票据");
         String currency=centralNoteId();
         BigDecimal debit=new BigDecimal(amount);
         if(outsideTotal(partner,currency).compareTo(debit)<0)return TxResult.fail("insufficient_funds","外部资金不足");
-        var row=new JsonObject();row.addProperty("mode",mode);row.addProperty("partner",partner);row.addProperty("player",player.toString());
+        addExternal(partner,currency,debit.negate());
+        queueExternalInstrument(partner,player,player,amount,mode,ref,sig,currency);
+        return TxResult.ok(amount,"票据已登记待领");
+    }
+    /** Caller must be the authenticated owner's explicitly confirmed server-side operation. */
+    public TxResult prepareExternalSavingsBill(String partner,UUID owner,UUID payee,BigInteger amount,String ref){
+        if(owner==null||payee==null||amount==null||amount.signum()<=0||amount.compareTo(BigInteger.valueOf(100000))>0
+                ||!validExternalReference(partner,ref))
+            return TxResult.fail("invalid","无效储蓄汇票");
+        String sig="outside-savings-bill-v1|"+partner+"|"+owner+"|"+payee+"|"+amount;
+        String prior=marketReceipts.get(ref);
+        if(prior!=null)return prior.equals(sig)&&externalInstruments.has(ref)?TxResult.ok(amount,"该凭证已登记"):TxResult.fail("reference_conflict","流水冲突");
+        if(!hasExternalDeliverySpace(partner,payee))return TxResult.fail("invalid","收款人有未领取的票据");
+        String currency=centralNoteId();
+        if(balanceExact(owner,currency).compareTo(new BigDecimal(amount))<0)
+            return TxResult.fail("insufficient_funds","央行券储蓄余额不足");
+        debitBalance(owner,currency,amount);
+        queueExternalInstrument(partner,owner,payee,amount,"bill",ref,sig,currency);
+        return TxResult.ok(amount,"汇票已登记待领");
+    }
+    private boolean hasExternalDeliverySpace(String partner,UUID recipient){
+        int waiting=0;
+        for(var e:externalInstruments.entrySet()){
+            var row=e.getValue().getAsJsonObject();
+            if(partner.equals(row.get("partner").getAsString())&&recipient.toString().equals(row.get("player").getAsString())
+                    &&!row.get("delivered").getAsBoolean()&&++waiting>=5)return false;
+        }
+        return true;
+    }
+    private void queueExternalInstrument(String partner,UUID issuer,UUID recipient,BigInteger amount,String mode,String ref,String sig,String currency){
+        var row=new JsonObject();row.addProperty("mode",mode);row.addProperty("partner",partner);row.addProperty("player",recipient.toString());
         row.addProperty("currency",currency);row.addProperty("amount",amount.toString());row.addProperty("delivered",false);
         if(mode.equals("bill")){
-            var ticket=checks.create(currency,amount,player,"游艺厅",player,System.currentTimeMillis());
+            var ticket=checks.create(currency,amount,issuer,"中央银行",recipient,System.currentTimeMillis());
             row.addProperty("instrument",ticket.id().toString());
-        }else{
-            addPaper(NoteSeries.key(currency,null,amount),BigInteger.ONE);
-        }
-        addExternal(partner,currency,debit.negate());
+        }else addPaper(NoteSeries.key(currency,null,amount),BigInteger.ONE);
         externalInstruments.add(ref,row);marketReceipts.put(ref,sig);
-        return TxResult.ok(amount,"票据已登记待领");
     }
     public JsonObject nextExternalInstrument(String partner,UUID player){
         for(var e:externalInstruments.entrySet()){
